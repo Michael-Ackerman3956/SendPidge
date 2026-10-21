@@ -1,15 +1,15 @@
 ---
 doc: checklist
-status: draft
+status: approved
 ---
 
 # Build Checklist
 
-Build mode: [learn or fast — record once chosen; carry forward on resume]
+Build mode: learn (chosen 2026-10-22; switch any time)
 
 ## Slices
 
-- [ ] **1. The Reader returns a typed verdict for the fake Jimin email, and the policy says HOLD**
+- [x] **1. The Reader returns a typed verdict for the fake Jimin email, and the policy says HOLD**
   Becomes usable: A local script that feeds a sample `.eml` to the Strands Reader on Claude Haiku 5.5 and prints `EmailVerdict` + the policy decision (HOLD / WARN / PASS). Pytest proves the policy table, the sanitizer and the auth-header rule. The long-lead requests (model access, SES identities, WABA template, RCS testing registration + tester invite) are filed so they ripen while later slices build.
   Why now: The riskiest unknown is whether Haiku 5.5 structured output round-trips through Strands with no tools; it must be proven before anything is deployed. Filing the approvals here is the only way they are ready by slice 5–6.
   PRD ref: `prd.md > Features and Behavior > Message Detection`, `prd.md > Features and Behavior > Hold and Verify`
@@ -112,3 +112,6 @@ Reflection: [offered/answered/declined/already covered — personal answer belon
 Activity mode: [live app and editor, explicit static fallback, focused alternative, prior practice, or recap]
 
 ## Revisions
+
+- 2026-10-22, slice 1: added `WarnReason.LOW_CONFIDENCE` for an ask from a known contact below the 0.6 threshold (the spec's `elif intent != none` branch labelled it `unknown_name`, which was wrong for a known name; still WARN, never HOLD). Added `lambda/shared/email_parse.py` (.eml → sender, subject, text body, X-Pidge-Auth values; the spec's file tree had no parser) and `lambda/shared/enums.py` per the readability rule. Zero `X-Pidge-Auth` headers is `auth_missing`, not `auth_tampered` (hand-dropped `.eml` files in slice 2 would otherwise all read as tampered). `samples/family-hello.eml` added for the learner check; `pyproject.toml` (pytest path), `requirements-dev.txt`, `.env.example` added. Offline check: Strands 1.62 sends exactly one tool, `EmailVerdict`, and no `outputConfig`, as the checklist assumed.
+- 2026-10-22, slice 1: Haiku 5.5 returns "not available for this account" even with model access authorized and the pricing agreement AVAILABLE; Haiku 4.5 (the spec's named fallback, profile `us.anthropic.claude-haiku-4-5-20251001-v1:0`) works, so local `.env` runs `READER_MODEL=haiku-4.5` until AWS enables 5.5. Live verify on 4.5: fake Jimin → money, Jimin, 0.95, HOLD, injection line ignored; family hello → none, PASS; Converse request carries exactly one tool, `EmailVerdict`.

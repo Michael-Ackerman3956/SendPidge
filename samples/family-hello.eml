@@ -1,0 +1,12 @@
+From: Jimin <jimin@example.com>
+To: grandma@sendpidge.example
+Subject: Photos from the weekend
+Date: Wed, 22 Oct 2026 09:30:00 +0900
+X-Pidge-Auth: spf=pass;dkim=pass;dmarc=pass
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+
+Hi Grandma, it was so nice to see you on Sunday. The kimchi you packed is already half gone.
+I'll bring the photos next time. Sleep well!
+
+Jimin
