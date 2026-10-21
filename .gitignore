@@ -1,0 +1,36 @@
+# Personal learning context (Devpost Learn)
+/devpost/learner-profile.md
+/devpost/archive-v1/
+
+# Local credentials — keep a secret-free .env.example tracked
+.env
+.env.*
+!.env.example
+
+# Private research and strategy (open core: prospects, outreach, pricing, competitor notes, CVP guide)
+/research/
+/devpost/research/
+/docs/
+/.scratch/
+/agent/
+
+# Local tool config with machine paths (the .kiro/specs mirror stays tracked)
+/.kiro/agents/
+
+# Personal screenshots and stray exports
+/screenshots/
+/gemini-svg.svg
+
+# Build and runtime noise
+.DS_Store
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+cdk.out/
+cdk.context.json
+.aws-sam/
+.wrangler/
+*.log

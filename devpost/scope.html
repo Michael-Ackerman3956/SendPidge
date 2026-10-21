@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SendPidge — Scope (round 2, approved)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --ink: #e8ecf3; --muted: #9aa4b5; --paper: #0f141c; --card: #171e29;
+    --line: #2a3442; --accent: #5cc2a8; --accent-soft: #183a33;
+    --mail: #7d9cf0; --mail-soft: #1c2747; --warn: #f07a64; --warn-soft: #3d1f1a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); }
+  main { max-width: 920px; margin: 0 auto; padding: 40px 22px 80px; }
+  header .tag { display: inline-block; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 3px 10px; border-radius: 99px; }
+  h1 { font-size: 40px; margin: 12px 0 4px; }
+  h2 { font-size: 22px; margin: 40px 0 10px; }
+  .lede { font-size: 20px; color: var(--muted); margin: 0; }
+  .kernel { margin-top: 26px; background: var(--card); border: 1px solid var(--line); border-left: 6px solid var(--accent); border-radius: 12px; padding: 18px 22px; }
+  .problem { background: var(--card); border: 1px solid var(--line); border-left: 6px solid var(--warn); border-radius: 12px; padding: 18px 22px; }
+  .problem p { margin: 0 0 12px; }
+  .problem p:last-child { margin-bottom: 0; }
+  .root { font-size: 19px; font-weight: 650; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
+  .card p { margin: 0; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 14px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .05em; border-top: 0; }
+  td.miss { color: var(--warn); }
+  figure { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  svg text { font-family: system-ui, -apple-system, sans-serif; }
+  .steps { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
+  .steps button { font: inherit; font-size: 15px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .steps button[aria-pressed="true"] { background: var(--accent); color: #0f141c; border-color: var(--accent); }
+  .steps button:focus-visible, summary:focus-visible { outline: 3px solid var(--mail); outline-offset: 2px; }
+  .phones { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .phone { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 14px; min-height: 220px; }
+  .phone .owner { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .bubble { border-radius: 12px; padding: 10px 12px; margin: 8px 0; font-size: 15px; }
+  .bubble.mail { background: var(--mail-soft); border: 1px solid #2c3a66; }
+  .bubble.agent { background: var(--accent-soft); border: 1px solid #245246; }
+  .bubble.bad { background: var(--warn-soft); border: 1px solid #5a2a22; }
+  .btn { display: inline-block; margin-top: 6px; padding: 8px 14px; border-radius: 10px; background: var(--warn); color: #0f141c; font-weight: 700; font-size: 15px; }
+  .btn.yn { background: var(--card); color: var(--ink); border: 1px solid var(--line); margin-right: 6px; }
+  .btn.yn.pressed { background: var(--warn); color: #0f141c; border-color: var(--warn); }
+  .hidden { display: none; }
+  details { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin: 10px 0; }
+  summary { cursor: pointer; padding: 14px 18px; font-weight: 650; list-style: none; display: flex; justify-content: space-between; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--muted); }
+  details[open] summary::after { content: "–"; }
+  details ul { margin: 0; padding: 0 18px 14px 40px; }
+  details.now summary { color: var(--accent); }
+  details.cut summary { color: var(--warn); }
+  .reason { color: var(--muted); }
+  footer { margin-top: 40px; color: var(--muted); font-size: 14px; }
+  @media (max-width: 640px) { .phones { grid-template-columns: 1fr; } h1 { font-size: 32px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="tag">Scope · round 2 · approved · Markdown is canonical (scope.md)</span>
+    <h1>SendPidge</h1>
+    <p class="lede">An AI agent that, when a message claims to be family and asks for money, asks the real family member <em>"was this you?"</em> before the receiver acts.</p>
+  </header>
+
+  <h2>The problem</h2>
+  <section class="problem" aria-label="Problem statement">
+    <p class="root">Known-party impersonation works because verifying against the channel the receiver already has is possible but too costly per message, so it never happens.</p>
+    <p>A parent or grandparent gets a message claiming to be a family member and asking for money under pressure, and nothing on the platform can tell it from the real thing. She could check against the real person's number or thread she already has, but knowing to check, knowing how, and finding the nerve while the message says "hurry" costs more than trusting, so the check never happens. No platform can do it for her, because none holds a verified link to the real family member.</p>
+    <details>
+      <summary>Full statement</summary>
+      <p style="padding:0 18px 14px">A parent or grandparent receives an email or message that claims to be a family member and asks for money or a code under pressure ("my phone broke, use this number", "I'm at the police station"). The message looks ordinary: a clean address, passing authentication, nothing a spam filter or reputation score can flag, because a fresh account from a free provider carries no history. The receiver could confirm it, since they already hold something the impersonator doesn't (the real person's number, an old thread, another app), but that check almost never happens, so trust is extended by default to whoever shows up. Platforms stop at generic warnings because none of them holds a verified, consenting link between the receiver and the real family member, so none can ask him "was this you?" on the receiver's behalf, and scams move across email, SMS and messengers while each platform sees only its own. Verifying is therefore left to the receiver, and for them it costs three things each time: knowing that a check is needed at all, knowing how to do it (find the real number, call, compare the addresses), and the minutes and nerve to do it while the message says "hurry". The scammer never has to defeat a check; they only have to make it feel not worth doing, and the person paying that cost is the one least able to. The evidence is secondary, not first-hand: family-impersonation messages (메신저피싱) and AI voice-clone distress cases in Korea and the US. Investment scams are excluded because there is no known person to check against; calls are out of scope; email and messages are in.</p>
+    </details>
+  </section>
+
+  <h2>The three costs the receiver pays</h2>
+  <div class="grid">
+    <div class="card"><h3>1. Knowing a check is needed</h3><p>The message looks like every other one. Nothing flags it.</p></div>
+    <div class="card"><h3>2. Knowing how</h3><p>Find the real number, call, compare two addresses on a small screen.</p></div>
+    <div class="card"><h3>3. Minutes and nerve</h3><p>While the message says "hurry" and claims a child is in trouble.</p></div>
+  </div>
+  <p class="reason" style="margin-top:12px">The scammer never defeats a check. They make it feel not worth doing.</p>
+
+  <h2>What exists, and the one thing none of them do</h2>
+  <table>
+    <thead><tr><th>Exists</th><th>Limit</th><th>Asks the real person?</th></tr></thead>
+    <tbody>
+      <tr><td>Google Fake Call Detection (2026-06)</td><td>Calls only, Android-to-Android, spoofed saved number only</td><td class="miss">Device answers, not the person; calls only</td></tr>
+      <tr><td>Korea 지정인 알림</td><td>After the fact, 65+, bank products; designee cannot block</td><td class="miss">Notifies, doesn't ask</td></tr>
+      <tr><td>Messenger "new contact" warnings</td><td>Warns everyone about everything</td><td class="miss">No</td></tr>
+      <tr><td>Enterprise email relationship stores</td><td>Inside one company's mail; nobody holds a family's graph across email, SMS, KakaoTalk</td><td class="miss">No</td></tr>
+    </tbody>
+  </table>
+
+  <section class="kernel" aria-labelledby="k">
+    <h2 id="k" style="margin-top:0">The unique kernel</h2>
+    <p style="margin:0">The agent asks the real family member, on a channel only he controls, and shows his answer to the receiver. Not a score, not a warning: <strong>"Jimin replied, he did not send this."</strong> Delete that and it's another spam filter.</p>
+  </section>
+
+  <h2>The loop</h2>
+  <figure>
+    <svg viewBox="0 0 860 300" role="img" aria-labelledby="dtitle ddesc" width="100%">
+      <title id="dtitle">From a fake family message to the real family member's answer</title>
+      <desc id="ddesc">A message claiming to be Jimin arrives in Grandma's inbox. The agent notices a family claim plus a money ask, asks the real Jimin on his own channel, Jimin answers No, and Grandma sees the verdict with a Report and block button.</desc>
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9aa4b5"/></marker>
+        <marker id="arrowA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5cc2a8"/></marker>
+      </defs>
+      <!-- Fake sender -->
+      <rect x="20" y="110" width="150" height="80" rx="12" fill="#3d1f1a" stroke="#5a2a22"/>
+      <text x="95" y="143" text-anchor="middle" fill="#f07a64" font-size="15" font-weight="700">"Jimin"</text>
+      <text x="95" y="166" text-anchor="middle" fill="#e8ecf3" font-size="13">fresh free address</text>
+      <!-- Grandma inbox -->
+      <rect x="250" y="110" width="160" height="80" rx="12" fill="#1c2747" stroke="#2c3a66"/>
+      <text x="330" y="143" text-anchor="middle" fill="#7d9cf0" font-size="15" font-weight="700">Grandma's inbox</text>
+      <text x="330" y="166" text-anchor="middle" fill="#e8ecf3" font-size="13">"send ₩, new number"</text>
+      <!-- Agent -->
+      <rect x="490" y="110" width="150" height="80" rx="12" fill="#183a33" stroke="#245246"/>
+      <text x="565" y="143" text-anchor="middle" fill="#5cc2a8" font-size="15" font-weight="700">Agent</text>
+      <text x="565" y="166" text-anchor="middle" fill="#e8ecf3" font-size="13">family claim + money ask</text>
+      <!-- Real Jimin -->
+      <rect x="700" y="20" width="140" height="70" rx="12" fill="#171e29" stroke="#2a3442"/>
+      <text x="770" y="49" text-anchor="middle" fill="#e8ecf3" font-size="15" font-weight="700">Real Jimin</text>
+      <text x="770" y="70" text-anchor="middle" fill="#9aa4b5" font-size="13">his own channel</text>
+      <!-- Verdict -->
+      <rect x="700" y="210" width="140" height="70" rx="12" fill="#3d1f1a" stroke="#5a2a22"/>
+      <text x="770" y="239" text-anchor="middle" fill="#f07a64" font-size="14" font-weight="700">Not Jimin</text>
+      <text x="770" y="260" text-anchor="middle" fill="#e8ecf3" font-size="13">Report and block</text>
+      <!-- Arrows -->
+      <line x1="170" y1="150" x2="248" y2="150" stroke="#9aa4b5" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="410" y1="150" x2="488" y2="150" stroke="#9aa4b5" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="449" y="140" text-anchor="middle" fill="#9aa4b5" font-size="12">steps in</text>
+      <path d="M640,135 C680,135 680,55 698,55" fill="none" stroke="#5cc2a8" stroke-width="2" marker-end="url(#arrowA)"/>
+      <text x="690" y="100" text-anchor="end" fill="#5cc2a8" font-size="12">"was this you?"</text>
+      <path d="M770,90 C770,110 700,110 660,150" fill="none" stroke="#5cc2a8" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrowA)"/>
+      <text x="745" y="128" text-anchor="start" fill="#5cc2a8" font-size="12">"No"</text>
+      <path d="M640,165 C680,165 680,245 698,245" fill="none" stroke="#f07a64" stroke-width="2" marker-end="url(#arrow)"/>
+      <!-- Back to grandma -->
+      <path d="M700,260 C560,290 420,290 330,195" fill="none" stroke="#f07a64" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+      <text x="520" y="282" text-anchor="middle" fill="#f07a64" font-size="12">shown on Grandma's screen</text>
+    </svg>
+    <figcaption>One trusted link set up in advance (Grandma ↔ Jimin). The agent pays the three costs so she doesn't: it knows a check is needed, it knows how, and it does it while she's still reading.</figcaption>
+  </figure>
+
+  <h2>What "working" looks like</h2>
+  <div class="steps" role="tablist" aria-label="Demo steps">
+    <button role="tab" aria-pressed="true" data-step="1">1 · Message lands</button>
+    <button role="tab" aria-pressed="false" data-step="2">2 · Agent steps in</button>
+    <button role="tab" aria-pressed="false" data-step="3">3 · Jimin is asked</button>
+    <button role="tab" aria-pressed="false" data-step="4">4 · Verdict</button>
+  </div>
+  <div class="phones">
+    <div class="phone">
+      <div class="owner">Grandma</div>
+      <div class="bubble mail" data-show="1 2 3 4"><strong>Jimin</strong> · jimin.kim.2026@gmail.com<br>Grandma, my phone broke. Please send ₩500,000 to this account today, I'll explain later.</div>
+      <div class="bubble agent hidden" data-show="2 3">Checking with Jimin before you do anything.</div>
+      <div class="bubble bad hidden" data-show="4"><strong>Phishing detected.</strong> Jimin replied: he did not send this.<br><span class="btn">Report and block</span></div>
+    </div>
+    <div class="phone">
+      <div class="owner">Real Jimin</div>
+      <div class="bubble agent hidden" data-show="3 4">Grandma received a message from "you" asking for ₩500,000. Was this you?<br><span class="btn yn" data-show="3">Yes</span><span class="btn yn pressed hidden" data-show="4">No</span><span class="btn yn hidden" data-show="3">No</span></div>
+    </div>
+  </div>
+  <p class="reason" style="margin-top:12px">In the learner's words: while the receiver is looking at the email, the AI agent steps in, says it is running verification for a payment request, gets confirmation that this email was not sent from the real person, and shows "Phishing detected, Jimin replied, he did not send such email" with a button "Report and block". Grandma clicks it. Under a minute, on screen, recordable.</p>
+
+  <h2>Boundary</h2>
+  <details class="now" open>
+    <summary>Now (the proof of concept)</summary>
+    <ul>
+      <li>One receiver (Grandma), one trusted family member (Jimin), linked in advance</li>
+      <li>One inbound email that claims to be Jimin and asks for money</li>
+      <li>Detection: claims a known person + asks for money or a code</li>
+      <li>One question to the real Jimin on his channel, one yes/no answer</li>
+      <li>Grandma's screen: "checking", then the verdict with "Report and block"</li>
+      <li>Built on AWS; email in via SES</li>
+      <li class="reason">Open for PRD/spec: which channel carries the question to Jimin (email, SMS, WhatsApp). Round 1 recommended email-to-email first; no carrier or WhatsApp approval needed.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>Later</summary>
+    <ul>
+      <li>Multiple family members; "which grandchild?" when no name is given</li>
+      <li>SMS and messenger inbound, not just email</li>
+      <li>Onboarding the family circle (consent flow) as a product surface</li>
+      <li>Institution impersonation ("fake police") as the known party</li>
+      <li>Business version (vendor bank-change, CEO wire request)</li>
+    </ul>
+  </details>
+  <details class="cut">
+    <summary>Explicitly cut</summary>
+    <ul>
+      <li>Investment and romance scams <span class="reason">— no known person to ask; different root</span></li>
+      <li>Voice calls <span class="reason">— out of scope by decision; can't be demoed credibly</span></li>
+      <li>Reputation or trust scores <span class="reason">— structurally blind to fresh free-provider addresses</span></li>
+      <li>Link preview / URL safety <span class="reason">— a different problem (link uncertainty), not this root</span></li>
+    </ul>
+  </details>
+
+  <h2>Evidence (secondary)</h2>
+  <table>
+    <thead><tr><th>Claim</th><th>Source in devpost/research/scam_landscape/</th></tr></thead>
+    <tbody>
+      <tr><td>BEC $3.05B; AI voice-clone family distress >$5M, tracked separately for the first time (FBI IC3 2025)</td><td>01_global_economy.md, 04_elder_fraud.md</td></tr>
+      <tr><td>Korea 메신저피싱 "엄마 나 폰 고장났어"; 지정인 알림 is notification-only</td><td>02_south_korea.md</td></tr>
+      <tr><td>FBI Operation Level Up: 78% of contacted victims did not know; a credible outside voice works</td><td>04_elder_fraud.md:95</td></tr>
+      <tr><td>Why platforms stop at warnings: no verified consenting link, no consent for a third party, cross-channel blindness, liability</td><td>research_why_verify_person.md (interpretation)</td></tr>
+    </tbody>
+  </table>
+  <p class="reason">The person is researched, not observed. The PRD persona mixes the learner's own daily spam and phishing exposure with these reports, and pins age range, time of day, and amount from the reports rather than inventing them.</p>
+
+  <footer>Round 2 scope, approved 2026-10-20. Round 1 archived in devpost/archive-v1/. Next: 3-prd.</footer>
+</main>
+<script>
+  (function () {
+    var buttons = document.querySelectorAll('.steps button');
+    var items = document.querySelectorAll('[data-show]');
+    function show(step) {
+      buttons.forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.step === step ? 'true' : 'false'); });
+      items.forEach(function (el) {
+        var steps = el.dataset.show.split(' ');
+        el.classList.toggle('hidden', steps.indexOf(step) === -1);
+      });
+    }
+    buttons.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.step); }); });
+    show('1');
+  })();
+</script>
+</body>
+</html>

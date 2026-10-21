@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SendPidge — Technical Spec</title>
+<style>
+:root {
+  --ink: #e8ecf3; --paper: #0f141c; --card: #171e29; --card-2: #1c2433;
+  --accent: #3AA68E; --accent-dim: #2D8872; --accent-light: #5EC4AA;
+  --mail: #7d9cf0; --warn: #F59E0B; --red: #EF4444; --green: #4ade80;
+  --border: rgba(255,255,255,0.08); --text-2: #8a94a6; --text-3: #555e6e;
+  --aws-orange: #ED7100; --aws-green: #3F8624; --aws-indigo: #3B48CC; --aws-pink: #E7157B; --aws-teal: #01A88D; --aws-purple: #8C4FFF;
+  --font: Avenir, -apple-system, 'Helvetica Neue', system-ui, sans-serif;
+  --mono: 'SF Mono', ui-monospace, Menlo, monospace;
+  --radius: 14px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--paper); color: var(--ink); line-height: 1.6; }
+.wrap { max-width: 900px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px; }
+h1 span { color: var(--accent); }
+.subtitle { color: var(--text-2); font-size: 14px; margin-bottom: 28px; }
+h2 { font-size: 18px; font-weight: 700; margin: 40px 0 12px; color: var(--accent-light); letter-spacing: -0.01em; }
+h3 { font-size: 15px; font-weight: 700; margin: 18px 0 8px; color: var(--ink); }
+p, li { font-size: 14px; color: var(--ink); margin-bottom: 8px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: var(--mono); font-size: 12px; background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; }
+pre { font-family: var(--mono); font-size: 12px; line-height: 1.55; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; overflow-x: auto; margin: 10px 0 14px; }
+pre code { background: none; padding: 0; }
+.muted { color: var(--text-2); font-size: 13px; }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+.card-accent { border-left: 3px solid var(--accent); }
+.card-warn { border-left: 3px solid var(--warn); }
+.card-red { border-left: 3px solid var(--red); }
+.card-green { border-left: 3px solid var(--green); }
+.card h3 { margin-top: 0; }
+.card p:last-child { margin-bottom: 0; }
+
+.tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 12px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 520px; }
+th { text-align: left; padding: 8px 10px; background: var(--card); color: var(--accent); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 2px solid var(--accent-dim); }
+td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+
+details { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; }
+summary { padding: 12px 16px; cursor: pointer; font-weight: 700; font-size: 14px; list-style: none; display: flex; align-items: center; gap: 8px; }
+summary::-webkit-details-marker { display: none; }
+summary::before { content: '▸'; color: var(--accent); transition: transform 0.2s; font-size: 12px; }
+details[open] summary::before { transform: rotate(90deg); }
+.detail-body { padding: 0 16px 14px; font-size: 13px; }
+.detail-body p { font-size: 13px; }
+
+.arch { background: #0b0f16; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin: 12px 0; }
+.arch svg { display: block; width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--text-2); margin: 8px 4px 0; }
+.legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--sw); }
+
+.stepper { counter-reset: step; }
+.step { display: flex; gap: 14px; padding: 10px 0; border-left: 2px solid var(--border); margin-left: 14px; padding-left: 20px; position: relative; }
+.step::before { counter-increment: step; content: counter(step); position: absolute; left: -12px; top: 12px; width: 24px; height: 24px; background: var(--accent); color: var(--paper); border-radius: 50%; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.step:last-child { border-left-color: transparent; }
+.step-label { font-weight: 700; font-size: 13px; margin-bottom: 2px; }
+.step-desc { font-size: 12px; color: var(--text-2); }
+.svc { display: inline-block; background: rgba(58,166,142,0.15); color: var(--accent); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin: 4px 4px 0 0; }
+
+.tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; margin-right: 4px; white-space: nowrap; }
+.tag-green { background: rgba(74,222,128,0.12); color: var(--green); }
+.tag-warn { background: rgba(245,158,11,0.12); color: var(--warn); }
+.tag-red { background: rgba(239,68,68,0.12); color: var(--red); }
+.tag-blue { background: rgba(125,156,240,0.12); color: var(--mail); }
+.tag-accent { background: rgba(58,166,142,0.12); color: var(--accent); }
+.tag-grey { background: rgba(255,255,255,0.08); color: var(--text-2); }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.pattern { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+.pattern h3 { margin: 0 0 6px; font-size: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pattern svg { width: 100%; height: auto; display: block; margin: 6px 0 8px; }
+.pattern p { font-size: 12px; color: var(--text-2); margin: 0; }
+.pattern p b { color: var(--ink); }
+
+.tier-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: stretch; }
+.tier-box { flex: 1 1 180px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; }
+.tier-box.active { border-color: var(--accent); background: rgba(58,166,142,0.08); }
+.tier-name { font-weight: 800; font-size: 13px; margin-bottom: 4px; }
+.tier-where { font-size: 11px; color: var(--text-2); }
+.tier-what { font-size: 12px; margin-top: 6px; }
+.tier-cost { font-family: var(--mono); font-size: 11px; color: var(--text-2); margin-top: 4px; }
+
+.decision { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; }
+.decision h3 { margin: 0 0 6px; font-size: 14px; }
+.decision .pick { font-size: 13px; }
+.decision .pick b { color: var(--accent-light); }
+.decision .alt { font-size: 12px; color: var(--text-2); margin-top: 4px; }
+
+.tree { font-family: var(--mono); font-size: 12px; line-height: 1.75; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; white-space: pre; overflow-x: auto; }
+.footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-3); font-size: 12px; text-align: center; }
+@media (max-width: 480px) { h1 { font-size: 24px; } .wrap { padding: 24px 16px 60px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1><span>SendPidge</span> — Technical Spec</h1>
+<p class="subtitle">Round 2 · approved 2026-10-21 · AWS CDS Agentic AI Partner Hackathon · deadline 2026-10-28</p>
+
+<h2>How This Works</h2>
+<div class="card card-accent">
+<p>SendPidge is a PWA (a website that installs like an app) with an AI agent called <strong>Pidge</strong>. When an email arrives claiming to be someone you know and asking for money, Pidge holds it and asks the real person "was this you?" on a channel only they control. Their answer lands on your screen in seconds.</p>
+<p>Inside AWS: <strong>Amazon SES Mail Manager</strong> receives the email and writes it to S3. A <strong>Strands agent on AWS Lambda</strong> reads it with <strong>Claude Haiku 5.5 on Amazon Bedrock</strong> and returns a typed verdict. That reader has <em>no tools</em> — it only ever sees the untrusted text. Plain code then checks the <strong>DynamoDB trust graph</strong>, creates a 60-second hold, and fans out the question in parallel over <strong>AWS End User Messaging Social</strong> (WhatsApp) and an in-app WebSocket. The reply comes back through <strong>Amazon SNS</strong> (WhatsApp) or the WebSocket (in-app), a second Lambda records the verdict, and <strong>Amazon API Gateway WebSocket</strong> pushes it to Grandma's screen.</p>
+<p class="muted">The agent is autonomous — nobody asks it to check — but the decision to hold or release is code, not a prompt. That is why Pidge can't be talked into releasing.</p>
+</div>
+
+<h2>Architecture</h2>
+<p class="muted">AWS Architecture-Icon style, as in the CDS sample repos. Numbered badges match the Core Journey below. Dashed = stub or later.</p>
+<div class="arch">
+<svg viewBox="0 0 930 2135" xmlns="http://www.w3.org/2000/svg" font-family="Avenir, -apple-system, system-ui, sans-serif">
+<defs>
+  <marker id="ah" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 z" fill="#8a94a6"/></marker>
+  <marker id="ahA" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 z" fill="#3AA68E"/></marker>
+  <marker id="ahP" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 z" fill="#E7157B"/></marker>
+  <!-- AWS-style service icons (56x56) -->
+  <symbol id="i-ses" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#3B48CC"/><path d="M14 19h28v19H14z" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M14 19l14 11 14-11" fill="none" stroke="#fff" stroke-width="2.4"/><circle cx="28" cy="43" r="2" fill="#fff"/></symbol>
+  <symbol id="i-s3" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#3F8624"/><path d="M16 18c0-3 5.4-5 12-5s12 2 12 5l-2.4 22c-.4 2.6-4.6 4-9.6 4s-9.2-1.4-9.6-4z" fill="none" stroke="#fff" stroke-width="2.4"/><ellipse cx="28" cy="18" rx="12" ry="5" fill="none" stroke="#fff" stroke-width="2.4"/></symbol>
+  <symbol id="i-lambda" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#ED7100"/><text x="28" y="40" text-anchor="middle" font-size="32" font-weight="700" fill="#fff" font-family="Georgia, serif">λ</text></symbol>
+  <symbol id="i-bedrock" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#01A88D"/><path d="M28 12l3.2 9.8L41 25l-9.8 3.2L28 38l-3.2-9.8L15 25l9.8-3.2z" fill="#fff"/><circle cx="40" cy="40" r="3" fill="#fff"/><circle cx="16" cy="40" r="2" fill="#fff"/></symbol>
+  <symbol id="i-ddb" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#3B48CC"/><ellipse cx="28" cy="17" rx="12" ry="5" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M16 17v22c0 2.8 5.4 5 12 5s12-2.2 12-5V17" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M16 28c0 2.8 5.4 5 12 5s12-2.2 12-5" fill="none" stroke="#fff" stroke-width="2.4"/></symbol>
+  <symbol id="i-eum" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#E7157B"/><path d="M14 16h28v18H25l-7 6v-6h-4z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/><circle cx="22" cy="25" r="1.8" fill="#fff"/><circle cx="28" cy="25" r="1.8" fill="#fff"/><circle cx="34" cy="25" r="1.8" fill="#fff"/></symbol>
+  <symbol id="i-sns" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#E7157B"/><circle cx="20" cy="28" r="5" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M25 28h8M33 28l6-9M33 28l6 9" fill="none" stroke="#fff" stroke-width="2.4"/><circle cx="41" cy="17" r="3" fill="#fff"/><circle cx="41" cy="39" r="3" fill="#fff"/></symbol>
+  <symbol id="i-apigw" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#E7157B"/><text x="28" y="36" text-anchor="middle" font-size="20" font-weight="800" fill="#fff" font-family="Menlo, monospace">&lt;/&gt;</text></symbol>
+  <symbol id="i-cf" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#8C4FFF"/><circle cx="28" cy="28" r="12" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M16 28h24M28 16c-5 6-5 18 0 24M28 16c5 6 5 18 0 24" fill="none" stroke="#fff" stroke-width="2"/></symbol>
+  <symbol id="badge" viewBox="0 0 22 22"><rect width="22" height="22" rx="5" fill="#d7dbe2"/></symbol>
+</defs>
+
+<!-- ===== External actor: impersonator ===== -->
+<text x="450" y="52" text-anchor="middle" font-size="34">📧</text>
+<text x="450" y="86" text-anchor="middle" font-size="12.5" font-weight="700" fill="#e8ecf3">Impersonator email "from Jimin"</text>
+<text x="450" y="103" text-anchor="middle" font-size="11" fill="#8a94a6">lookalike address · AI-scraped details · asks for money</text>
+<path d="M450 110 V172 H203 V248" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="212" y="187" font-size="10.5" fill="#8a94a6">SMTP → MX  sendpidge.mailpidge.com</text>
+
+<!-- ===== AWS Cloud frame ===== -->
+<rect x="130" y="150" width="640" height="1930" rx="10" fill="none" stroke="#8a94a6" stroke-width="1.4"/>
+<rect x="130" y="150" width="50" height="26" rx="6" fill="#232f3e"/>
+<text x="155" y="168" text-anchor="middle" font-size="12" font-weight="800" fill="#ff9900">aws</text>
+<text x="190" y="169" font-size="13" font-weight="700" fill="#e8ecf3">AWS Cloud</text>
+<text x="275" y="169" font-size="11" fill="#8a94a6">us-east-1</text>
+
+<!-- ===== Lane 1: Inbound · SES Mail Manager ===== -->
+<rect x="150" y="195" width="600" height="300" rx="12" fill="rgba(59,72,204,0.09)" stroke="rgba(59,72,204,0.45)"/>
+<text x="170" y="222" font-size="13" font-weight="800" fill="#9aa5ff">Inbound · Amazon SES Mail Manager</text>
+<use href="#i-ses" x="175" y="255" width="56" height="56"/>
+<use href="#badge" x="167" y="247" width="22" height="22"/><text x="178" y="263" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">1</text>
+<text x="203" y="330" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Amazon SES</text>
+<text x="203" y="345" text-anchor="middle" font-size="10" fill="#8a94a6">Mail Manager</text>
+<rect x="255" y="245" width="340" height="86" rx="8" fill="rgba(11,15,22,0.6)" stroke="rgba(154,165,255,0.5)"/>
+<rect x="263" y="252" width="324" height="22" rx="5" fill="rgba(59,72,204,0.25)"/><text x="271" y="267" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700">a · Ingress endpoint</tspan>  OPEN · receives on the MX record</text>
+<rect x="263" y="277" width="324" height="22" rx="5" fill="rgba(59,72,204,0.25)"/><text x="271" y="292" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700">b · Traffic policy</tspan>  ALLOW recipient grandma@… · DROP the rest</text>
+<rect x="263" y="302" width="324" height="22" rx="5" fill="rgba(59,72,204,0.25)"/><text x="271" y="317" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700">c · Rule set</tspan>  SPF·DKIM·DMARC verdict → header · Write to S3</text>
+<path d="M231 283 H253" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<use href="#i-s3" x="640" y="255" width="56" height="56"/>
+<use href="#badge" x="632" y="247" width="22" height="22"/><text x="643" y="263" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">2</text>
+<path d="M597 288 H638" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="668" y="330" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Amazon S3</text>
+<text x="668" y="345" text-anchor="middle" font-size="10" fill="#8a94a6">raw .eml · evidence</text>
+<text x="668" y="359" text-anchor="middle" font-size="10" fill="#8a94a6">30 d → delete</text>
+<text x="668" y="373" text-anchor="middle" font-size="10" fill="#8a94a6">quarantine → archive</text>
+<text x="170" y="400" font-size="10.5" fill="#8a94a6">Rule actions: Drop if X-Pidge-Auth pre-exists · Add header X-Pidge-Auth: pass | fail · Write to S3 (also: Lambda, SNS, Bounce)</text>
+<text x="170" y="418" font-size="10.5" fill="#8a94a6">Same chain as aws-samples/sample-gen-ai-email-categorization-using-ses-mail-manager · MX propagation takes hours → day 1</text>
+<path d="M696 298 H724 V455 H450 V585" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="458" y="470" font-size="10.5" fill="#8a94a6">S3 OBJECT_CREATED event</text>
+
+<!-- ===== Lane 2: Detect · Agent layer ===== -->
+<rect x="150" y="530" width="600" height="360" rx="12" fill="rgba(237,113,0,0.09)" stroke="rgba(237,113,0,0.45)"/>
+<text x="170" y="557" font-size="13" font-weight="800" fill="#ffb366">Detect · Agent layer — Strands Agents SDK on AWS Lambda</text>
+<use href="#i-lambda" x="422" y="590" width="56" height="56"/>
+<use href="#badge" x="414" y="582" width="22" height="22"/><text x="425" y="598" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">3</text>
+<text x="450" y="665" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">AWS Lambda · pidge-reader</text>
+<text x="450" y="680" text-anchor="middle" font-size="10" fill="#8a94a6">Strands Agent · tools=[] · Python 3.12</text>
+<text x="450" y="694" text-anchor="middle" font-size="10" fill="#8a94a6">retry ×2 → SQS DLQ · idempotent on s3Key</text>
+<use href="#i-bedrock" x="600" y="590" width="56" height="56"/>
+<use href="#badge" x="592" y="582" width="22" height="22"/><text x="603" y="598" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">4</text>
+<text x="628" y="665" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Amazon Bedrock</text>
+<text x="628" y="680" text-anchor="middle" font-size="10" fill="#8a94a6">Claude Haiku 5.5 · structured output</text>
+<path d="M478 612 H598" fill="none" stroke="#01A88D" stroke-width="1.6" marker-end="url(#ahA)"/>
+<path d="M598 626 H480" fill="none" stroke="#01A88D" stroke-width="1.6" marker-end="url(#ahA)"/>
+<text x="538" y="606" text-anchor="middle" font-size="9.5" fill="#8a94a6">email text (Converse)</text>
+<text x="538" y="640" text-anchor="middle" font-size="9.5" fill="#8a94a6">typed verdict JSON</text>
+<!-- swappable readers · later / stub -->
+<g opacity="0.75">
+<use href="#i-bedrock" x="200" y="585" width="56" height="56"/>
+<rect x="198" y="583" width="60" height="60" rx="9" fill="none" stroke="#e8ecf3" stroke-dasharray="5 4"/>
+<text x="228" y="665" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Swappable readers</text>
+<text x="228" y="680" text-anchor="middle" font-size="10" fill="#8a94a6">Nova Micro · later</text>
+<text x="228" y="694" text-anchor="middle" font-size="10" fill="#F59E0B">Gemma 4 E2B · stub</text>
+</g>
+<path d="M258 613 H418" fill="none" stroke="#8a94a6" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<text x="338" y="606" text-anchor="middle" font-size="9.5" fill="#8a94a6">READER_MODEL env var</text>
+<path d="M450 690 V742" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<!-- policy · code -->
+<use href="#i-lambda" x="422" y="745" width="56" height="56"/>
+<use href="#badge" x="414" y="737" width="22" height="22"/><text x="425" y="753" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">5</text>
+<text x="450" y="825" text-anchor="middle" font-size="11" font-weight="700" fill="#ffb366">Policy · code (Rule of Two)</text>
+<text x="450" y="840" text-anchor="middle" font-size="10" fill="#e8ecf3">HOLD if intent ≠ none ∧ conf ≥ 0.6</text>
+<text x="450" y="854" text-anchor="middle" font-size="10" fill="#e8ecf3">∧ claimed name ∈ trust graph</text>
+<text x="450" y="868" text-anchor="middle" font-size="10" fill="#8a94a6">WARN → ! · else PASS · summary sanitised</text>
+<!-- lookup tables · semi-stub -->
+<g opacity="0.75">
+<use href="#i-ddb" x="200" y="745" width="56" height="56"/>
+<rect x="198" y="743" width="60" height="60" rx="9" fill="none" stroke="#e8ecf3" stroke-dasharray="5 4"/>
+<text x="228" y="825" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Lookup tables</text>
+<text x="228" y="840" text-anchor="middle" font-size="10" fill="#8a94a6">known-bad sender domains</text>
+<text x="228" y="854" text-anchor="middle" font-size="10" fill="#8a94a6">lookalike contact names</text>
+<text x="228" y="868" text-anchor="middle" font-size="10" fill="#F59E0B">semi-stub · ~20 sample rows</text>
+</g>
+<path d="M258 773 H418" fill="none" stroke="#8a94a6" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<text x="338" y="766" text-anchor="middle" font-size="9.5" fill="#8a94a6">reasons only · never a HOLD</text>
+<!-- guardrails · later (D4) -->
+<g opacity="0.75">
+<use href="#i-bedrock" x="600" y="745" width="56" height="56"/>
+<rect x="598" y="743" width="60" height="60" rx="9" fill="none" stroke="#e8ecf3" stroke-dasharray="5 4"/>
+<text x="628" y="825" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Bedrock Guardrails</text>
+<text x="628" y="840" text-anchor="middle" font-size="10" fill="#8a94a6">prompt-attack filter</text>
+<text x="628" y="854" text-anchor="middle" font-size="10" fill="#F59E0B">later · D4</text>
+</g>
+<path d="M450 876 V967" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="458" y="909" font-size="10.5" fill="#8a94a6">Jimin ∈ graph? · request · 60 s</text>
+
+<g transform="translate(0 25)">
+<!-- ===== Lane 3: Trust graph · DynamoDB ===== -->
+<rect x="150" y="895" width="600" height="200" rx="12" fill="rgba(59,72,204,0.09)" stroke="rgba(59,72,204,0.45)"/>
+<text x="170" y="922" font-size="13" font-weight="800" fill="#9aa5ff">Trust graph · Amazon DynamoDB</text>
+<use href="#i-ddb" x="200" y="945" width="56" height="56"/>
+<text x="228" y="1022" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">RelationshipGraph</text>
+<text x="228" y="1037" text-anchor="middle" font-size="10" fill="#8a94a6">Grandma ↔ Jimin</text>
+<text x="228" y="1051" text-anchor="middle" font-size="10" fill="#8a94a6">WhatsApp · PWA id · email</text>
+<use href="#i-ddb" x="422" y="945" width="56" height="56"/>
+<use href="#badge" x="414" y="937" width="22" height="22"/><text x="425" y="953" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">6</text>
+<text x="450" y="1022" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">VerificationRequest</text>
+<text x="450" y="1037" text-anchor="middle" font-size="10" fill="#8a94a6">pending → denied | confirmed | timeout</text>
+<text x="450" y="1051" text-anchor="middle" font-size="10" fill="#8a94a6">expiresAt = now + 60 s</text>
+<text x="450" y="1065" text-anchor="middle" font-size="10" fill="#8a94a6">TTL 30 d</text>
+<use href="#i-ddb" x="644" y="945" width="56" height="56"/>
+<text x="672" y="1022" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">EmailMetadata</text>
+<text x="672" y="1037" text-anchor="middle" font-size="10" fill="#8a94a6">flagged · quarantined</text>
+<text x="672" y="1051" text-anchor="middle" font-size="10" fill="#8a94a6">authVerdict · s3Key</text>
+<text x="672" y="1065" text-anchor="middle" font-size="10" fill="#8a94a6">TTL 90 d · quarantined kept</text>
+<path d="M450 1058 V1182" fill="none" stroke="#8a94a6" stroke-width="1.6"/>
+
+<!-- ===== Lane 4: Ask the real person · EUM ===== -->
+<rect x="150" y="1130" width="600" height="340" rx="12" fill="rgba(231,21,123,0.09)" stroke="rgba(231,21,123,0.45)"/>
+<text x="170" y="1157" font-size="13" font-weight="800" fill="#ff7ab8">Ask the real person · AWS End User Messaging  (parallel fan-out)</text>
+<circle cx="450" cy="1190" r="6" fill="#E7157B"/>
+<use href="#badge" x="462" y="1179" width="22" height="22"/><text x="473" y="1195" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">7</text>
+<text x="490" y="1194" font-size="10.5" fill="#8a94a6">asyncio.gather — all channels at once</text>
+<path d="M450 1196 V1228" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<path d="M444 1194 L222 1228" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<path d="M456 1194 L624 1228" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<!-- RCS -->
+<use href="#i-eum" x="190" y="1230" width="56" height="56"/>
+<use href="#badge" x="182" y="1222" width="22" height="22"/><text x="193" y="1238" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">8</text>
+<text x="218" y="1306" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">AWS End User Messaging SMS</text>
+<text x="218" y="1321" text-anchor="middle" font-size="10" fill="#8a94a6">RCS rich card · Yes / No chips</text>
+<text x="218" y="1335" text-anchor="middle" font-size="10" fill="#8a94a6">SendRcsMessage · testing agent</text>
+<path d="M246 1272 H314 V1392 H788" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<text x="560" y="1406" text-anchor="middle" font-size="9.5" fill="#8a94a6">RCS rich card in the native Messages app · chips post back req-id:yes|no</text>
+<!-- WhatsApp -->
+<use href="#i-eum" x="422" y="1230" width="56" height="56"/>
+<use href="#badge" x="414" y="1222" width="22" height="22"/><text x="425" y="1238" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">9</text>
+<text x="450" y="1306" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">AWS End User Messaging Social</text>
+<text x="450" y="1321" text-anchor="middle" font-size="10" fill="#8a94a6">WhatsApp template · 1 variable: summary</text>
+<text x="450" y="1335" text-anchor="middle" font-size="10" fill="#8a94a6">SendWhatsAppMessage</text>
+<!-- in-app -->
+<use href="#i-apigw" x="600" y="1230" width="56" height="56"/>
+<use href="#badge" x="592" y="1222" width="22" height="22"/><text x="603" y="1238" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">10</text>
+<text x="628" y="1306" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Amazon API Gateway</text>
+<text x="628" y="1321" text-anchor="middle" font-size="10" fill="#8a94a6">WebSocket · in-app card</text>
+<text x="628" y="1335" text-anchor="middle" font-size="10" fill="#8a94a6">per-user token on $connect</text>
+<!-- to Jimin -->
+<path d="M656 1258 H788" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<text x="722" y="1250" text-anchor="middle" font-size="9.5" fill="#8a94a6">push + card</text>
+<path d="M478 1242 H560 V1352 H788" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<text x="600" y="1366" text-anchor="middle" font-size="9.5" fill="#8a94a6">"Grandma got an email claiming to be you — was this you?"  [Yes] [No]</text>
+
+<!-- ===== External actor: Jimin ===== -->
+<text x="835" y="1230" text-anchor="middle" font-size="34">📱</text>
+<text x="835" y="1266" text-anchor="middle" font-size="12.5" font-weight="700" fill="#e8ecf3">Jimin</text>
+<text x="835" y="1282" text-anchor="middle" font-size="10.5" fill="#8a94a6">the real grandson</text>
+<text x="835" y="1297" text-anchor="middle" font-size="10.5" fill="#8a94a6">WhatsApp · SendPidge PWA</text>
+<text x="835" y="1318" text-anchor="middle" font-size="11" font-weight="700" fill="#4ade80">taps  No</text>
+<path d="M826 1330 V1573 H548" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M846 1330 V1668 H548" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<text x="700" y="1564" text-anchor="middle" font-size="9.5" fill="#8a94a6">RCS chip tap (two-way topic) · WhatsApp reply (WABA)</text>
+<text x="840" y="1659" text-anchor="end" font-size="9.5" fill="#8a94a6">in-app tap · $default</text>
+
+<!-- ===== Lane 5: Reply · SNS → Lambda ===== -->
+<rect x="150" y="1500" width="600" height="245" rx="12" fill="rgba(237,113,0,0.09)" stroke="rgba(237,113,0,0.45)"/>
+<text x="170" y="1527" font-size="13" font-weight="800" fill="#ffb366">Reply · Amazon SNS → AWS Lambda</text>
+<use href="#i-sns" x="490" y="1545" width="56" height="56"/>
+<use href="#badge" x="482" y="1537" width="22" height="22"/><text x="493" y="1553" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">11</text>
+<text x="518" y="1620" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Amazon SNS</text>
+<text x="518" y="1635" text-anchor="middle" font-size="10" fill="#8a94a6">RCS two-way + WhatsApp topics</text>
+<use href="#i-apigw" x="490" y="1640" width="56" height="56"/>
+<text x="580" y="1662" font-size="10.5" font-weight="700" fill="#e8ecf3">Amazon API Gateway</text>
+<text x="580" y="1677" font-size="10" fill="#8a94a6">WebSocket $default route</text>
+<use href="#i-lambda" x="250" y="1545" width="56" height="56"/>
+<use href="#badge" x="242" y="1537" width="22" height="22"/><text x="253" y="1553" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">12</text>
+<text x="278" y="1620" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">AWS Lambda · pidge-verdict</text>
+<text x="278" y="1635" text-anchor="middle" font-size="10" fill="#8a94a6">postbackData · button_reply.id</text>
+<text x="278" y="1649" text-anchor="middle" font-size="10" fill="#8a94a6">conditional write · No beats Yes</text>
+<text x="278" y="1663" text-anchor="middle" font-size="10" fill="#8a94a6">SES SendEmail receipt → Jimin</text>
+<path d="M490 1573 H308" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M490 1668 H368 V1590 H310" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<path d="M250 1573 H195 V1858 H246" fill="none" stroke="#3AA68E" stroke-width="1.8" marker-end="url(#ahA)"/>
+<text x="202" y="1770" font-size="10" fill="#3AA68E">verdict</text>
+
+<!-- ===== Lane 6: Verdict · API Gateway WebSocket → PWA ===== -->
+<rect x="150" y="1780" width="600" height="195" rx="12" fill="rgba(1,168,141,0.09)" stroke="rgba(1,168,141,0.45)"/>
+<text x="170" y="1807" font-size="13" font-weight="800" fill="#5EC4AA">Verdict · Amazon API Gateway WebSocket → Grandma's PWA</text>
+<use href="#i-apigw" x="250" y="1830" width="56" height="56"/>
+<use href="#badge" x="242" y="1822" width="22" height="22"/><text x="253" y="1838" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">13</text>
+<text x="278" y="1905" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Amazon API Gateway</text>
+<text x="278" y="1920" text-anchor="middle" font-size="10" fill="#8a94a6">push: hold (60 s) → verdict</text>
+<use href="#i-s3" x="540" y="1830" width="56" height="56"/>
+<use href="#badge" x="532" y="1822" width="22" height="22"/><text x="543" y="1838" text-anchor="middle" font-size="12" font-weight="800" fill="#232f3e">14</text>
+<text x="568" y="1905" text-anchor="middle" font-size="11" font-weight="700" fill="#e8ecf3">Amazon S3 + DynamoDB</text>
+<text x="568" y="1920" text-anchor="middle" font-size="10" fill="#8a94a6">Report &amp; block → quarantine tag</text>
+<text x="568" y="1934" text-anchor="middle" font-size="10" fill="#8a94a6">kept 1 yr → Deep Archive</text>
+<path d="M306 1858 H538" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="422" y="1850" text-anchor="middle" font-size="9.5" fill="#8a94a6">Confirm tap → $default</text>
+<path d="M250 1858 H128" fill="none" stroke="#3AA68E" stroke-width="1.8" marker-end="url(#ahA)"/>
+
+<!-- ===== External actor: Grandma ===== -->
+<text x="70" y="1830" text-anchor="middle" font-size="34">👵</text>
+<text x="70" y="1866" text-anchor="middle" font-size="12.5" font-weight="700" fill="#e8ecf3">Grandma</text>
+<text x="70" y="1882" text-anchor="middle" font-size="10.5" fill="#8a94a6">PWA on iPhone</text>
+<text x="70" y="1897" text-anchor="middle" font-size="10.5" fill="#8a94a6">5 s long-press cancel</text>
+<text x="70" y="1915" text-anchor="middle" font-size="11" font-weight="700" fill="#EF4444">"Not Jimin"</text>
+
+<!-- ===== Platform strip ===== -->
+<rect x="150" y="1990" width="600" height="50" rx="8" fill="none" stroke="#8a94a6" stroke-dasharray="5 4"/>
+<text x="450" y="2009" text-anchor="middle" font-size="10" fill="#8a94a6">Platform · PWA hosted on Amazon S3 + Amazon CloudFront (optional) · IaC: AWS CDK v2 · region us-east-1</text>
+<text x="450" y="2027" text-anchor="middle" font-size="10" fill="#8a94a6">Traces · Strands OpenTelemetry → Amazon CloudWatch / AWS X-Ray (shown in the demo video)</text>
+</g>
+</svg>
+</div>
+<div class="legend">
+  <span style="--sw:#3B48CC">SES Mail Manager · DynamoDB</span>
+  <span style="--sw:#3F8624">S3</span>
+  <span style="--sw:#ED7100">Lambda · policy code</span>
+  <span style="--sw:#01A88D">Bedrock</span>
+  <span style="--sw:#E7157B">End User Messaging · SNS · API Gateway</span>
+  <span style="--sw:#8a94a6">dashed = stub / later</span>
+</div>
+
+<h2>How Pidge Plays Its Part — the agent loop</h2>
+<p class="muted">The same system seen from the agent's side. Teal = the only LLM, and it has zero tools. Orange = code that holds the tools and never reads the email. Only typed fields cross that line.</p>
+<div class="arch">
+<svg viewBox="0 0 900 640" xmlns="http://www.w3.org/2000/svg" font-family="Avenir, -apple-system, system-ui, sans-serif">
+<!-- container -->
+<rect x="190" y="20" width="520" height="600" rx="14" fill="rgba(58,166,142,0.05)" stroke="#3AA68E" stroke-width="1.4"/>
+<text x="450" y="44" text-anchor="middle" font-size="12.5" font-weight="800" fill="#5EC4AA">Pidge · the agent — Strands Agents SDK on AWS Lambda</text>
+
+<!-- 1 PERCEIVE (LLM) -->
+<rect x="210" y="60" width="480" height="90" rx="10" fill="rgba(1,168,141,0.12)" stroke="#01A88D" stroke-width="1.4"/>
+<text x="222" y="80" font-size="11" font-weight="800" fill="#5EC4AA">1 · PERCEIVE</text>
+<text x="678" y="80" text-anchor="end" font-size="10" font-weight="700" fill="#5EC4AA">LLM · tools = []</text>
+<text x="222" y="99" font-size="10.5" fill="#e8ecf3">Reader agent reads the email and returns a typed verdict</text>
+<rect x="222" y="108" width="132" height="18" rx="5" fill="rgba(74,222,128,0.15)"/><text x="288" y="121" text-anchor="middle" font-size="9.5" font-weight="700" fill="#4ade80">Claude Haiku 5.5 · built</text>
+<rect x="362" y="108" width="110" height="18" rx="5" fill="rgba(255,255,255,0.08)"/><text x="417" y="121" text-anchor="middle" font-size="9.5" font-weight="700" fill="#8a94a6">Nova Micro · later</text>
+<rect x="480" y="108" width="128" height="18" rx="5" fill="none" stroke="#F59E0B" stroke-dasharray="4 3"/><text x="544" y="121" text-anchor="middle" font-size="9.5" font-weight="700" fill="#F59E0B">Gemma 4 E2B · stub</text>
+<text x="222" y="142" font-size="9.5" fill="#8a94a6">sees the scammer's words · cannot call any tool · one env var swaps the model</text>
+<path d="M450 150 V174" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="460" y="166" font-size="9.5" fill="#8a94a6">typed fields only → {claimed_person, intent, confidence, summary}</text>
+
+<!-- 2 DECIDE (code) -->
+<rect x="210" y="178" width="480" height="74" rx="10" fill="rgba(237,113,0,0.10)" stroke="#ED7100" stroke-width="1.4"/>
+<text x="222" y="198" font-size="11" font-weight="800" fill="#ffb366">2 · DECIDE</text>
+<text x="678" y="198" text-anchor="end" font-size="10" font-weight="700" fill="#ffb366">code · no LLM</text>
+<text x="222" y="217" font-size="10.5" fill="#e8ecf3">Policy: HOLD if intent ≠ none ∧ confidence ≥ 0.6 ∧ claimed person ∈ trust graph</text>
+<rect x="222" y="226" width="92" height="18" rx="5" fill="rgba(239,68,68,0.18)"/><text x="268" y="239" text-anchor="middle" font-size="9.5" font-weight="700" fill="#EF4444">HOLD → ask</text>
+<rect x="322" y="226" width="268" height="18" rx="5" fill="rgba(245,158,11,0.15)"/><text x="456" y="239" text-anchor="middle" font-size="9.5" font-weight="700" fill="#F59E0B">WARN · unknown name · listed sender · unreadable</text>
+<rect x="598" y="226" width="66" height="18" rx="5" fill="rgba(58,166,142,0.18)"/><text x="631" y="239" text-anchor="middle" font-size="9.5" font-weight="700" fill="#5EC4AA">PASS</text>
+<path d="M450 252 V276" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="460" y="268" font-size="9.5" fill="#8a94a6">HOLD</text>
+
+<!-- 3 ACT (code) -->
+<rect x="210" y="280" width="480" height="92" rx="10" fill="rgba(237,113,0,0.10)" stroke="#ED7100" stroke-width="1.4"/>
+<text x="222" y="300" font-size="11" font-weight="800" fill="#ffb366">3 · ACT</text>
+<text x="678" y="300" text-anchor="end" font-size="10" font-weight="700" fill="#ffb366">code · holds the tools</text>
+<text x="222" y="319" font-size="10.5" fill="#e8ecf3">write VerificationRequest (pending, 60 s) · push hold to Grandma's screen</text>
+<text x="222" y="337" font-size="10.5" fill="#e8ecf3">ask the real person on every channel at once (asyncio.gather):</text>
+<rect x="222" y="346" width="132" height="18" rx="5" fill="rgba(231,21,123,0.18)"/><text x="288" y="359" text-anchor="middle" font-size="9.5" font-weight="700" fill="#ff7ab8">WhatsApp · EUM Social</text>
+<rect x="362" y="346" width="120" height="18" rx="5" fill="rgba(231,21,123,0.18)"/><text x="422" y="359" text-anchor="middle" font-size="9.5" font-weight="700" fill="#ff7ab8">in-app · WebSocket</text>
+<rect x="490" y="346" width="118" height="18" rx="5" fill="rgba(231,21,123,0.18)"/><text x="549" y="359" text-anchor="middle" font-size="9.5" font-weight="700" fill="#ff7ab8">RCS · EUM SMS</text>
+<path d="M690 319 H728" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<path d="M690 352 H728" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<path d="M450 372 V384" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+
+<!-- interrupt band -->
+<rect x="210" y="388" width="480" height="46" rx="10" fill="#1c2433" stroke="#F59E0B" stroke-dasharray="6 4" stroke-width="1.4"/>
+<text x="450" y="406" text-anchor="middle" font-size="11" font-weight="800" fill="#F59E0B">⏸ interrupt — run 1 ends · Pidge waits ≤ 60 s for a human</text>
+<text x="450" y="423" text-anchor="middle" font-size="9.5" fill="#8a94a6">what it remembers between runs: DynamoDB VerificationRequest (status = pending)</text>
+<path d="M450 434 V456" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="460" y="449" font-size="9.5" fill="#8a94a6">reply · or silence at 60 s</text>
+
+<!-- 4 RESOLVE (code) -->
+<rect x="210" y="460" width="480" height="140" rx="10" fill="rgba(237,113,0,0.10)" stroke="#ED7100" stroke-width="1.4"/>
+<text x="222" y="480" font-size="11" font-weight="800" fill="#ffb366">4 · RESOLVE</text>
+<text x="678" y="480" text-anchor="end" font-size="10" font-weight="700" fill="#ffb366">code · run 2</text>
+<text x="222" y="499" font-size="10.5" fill="#e8ecf3">verdict handler checks the reply: request id exists · still pending · sender matches</text>
+<rect x="222" y="508" width="148" height="18" rx="5" fill="rgba(239,68,68,0.18)"/><text x="296" y="521" text-anchor="middle" font-size="9.5" font-weight="700" fill="#EF4444">No → "Not Jimin" · quarantine</text>
+<rect x="380" y="508" width="148" height="18" rx="5" fill="rgba(74,222,128,0.15)"/><text x="454" y="521" text-anchor="middle" font-size="9.5" font-weight="700" fill="#4ade80">Yes → green tick · celebration</text>
+<rect x="538" y="508" width="148" height="18" rx="5" fill="rgba(245,158,11,0.15)"/><text x="612" y="521" text-anchor="middle" font-size="9.5" font-weight="700" fill="#F59E0B">silence → shield · long-press</text>
+<text x="222" y="552" font-size="10.5" fill="#e8ecf3">Confirm tap → Report &amp; block: tag the S3 object · mark quarantined · ! turns red</text>
+<text x="222" y="570" font-size="9.5" fill="#8a94a6">confirmed sender → LIST#address row (source: pidge-confirmed) — the lookup table grows from real verdicts</text>
+<text x="222" y="588" font-size="9.5" fill="#8a94a6">Pidge can't be talked into releasing — the release rule is code, not a prompt</text>
+<path d="M690 499 H728" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+
+<!-- left inputs -->
+<text x="95" y="96" text-anchor="middle" font-size="24">📧</text>
+<text x="95" y="120" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e8ecf3">untrusted email</text>
+<text x="95" y="135" text-anchor="middle" font-size="9.5" fill="#8a94a6">lookalike "Jimin"</text>
+<path d="M150 104 H208" fill="none" stroke="#EF4444" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="95" y="472" text-anchor="middle" font-size="24">📱</text>
+<text x="95" y="496" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e8ecf3">Jimin taps Yes / No</text>
+<text x="95" y="511" text-anchor="middle" font-size="9.5" fill="#8a94a6">WhatsApp · in-app</text>
+<path d="M150 499 H208" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="95" y="544" text-anchor="middle" font-size="24">👵</text>
+<text x="95" y="568" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e8ecf3">Confirm tap</text>
+<path d="M150 552 H208" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+
+<!-- right effects -->
+<text x="736" y="323" font-size="10.5" fill="#e8ecf3">👵 hold overlay · 60 s countdown</text>
+<text x="736" y="356" font-size="10.5" fill="#e8ecf3">📱 "was this you?" · Yes / No</text>
+<text x="736" y="503" font-size="10.5" fill="#e8ecf3">👵 verdict + one button</text>
+<text x="736" y="520" font-size="9.5" fill="#8a94a6">or 🛡 shield when Jimin is silent</text>
+</svg>
+</div>
+
+<h2>Core Journey Through the System</h2>
+<div class="stepper">
+<div class="step"><div><div class="step-label">Email lands at Mail Manager</div><div class="step-desc">Ingress endpoint receives on the MX record; traffic policy allows only grandma@…; rule set drops any email that already carries <code>X-Pidge-Auth</code> (forged), then stamps SPF/DKIM/DMARC verdicts into it.</div><span class="svc">Amazon SES Mail Manager</span></div></div>
+<div class="step"><div><div class="step-label">Raw .eml written to S3</div><div class="step-desc">Rule action <em>Write to S3</em>. The object is the quarantine evidence later.</div><span class="svc">Amazon S3</span></div></div>
+<div class="step"><div><div class="step-label">S3 event starts pidge-reader</div><div class="step-desc">Lambda parses the .eml and hands the untrusted text to a Strands agent that has <strong>no tools</strong>.</div><span class="svc">AWS Lambda</span><span class="svc">Strands Agents SDK</span></div></div>
+<div class="step"><div><div class="step-label">Haiku 5.5 returns a typed verdict</div><div class="step-desc"><code>{claimedPerson, intent, confidence, summary}</code> via Bedrock structured output. Pydantic validates; bad JSON goes back to the model, never into the pipeline.</div><span class="svc">Amazon Bedrock</span></div></div>
+<div class="step"><div><div class="step-label">Policy decides in code</div><div class="step-desc">HOLD only when intent ≠ none, confidence ≥ 0.6 and the claimed name is in the trust graph. No LLM makes this call. Lookup tables (sample rows) and the auth verdict, parsed in code (exactly one <code>X-Pidge-Auth</code>, DMARC fail), add a reason or a ! mark — never a hold. The receiver is the traffic-policy address from SSM, never To/Cc.</div><span class="svc">Lambda (code)</span></div></div>
+<div class="step"><div><div class="step-label">Verification request created</div><div class="step-desc">Status <em>pending</em>, expiresAt = now + 60 s. Grandma's PWA receives the <em>hold</em> state over WebSocket.</div><span class="svc">Amazon DynamoDB</span></div></div>
+<div class="step"><div><div class="step-label">Parallel fan-out</div><div class="step-desc"><code>asyncio.gather(…, return_exceptions=True)</code> sends the question on every channel the graph lists for Jimin; the hold is already on Grandma's screen, so one failed channel never cancels it. <code>channelsSent</code> records what went out; all three failing → WARN "couldn't reach Jimin", never a release.</div><span class="svc">Lambda (code)</span></div></div>
+<div class="step"><div><div class="step-label">RCS rich card to Jimin</div><div class="step-desc"><code>SendRcsMessage</code> from the RCS testing agent: "Was this you?" card with the sanitised summary and two Reply chips, <code>PostbackData</code> <code>req-id:yes|no</code>, 60 s TTL. Lands in the native Messages app (Android RCS, iPhone iOS 18+).</div><span class="svc">AWS End User Messaging SMS · RCS</span></div></div>
+<div class="step"><div><div class="step-label">WhatsApp template to Jimin</div><div class="step-desc">Business-initiated → pre-approved template with one variable (the sanitised summary) and fixed Yes / No buttons.</div><span class="svc">AWS End User Messaging Social</span></div></div>
+<div class="step"><div><div class="step-label">In-app card to Jimin's PWA</div><div class="step-desc">Same question pushed over WebSocket (+ Web Push). Needs no approval — built first.</div><span class="svc">Amazon API Gateway WebSocket</span></div></div>
+<div class="step"><div><div class="step-label">Jimin taps No → SNS</div><div class="step-desc">RCS: the agent's two-way topic gets <code>{"type":"SUGGESTION","postbackData":"req-id:no"}</code>. WhatsApp: the WABA event destination publishes to its topic. In-app taps arrive on the WebSocket <code>$default</code> route.</div><span class="svc">Amazon SNS</span></div></div>
+<div class="step"><div><div class="step-label">pidge-verdict records the answer</div><div class="step-desc">Parses <code>postbackData</code> (RCS) or <code>interactive.button_reply.id</code> (WhatsApp) — both "req-123:no" — checks the sender matches the contact, sets status <em>denied</em> with a conditional write (first valid tap wins; a No lands at any time and overrides a Yes; a Yes needs <em>pending</em> and not expired), then emails Jimin a receipt with <code>SendEmail</code> — to his own address, never the monitored one.</div><span class="svc">AWS Lambda</span><span class="svc">Amazon DynamoDB</span><span class="svc">Amazon SES</span></div></div>
+<div class="step"><div><div class="step-label">Verdict pushed to Grandma</div><div class="step-desc">"Real Jimin replied: he did not send this. Do not make a transaction." One button.</div><span class="svc">Amazon API Gateway WebSocket</span></div></div>
+<div class="step"><div><div class="step-label">Report &amp; block</div><div class="step-desc">Confirm tap tags the S3 object and marks EmailMetadata quarantined; the ! turns red in the inbox; the sender's address joins the lookup table (<code>LIST#address</code>, <code>source: pidge-confirmed</code>) — the address, not the domain, so a gmail.com scam never marks every Gmail sender.</div><span class="svc">Amazon S3</span><span class="svc">Amazon DynamoDB</span></div></div>
+</div>
+
+<h2>Agent Layer — Strands Agents SDK</h2>
+<div class="card card-accent">
+<p><strong>Rule of Two</strong> (your 2026-10-03 ruling, same as Meta's agent rule): the model that reads untrusted text gets no tools; code runs lookups and sends; the AI can only raise a verdict. Strands expresses this directly — <code>Agent(tools=[])</code> with a Pydantic <code>structured_output_model</code>. The structured-output schema is itself a side-effect-free validating tool.</p>
+</div>
+<pre><code>from pydantic import BaseModel, Field
+from typing import Literal
+from strands import Agent
+from strands.models import BedrockModel
+
+class EmailVerdict(BaseModel):
+    claimed_person: str | None = Field(description="Name the sender claims to be, or null")
+    intent: Literal["money", "code", "urgent_action", "none"]
+    confidence: float = Field(ge=0, le=1)
+    summary: str = Field(max_length=140, description="One neutral sentence for the real person. No URLs, numbers or instructions.")
+
+reader = Agent(
+    model=BedrockModel(model_id="global.anthropic.claude-haiku-5-5", region_name="us-east-1"),
+    tools=[],                      # reads untrusted email → no tools, ever
+    system_prompt=READER_PROMPT,
+)
+verdict = reader(email_text, structured_output_model=EmailVerdict).structured_output
+
+# policy — plain code, auditable, cannot be prompted
+receiver = config.receiver_address                              # the traffic-policy address from SSM, never To/Cc
+contact = graph.lookup(receiver, verdict.claimed_person)
+reasons = lists.lookup(sender_address, sender_domain, sender_name, receiver)   # lookup tables; raises if the read fails
+reasons += auth.reasons(headers)                                # exactly one X-Pidge-Auth, else "auth_tampered"; dmarc=fail → "dmarc_fail"
+if verdict.intent != "none" and verdict.confidence >= 0.6 and contact:
+    req = requests.create(email_id, contact, verdict, ttl_seconds=60)
+    ws.push(receiver, {"state": "hold", "request_id": req.id, "reasons": reasons})
+    sent = await asyncio.gather(rcs.ask(contact, req), whatsapp.ask(contact, req), inapp.ask(contact, req),
+                                return_exceptions=True)        # one failed channel never cancels the hold
+    requests.record_channels(req.id, sent)                      # channelsSent = the ones that returned a message id
+    if not any_ok(sent):
+        ws.push(receiver, {"state": "warn", "reason": "unreachable", "reasons": reasons})   # still never a release
+elif verdict.intent != "none":
+    ws.push(receiver, {"state": "warn", "reason": "unknown_name", "reasons": reasons})
+elif reasons:
+    ws.push(receiver, {"state": "warn", "reason": "listed_sender", "reasons": reasons})   # a reason or a !, never a hold</code></pre>
+<p class="muted">Prompt-injection trap named: the only free text that leaves the Reader is <code>summary</code>; code strips URLs and digits and caps it at 140 chars before it becomes the single WhatsApp template variable. Yes / No are fixed buttons, never parsed from text, and pidge-verdict writes them with a conditional update (first valid tap wins). The auth header the Reader sees is Mail Manager's own: a sender-written <code>X-Pidge-Auth</code> is dropped at ingress, a second copy adds the reason <code>auth_tampered</code>. Bedrock Guardrails' prompt-attack filter is optional (it costs ~2× the Haiku call).</p>
+
+<h2>Workflow Patterns</h2>
+<p class="muted">Each LangChain-style pattern as it appears in SendPidge, with the mechanism that implements it in the POC and the Strands primitive it maps to. Tags say what is actually built by Oct 28.</p>
+<div class="grid2">
+
+<div class="pattern">
+<h3>Sequential <span class="tag tag-green">built</span></h3>
+<svg viewBox="0 0 360 70"><g font-family="Avenir, system-ui" font-size="10" fill="#e8ecf3" text-anchor="middle">
+<rect x="4" y="22" width="62" height="28" rx="6" fill="#3B48CC"/><text x="35" y="40">Mail Mgr</text>
+<rect x="78" y="22" width="52" height="28" rx="6" fill="#3F8624"/><text x="104" y="40">S3</text>
+<rect x="142" y="22" width="62" height="28" rx="6" fill="#ED7100"/><text x="173" y="40">Reader</text>
+<rect x="216" y="22" width="62" height="28" rx="6" fill="#ED7100"/><text x="247" y="40">Policy</text>
+<rect x="290" y="22" width="66" height="28" rx="6" fill="#3B48CC"/><text x="323" y="40">DynamoDB</text>
+<g stroke="#8a94a6" stroke-width="1.4" fill="none" marker-end="url(#ah)"><path d="M66 36h10"/><path d="M130 36h10"/><path d="M204 36h10"/><path d="M278 36h10"/></g></g></svg>
+<p><b>Lambda handler, top to bottom.</b> Strands: a <code>Graph</code> with plain edges. One linear path, so no framework is needed for ordering.</p>
+</div>
+
+<div class="pattern">
+<h3>Conditional <span class="tag tag-green">built</span></h3>
+<svg viewBox="0 0 360 110"><g font-family="Avenir, system-ui" font-size="10" fill="#e8ecf3" text-anchor="middle">
+<rect x="4" y="40" width="62" height="28" rx="6" fill="#ED7100"/><text x="35" y="58">verdict</text>
+<path d="M110 36 l34 18 l-34 18 l-34 -18 z" fill="#1c2433" stroke="#F59E0B"/><text x="110" y="51" font-size="8.5">flagged ∧</text><text x="110" y="61" font-size="8.5">known?</text>
+<rect x="200" y="6" width="150" height="26" rx="6" fill="#EF4444"/><text x="275" y="23">HOLD → ask the real person</text>
+<rect x="200" y="42" width="150" height="26" rx="6" fill="#F59E0B"/><text x="275" y="59" fill="#0f141c">WARN · unknown or listed</text>
+<rect x="200" y="78" width="150" height="26" rx="6" fill="#3AA68E"/><text x="275" y="95">PASS (not flagged)</text>
+<g stroke="#8a94a6" stroke-width="1.4" fill="none" marker-end="url(#ah)"><path d="M66 54h8"/><path d="M144 54 h20 V19 h34"/><path d="M144 54 h54"/><path d="M144 54 h20 V91 h34"/></g></g></svg>
+<p><b>Code <code>if</code> on <code>structured_output</code>.</b> Strands: <code>add_edge(a, b, condition=fn)</code> — the condition is a plain callable, which is exactly where the Rule of Two wants the decision.</p>
+</div>
+
+<div class="pattern">
+<h3>Parallel <span class="tag tag-green">built 2 of 3</span></h3>
+<svg viewBox="0 0 360 110"><g font-family="Avenir, system-ui" font-size="10" fill="#e8ecf3" text-anchor="middle">
+<rect x="4" y="40" width="52" height="28" rx="6" fill="#ED7100"/><text x="30" y="58">ask</text>
+<circle cx="90" cy="54" r="5" fill="#E7157B"/>
+<rect x="130" y="6" width="120" height="26" rx="6" fill="#E7157B"/><text x="190" y="23">WhatsApp · EUM Social</text>
+<rect x="130" y="42" width="120" height="26" rx="6" fill="#E7157B"/><text x="190" y="59">in-app · WebSocket</text>
+<rect x="130" y="78" width="120" height="26" rx="6" fill="#E7157B"/><text x="190" y="95">RCS · EUM SMS</text>
+<circle cx="290" cy="54" r="5" fill="#E7157B"/>
+<rect x="306" y="40" width="50" height="28" rx="6" fill="#3B48CC"/><text x="331" y="58">pending</text>
+<g stroke="#8a94a6" stroke-width="1.4" fill="none" marker-end="url(#ah)"><path d="M56 54h28"/><path d="M95 54 V19 h33"/><path d="M95 54 h33"/><path d="M95 54 V91 h33"/><path d="M250 19 h35 V49"/><path d="M250 55 h33"/><path d="M250 91 h35 V59"/><path d="M296 54h8"/></g></g></svg>
+<p><b><code>asyncio.gather(…, return_exceptions=True)</code> in the Lambda.</b> Strands: ready nodes in a Graph batch run as concurrent tasks. The first valid answer wins by conditional write; a later No still overrides a Yes.</p>
+</div>
+
+<div class="pattern">
+<h3>Human-in-the-loop <span class="tag tag-green">built</span></h3>
+<svg viewBox="0 0 360 90"><g font-family="Avenir, system-ui" font-size="10" fill="#e8ecf3" text-anchor="middle">
+<rect x="4" y="30" width="52" height="28" rx="6" fill="#ED7100"/><text x="30" y="48">ask</text>
+<rect x="70" y="24" width="86" height="40" rx="6" fill="#1c2433" stroke="#F59E0B"/><text x="113" y="40">⏸ wait ≤ 60 s</text><text x="113" y="54" font-size="8.5" fill="#8a94a6">DynamoDB pending</text>
+<rect x="170" y="30" width="80" height="28" rx="6" fill="#4ade80"/><text x="210" y="48" fill="#0f141c">Jimin: Yes / No</text>
+<rect x="264" y="30" width="92" height="28" rx="6" fill="#3AA68E"/><text x="310" y="48">verdict → PWA</text>
+<text x="113" y="80" font-size="8.5" fill="#8a94a6">run 1 ends here · run 2 starts on SNS / $default</text>
+<g stroke="#8a94a6" stroke-width="1.4" fill="none" marker-end="url(#ah)"><path d="M56 44h12"/><path d="M156 44h12"/><path d="M250 44h12"/></g></g></svg>
+<p><b>Two Lambdas + DynamoDB state.</b> Strands: an interrupt returns <code>Status.INTERRUPTED</code> and resumes with an <code>interruptResponse</code>; on Lambda the resume is the webhook, not a sleeping process.</p>
+</div>
+
+<div class="pattern">
+<h3>Loop / retry <span class="tag tag-warn">pattern — POC shows shield at 60 s</span></h3>
+<svg viewBox="0 0 360 90"><g font-family="Avenir, system-ui" font-size="10" fill="#e8ecf3" text-anchor="middle">
+<rect x="4" y="30" width="74" height="28" rx="6" fill="#E7157B"/><text x="41" y="48">WhatsApp</text>
+<rect x="100" y="30" width="74" height="28" rx="6" fill="#E7157B"/><text x="137" y="48">in-app</text>
+<rect x="196" y="30" width="60" height="28" rx="6" fill="none" stroke="#E7157B" stroke-dasharray="4 3"/><text x="226" y="48" fill="#8a94a6">SMS</text>
+<rect x="278" y="30" width="78" height="28" rx="6" fill="#F59E0B"/><text x="317" y="48" fill="#0f141c">🛡 shield</text>
+<text x="89" y="22" font-size="8.5" fill="#8a94a6">timeout</text><text x="185" y="22" font-size="8.5" fill="#8a94a6">timeout</text><text x="267" y="22" font-size="8.5" fill="#8a94a6">timeout</text>
+<text x="180" y="80" font-size="8.5" fill="#8a94a6">a late No still lands · a late Yes is ignored</text>
+<g stroke="#8a94a6" stroke-width="1.4" fill="none" marker-end="url(#ah)"><path d="M78 44h20"/><path d="M174 44h20"/><path d="M256 44h20"/></g></g></svg>
+<p><b>Later: Amazon EventBridge Scheduler</b> re-dispatches on timeout. Strands: a Graph cycle with <code>reset_on_revisit</code> and <code>set_max_node_executions</code>. POC: the PWA counts down and shows the shield; a long-press releases.</p>
+</div>
+
+<div class="pattern">
+<h3>Tool-less agent (Rule of Two) <span class="tag tag-green">built</span></h3>
+<svg viewBox="0 0 360 70"><g font-family="Avenir, system-ui" font-size="10" fill="#e8ecf3" text-anchor="middle">
+<rect x="4" y="22" width="78" height="28" rx="6" fill="#EF4444"/><text x="43" y="40">untrusted email</text>
+<rect x="98" y="16" width="80" height="40" rx="6" fill="#01A88D"/><text x="138" y="33">Reader</text><text x="138" y="47" font-size="8.5">tools = []</text>
+<rect x="194" y="22" width="70" height="28" rx="6" fill="#3B48CC"/><text x="229" y="40">typed verdict</text>
+<rect x="280" y="22" width="76" height="28" rx="6" fill="#ED7100"/><text x="318" y="40">code + tools</text>
+<g stroke="#8a94a6" stroke-width="1.4" fill="none" marker-end="url(#ah)"><path d="M82 36h12"/><path d="M178 36h12"/><path d="M264 36h12"/></g></g></svg>
+<p><b>Only typed fields cross the boundary.</b> The thing that can send messages never reads the scammer's words. This is the line a judge should be able to point at.</p>
+</div>
+
+</div>
+
+<h2>Stack</h2>
+<div class="tbl"><table>
+<tr><th>Layer</th><th>Choice</th><th>Why</th></tr>
+<tr><td>Frontend</td><td>PWA — HTML/CSS/JS, service worker, Web Push</td><td>Installs to the iPhone home screen; no App Store</td></tr>
+<tr><td>Inbound email</td><td>Amazon SES Mail Manager (ingress endpoint · traffic policy · rule set)</td><td>CDS-branded; same chain as the AWS sample; auth verdicts for free</td></tr>
+<tr><td>Outbound email</td><td>Amazon SES <code>SendEmail</code> (sesv2) — the verdict receipt to Jimin</td><td>The one SES call that runs at demo time; receiving alone shows no SES send</td></tr>
+<tr><td>Agent runtime</td><td>AWS Lambda (Python 3.12) + Strands Agents SDK layer</td><td>Event-driven, $0 at POC; AgentCore Runtime is the upgrade</td></tr>
+<tr><td>Model</td><td>Amazon Bedrock · Claude Haiku 5.5 <code>global.anthropic.claude-haiku-5-5</code></td><td>$0.10 / $0.50 per MTok; structured output; 10× cheaper than Haiku 4.5</td></tr>
+<tr><td>State</td><td>Amazon DynamoDB</td><td>Trust graph · verification requests · email metadata · lookup tables (sample rows)</td></tr>
+<tr><td>Ask — WhatsApp</td><td>AWS End User Messaging Social</td><td>CDS service; template + buttons; reply via SNS</td></tr>
+<tr><td>Ask — in-app</td><td>Amazon API Gateway WebSocket</td><td>Zero approvals; sub-second; both Grandma and Jimin</td></tr>
+<tr><td>Ask — RCS</td><td>AWS End User Messaging SMS · RCS testing agent</td><td>The brief's first-named channel; rich card + Yes/No chips in the native Messages app; testing agent approved in minutes, no carrier approval</td></tr>
+<tr><td>Replies</td><td>Amazon SNS → Lambda</td><td>How EUM Social delivers inbound WhatsApp</td></tr>
+<tr><td>Storage</td><td>Amazon S3</td><td>Raw .eml · quarantine evidence · PWA hosting</td></tr>
+<tr><td>IaC · traces</td><td>AWS CDK v2 · Strands OpenTelemetry → CloudWatch / X-Ray</td><td>Traces show the agent run in the demo video</td></tr>
+</table></div>
+
+<h2>Tiered AI — cost reality</h2>
+<p class="muted">Per email ≈ 1,500 input + 150 output tokens. Prices retrieved 2026-10-21 (claude.com/pricing, Bedrock pricing page, AWS ML blog for Nova Micro).</p>
+<div class="tier-row">
+<div class="tier-box"><div class="tier-name" style="color:var(--text-2)">T0 · Heuristics</div><div class="tier-where">JS in the PWA</div><div class="tier-what">sender ∉ graph? money/code words? in-PWA copy of the lists.py lookalike check</div><div class="tier-cost">$0 · filters most mail</div><div style="margin-top:6px"><span class="tag tag-warn">later</span></div></div>
+<div class="tier-box"><div class="tier-name" style="color:var(--text-2)">T1 · Light classifier</div><div class="tier-where">Amazon Nova Micro · or Gemma 4 E2B</div><div class="tier-what">Nova: tool-calling for JSON · Gemma: OpenAI-compatible route, reasoning off</div><div class="tier-cost">$0.000074 · $0.000072 / email</div><div style="margin-top:6px"><span class="tag tag-warn">later</span> <span class="tag tag-warn">Gemma = stub</span></div></div>
+<div class="tier-box active"><div class="tier-name" style="color:var(--accent)">T2 · Full read</div><div class="tier-where">Claude Haiku 5.5</div><div class="tier-what">claimed person · intent · confidence · summary</div><div class="tier-cost">$0.000225 / email</div><div style="margin-top:6px"><span class="tag tag-green">hackathon: every email</span></div></div>
+</div>
+<div class="card">
+<p><strong>No on-device LLM is possible for a PWA on iPhone.</strong> AWS SageMaker Edge Manager was discontinued (2024-04); Greengrass targets IoT boxes; Chrome's Prompt API is desktop-only; Apple Foundation Models is a Swift API with no Safari surface. A native app later would unlock Apple's on-device 3B model.</p>
+<p><strong>Honest math:</strong> tiering saves ~67% of model cost, which is $15 vs $5 per 100K emails. T0 is the tier that matters. Gemma 4 E2B ($0.04/$0.08) ties Nova Micro on price (~3× cheaper than Haiku) but lives only on the <code>bedrock-mantle</code> OpenAI endpoint — no Guardrails, no cross-region, verbose reasoning unless turned off. It stays wired as a <strong>stub reader</strong> behind the model flag, untested in the POC; a 20-email side-by-side after the hackathon picks T1.</p>
+</div>
+
+<h2>Decisions — your call, my pick first</h2>
+<div class="decision"><h3>D1 · How much Strands?</h3><p class="pick"><b>Pick: Strands <code>Agent</code> for the Reader only; orchestration in code.</b> Fewer LLM calls, Jimin's phone buzzes faster, policy is auditable, and it is exactly the Rule of Two. OTel traces of the Reader still show in the demo.</p><p class="alt">Alternative: a Strands <code>Graph</code> Reader → Composer (both tool-less; Composer writes Jimin's and Grandma's Korean sentences). +1–2 s, +$0.0002/email, more "graph" to show judges. Composer is the first "later".</p></div>
+<div class="decision"><h3>D2 · Lambda or AgentCore Runtime?</h3><p class="pick"><b>Pick: AWS Lambda</b> with the official Strands layer. You know the Cloud Functions model; 7 days; 5 new services already.</p><p class="alt">Alternative: Amazon Bedrock AgentCore Runtime — the box judges saw labelled "(NEW)" in the sample; 8-hour sessions could hold the 60 s wait; needs a container, ECR, IAM, and <code>InvokeAgentRuntime</code>. The Reader code is identical either way, so it is a deploy-time swap later.</p></div>
+<div class="decision"><h3>D3 · Model per tier</h3><p class="pick"><b>Pick: Haiku 5.5 for everything in the POC.</b> Request model access on day 1 (not open by default). Nova Micro as T1 later; Gemma 4 E2B wired as a stub reader (untested in the POC); T0 heuristics later.</p><p class="alt">Fallback if access is late: <code>us.anthropic.claude-haiku-4-5</code> — same Converse + structured output, 10× the price, trivial at POC volume.</p></div>
+<div class="decision"><h3>D4 · Bedrock Guardrails prompt-attack filter?</h3><p class="pick"><b>Pick: skip for the POC.</b> It costs ~$0.00048 per email — twice the Haiku call — and the tool-less Reader is the real defence. The AWS chat-orchestrator sample also sets <code>PROMPT_ATTACK: NONE</code>.</p><p class="alt">Later: apply only to T0-flagged mail.</p></div>
+<div class="decision"><h3>D6 · RCS as the third real channel <span class="tag tag-green">decided 2026-10-21</span></h3><p class="pick"><b>Built, not stubbed.</b> The stub assumed "registration takes days"; the AWS docs show a testing registration approved in minutes with no carrier approval, the full API, and delivery to tester phones in any country. Rich card + Yes/No chips via <code>SendRcsMessage</code>, taps via the two-way SNS topic, same <code>asyncio.gather</code> and the same verdict handler.</p><p class="alt">Not built: SMS fallback (needs an SMS number). Risk: Korea is not a launch country and RBM delivery to a Korean tester SIM is unverified → <code>RCS_ENABLED</code> flag, day-1 check with the phone in hand.</p></div>
+<div class="decision"><h3>D5 · Lookup tables as a semi-stub?</h3><p class="pick"><b>Pick: yes — sender-side only.</b> Known-bad sender domains and lookalike names checked against Grandma's own contacts, ~20 hand-written sample rows, a reason or a ! mark, never a hold. Confirm writes the first real row. Tier 1–3 feeds come after the hackathon through MailPidge's <code>@mailpidge/link-intel</code> module in its <code>reasonsOnly</code> policy. Closes a PRD gap: <code>prd.md > What We're Building</code> lists lookalike sender detection, which this spec had parked in T0 "later".</p><p class="alt">Alternative: skip entirely; lookalike moves to T0 later and pidge-verdict writes nothing on Confirm. Body links and URL safety stay cut either way (<code>scope.md > Explicitly Cut</code>).</p></div>
+<div class="card">
+<p><strong>Decided by evidence (say if you disagree):</strong> Amazon SES Mail Manager instead of classic receipt rules · Amazon SNS is back for WhatsApp replies (that is how EUM Social delivers inbound) · exact names "AWS End User Messaging Social / SMS" · Python for the agent Lambda (TS SDK has Graph but no GA statement) · a classifier failure shows WARN, never a silent pass (your no-silent-fallback rule) · dead-letter queue + alarm on the email trigger, idempotent <code>EMAIL#</code> write, per-user token on WebSocket <code>$connect</code>, retention rules in CDK, IAM scoped to the phone-number ARN, config in SSM Parameter Store, pytest on policy / sanitizer / lists / verdict — the gaps a code-reading judge would flag against the AWS sample repos.</p>
+<p><strong>Deck review fixes (2026-10-21, four read-only reviewers over the three pre-interview decks):</strong> Confirm writes <code>LIST#address</code>, not the domain · conditional verdict write with No-beats-Yes and message-id dedupe (late replies settled: No lands any time, Yes only while pending) · hold pushed before <code>gather(…, return_exceptions=True)</code> · <code>X-Pidge-Auth</code> dropped at ingress if pre-written and parsed in code · email body rendered as text under a CSP · SES <code>SendEmail</code> receipt to Jimin so one SES call runs at demo time. Ruled out: Nostr / Matrix / passkeys (Later — both sides must enrol, and RCS and WhatsApp buttons cannot carry a signature), redaction of the held body, a HOLD floor in code (a fooled Reader gets WARN, keeping the 2026-10-05 "lists never verdicts" ruling).</p>
+</div>
+<div class="card">
+<p><strong>Build-time hardening from the same review (sharpen existing steps, no new steps):</strong></p>
+<p><b>Reader step</b> — <code>confidence</code> described as "how clearly the email asks for this intent", never "how fake the sender looks"; READER_PROMPT cues in EN/KO (secrecy, "phone broke / new number", new payee, today deadline, "send the code back", remote-access app, "contact me on another app" → <code>urgent_action</code>); body wrapped in a random boundary tag the prompt names as data.</p>
+<p><b>Lookup-tables step</b> — reasons for a display name containing an address, <code>Reply-To</code> domain ≠ <code>From</code> domain, a known contact name from an address not on the <code>CONTACT#</code> row ("Jimin doesn't usually write from this address"); a money/code/secrecy keyword hit with a known name is a reason (WARN), not a hold.</p>
+<p><b>CDK step</b> — ask cap of 3 open requests per contact per hour (over the cap: keep the hold, send nothing, never PASS); AWS Budgets alarm; reserved concurrency on pidge-reader; one IAM role per Lambda (pidge-verdict gets no S3 read and no Bedrock); <code>aws:SourceAccount</code> / <code>aws:SourceArn</code> on both SNS topic policies and the sms-voice two-way role; <code>$connect</code> token stored hashed, compared in constant time, out of access logs; logs and OTel spans carry ids, enums and reason codes only — check one real Strands trace for prompt text.</p>
+<p><b>Swarm step (build item 6)</b> — eight grounded templates (phone-broke from a friend's address EN + KO · code-only ask · hijacked real address with auth pass · post-voice-clone "bail by 3 pm" · AI-personalised lure · lookalike sender + gift card / crypto ATM · injection pack: visible line, hidden HTML comment, fake JSON verdict, coaching to hold Cancel) plus two benign controls (real Jimin gift email → HOLD then Yes; family chat with no ask → PASS); assert no number, URL or address from the email reaches any outbound payload; run with RCS / WhatsApp off or an in-app-only receiver; report hold rate and false holds.</p>
+<p><b>Day-1 step</b> — WhatsApp template <code>message_send_ttl_seconds</code> = 60, no "verify your identity" wording (Meta files it as authentication), <code>metaApiVersion</code> ≥ v21; preflight script (Haiku access, template APPROVED + UTILITY, both SNS topics subscribed, RCS tester ACTIVE, MX on its own hostname, SES identities verified); LICENSE and a prior-work note (MailPidge icon and theme) in the README; copy never says "safe" — "Jimin says he sent this"; "emergency contact", not "guardian".</p>
+</div>
+
+<h2>Components</h2>
+<details><summary>PWA Shell</summary><div class="detail-body"><p>Omni-inbox (email real, 3–4 mock rows for SMS/notifications added last), email detail, Pidge hold overlay (60 s countdown, 5 s long-press cancel, shield on timeout), onboarding, verification card for Jimin. Hosted on S3 (+ CloudFront optional). The email body is shown as text only (<code>textContent</code> of the HTML-stripped body from pidge-reader, never <code>innerHTML</code>); no remote images, so no tracking pixel tells the sender she opened it and no injected markup can imitate the verdict screen or read the WebSocket token. CSP: <code>default-src 'self'; img-src 'self' data:; connect-src wss://…</code>.</p><p>PRD ref: <code>prd.md > Screens and Layout</code></p></div></details>
+<details><summary>Mail Manager Inbound</summary><div class="detail-body"><p>Ingress endpoint (OPEN) → traffic policy (ALLOW recipient, DROP rest) → rule set: rule 1 <em>Drop</em> when the MIME header <code>X-Pidge-Auth</code> already exists (a sender cannot pre-write the verdict), rule 2 add header <code>X-Pidge-Auth</code> from SPF/DKIM/DMARC verdicts, Write to S3. pidge-reader reads it with <code>get_all</code>; anything but exactly one value is the reason <code>auth_tampered</code> (covers whether Add header appends or replaces, unverified). CDK via <code>AWS::SES::MailManagerIngressPoint / TrafficPolicy / RuleSet</code>. You create the MX record from the stack output.</p><p>PRD ref: <code>prd.md > Message Detection</code></p></div></details>
+<details><summary>pidge-reader (Lambda + Strands)</summary><div class="detail-body"><p>S3 event → parse .eml → Reader agent (tools=[], Haiku 5.5, structured output) → policy code → DynamoDB request → WebSocket "hold" → parallel ask with <code>return_exceptions=True</code> → <code>channelsSent</code>. The hold goes out before the fan-out, so one failed channel never turns a live hold into a WARN; only all three failing does. ≥512 MB / 60 s timeout (inference; the docs example is 128 MB / 30 s). Async S3 invocation: retries twice, then an on-failure destination → SQS dead-letter queue + CloudWatch alarm, never a silent drop. Idempotent: <code>EMAIL#&lt;s3Key&gt;</code> written first with <code>attribute_not_exists</code>; a duplicate event exits before the Reader.</p><p>PRD ref: <code>prd.md > Hold and Verify</code></p></div></details>
+<details><summary>Trust graph (DynamoDB)</summary><div class="detail-body"><p>Single table. <code>RECEIVER#email / CONTACT#name</code> rows hold the real person's WhatsApp number, PWA connection id and email. <code>REQUEST#id</code> rows hold status and expiry. <code>EMAIL#id</code> rows hold s3Key, authVerdict, flagged, quarantined.</p><p><b>Retention, set in CDK:</b> raw .eml deleted after 30 days by an S3 lifecycle rule unless tagged <code>quarantine=true</code> (kept 1 year, then Glacier Deep Archive); DynamoDB TTL on <code>REQUEST#</code> 30 d, <code>CONN#</code> 1 d, <code>EMAIL#</code> 90 d (quarantined rows exempt); <code>LIST#</code> rows carry <code>expiresAt</code> and are replaced on sync — a stale feed reads as unavailable, never clean; CloudWatch logs 14 d, X-Ray 30 d. Storage is cheap; logs and requests are what grow.</p><p>PRD ref: <code>prd.md > Relationship Graph</code></p></div></details>
+<details><summary>WhatsApp channel (EUM Social)</summary><div class="detail-body"><p><code>SendWhatsAppMessage</code> with a pre-approved template (one variable: summary; buttons Yes / No with payload <code>req-id:yes|no</code>). Sandbox: 5 registered numbers. Inbound: WABA event destination → SNS → pidge-verdict, which must parse <code>interactive.button_reply.id</code> (the AWS sample parses only <code>text.body</code>). IAM: <code>social-messaging:SendWhatsAppMessage</code> on the phone-number-id ARN only, as in the chat-orchestrator sample. Config (phone-number id, template name, WABA id) from SSM Parameter Store <code>/sendpidge/whatsapp/*</code>, never hard-coded.</p><p>PRD ref: <code>prd.md > Verification to Real Person</code></p></div></details>
+<details><summary>In-app channel (API Gateway WebSocket)</summary><div class="detail-body"><p>One WebSocket API. <code>$connect</code> requires a per-user token issued at onboarding (stored on the <code>RECEIVER#</code> / <code>CONTACT#</code> row); <code>ws_connect</code> rejects anything else and takes <code>userId</code> from the matched row, never from the client. Grandma's connection receives hold → verdict. Jimin's connection receives the verification card and sends Yes/No on <code>$default</code>. Connection ids stored in DynamoDB. Web Push (VAPID) wakes the PWA on iOS 16.4+.</p><p>PRD ref: <code>prd.md > Verification to Real Person</code></p></div></details>
+<details><summary>pidge-verdict (Lambda)</summary><div class="detail-body"><p>Triggers: SNS (RCS two-way topic, WhatsApp topic) and WebSocket <code>$default</code> (in-app, Confirm tap). One parser per channel — RCS <code>postbackData</code>, WhatsApp <code>interactive.button_reply.id</code>, in-app body — all yielding <code>req-id:yes|no</code>. Validates request id and that the sender matches the contact's channel. Writes the status with a conditional <code>UpdateItem</code>: <b>No beats Yes</b> — a No is accepted at any time, even after a Yes or the timeout, and sets <em>denied</em>; a Yes needs <code>status = pending AND expiresAt &gt; now</code> and sets <em>confirmed</em>; a failed condition means the first valid tap already won (three channels make two taps normal) and the duplicate is logged, never applied. Each channel's message id (RCS <code>inboundMessageId</code>, WhatsApp <code>wamid</code>) is stored on the request so a redelivered SNS record exits. Then: SES <code>SendEmail</code> receipt to <code>contactEmail</code> ("Your answer was recorded; the email to Grandma stays held / was released"), never to the monitored address so nothing re-enters pidge-reader; pushes verdict to Grandma; on Confirm tags the S3 object, marks quarantined and writes one <code>LIST#address</code> row for the sender's full address (<code>source: pidge-confirmed</code>) — the address, never the registrable domain, because one gmail.com scam would otherwise mark every Gmail sender including real Jimin. The only new code the lookup tables add to the real flow.</p><p>PRD ref: <code>prd.md > Verdict and Resolution</code></p></div></details>
+<details><summary>Lookup tables (semi-stub)</summary><div class="detail-body"><p>Sender-side only: known-bad sender domains/addresses plus lookalike detection against Grandma's own contact names (confusable skeleton + edit distance ≤ 1 — "JImin", Cyrillic "Jіmin"). <code>shared/lists.py</code> reads <code>LIST#</code> rows from the same table and returns reasons; policy code decides what to show. A match adds a reason or a ! mark, never a hold, never a pass (your 2026-10-05 ruling: lists add reasons, never verdicts). A failed read raises → the same WARN as a Reader failure; unavailable is never clean.</p><p>POC data: ~20 hand-written rows in <code>infra/seed/lists.sample.json</code> (the demo's lookalike domain, invented brand-hyphen domains, a ~30-entry confusables map), all <code>source: "sample"</code> and labelled sample in the UI. No real feed is seeded in the POC, and real list data never lives in the repo (open-core ruling). Only commercial-OK sources are ever registered; each carries a licence tag, as in MailPidge's registry guard.</p><p>Data tiers (not the AI tiers above): <b>tier 0 pidge-confirmed</b> (written on Confirm — the demo adds the first real row) · <b>tier 1 free commercial-OK feeds</b> (Phishing.Database MIT · KISA phishing sites · AMF blacklist, Licence Ouverte) · <b>tier 2 live lookup</b> (Google Web Risk Lookup, ~100k lookups/month free · RDAP domain age) · <b>tier 3 paid</b> (Spamhaus DQS DBL · APWG eCX · OpenPhish Premium · urlscan.io). Tiers 1–3 arrive after the hackathon via MailPidge <code>@mailpidge/link-intel</code> (<code>reasonsOnly</code> policy; <code>POST /v1/link-intel/check</code>, LINK-INTEL-1.24, default off) or by writing the same row shape. Body links and URL safety stay cut.</p><p>PRD ref: <code>prd.md > Message Detection</code></p></div></details>
+<details><summary>RCS channel (EUM SMS · RCS agent)</summary><div class="detail-body"><p><b>Built.</b> One AWS RCS Agent with a testing registration (<code>TEST_RCS_LAUNCH_REGISTRATION</code>): no carrier approval, approved in minutes, full API, delivery only to phones added as testers (<code>create-verified-destination-number --rcs-agent-id</code>; invite from "RBM Tester Management" in 2–20 min, on iPhone under Unknown Senders → "Make me a tester"). Setup script <code>infra/scripts/rcs_agent_setup.sh</code> follows the AWS sample: agent → registration → logo 224×224 + banner 1440×448 → 23 field values (privacy + terms URLs from <code>edge/public/</code>, accent colour ≥ 4.5:1 on white, <code>billingCategory</code> set) → submit → poll <code>TestingAgent.Status: ACTIVE</code>. Two-way: <code>update-rcs-agent --two-way-enabled --two-way-channel-arn &lt;SNS&gt; --two-way-channel-role &lt;role&gt;</code>.</p><p>Send: <code>send_rcs_message</code> with a VERTICAL <code>RichCard</code> ("Was this you?", sanitised summary, Pidge image) and two <code>Reply</code> suggestions, <code>PostbackData</code> <code>req-id:yes|no</code>, <code>TimeToLive=60</code>. Limits: chip text ≤ 25 chars, ≤ 11 suggestions. Direct-to-agent sends are RCS-or-nothing; SMS fallback needs a separate SMS number, so it is not built (in-app and WhatsApp are the fallback).</p><p>Inbound: taps arrive only on the two-way SNS topic as <code>messageBody</code> JSON <code>{"type":"SUGGESTION","text":"No","postbackData":"req-id:no"}</code>; pidge-verdict routes on <code>postbackData</code>, never on display text. Test messages cost the standard RCS rate per delivered message; whether a testing agent incurs launch fees is unverified (check the bill on day 2). Research: <code>devpost/research/research_aws_rcs.md</code>.</p><p>PRD ref: <code>prd.md > Verification to Real Person</code></p></div></details>
+<details><summary>Tests (pytest)</summary><div class="detail-body"><p><code>test_policy.py</code>: the HOLD / WARN / PASS table across intent × confidence × known / unknown / listed sender; a Reader failure → WARN, never PASS. <code>test_sanitize.py</code>: URLs, phone numbers, digit runs stripped; 140-char cap. <code>test_lists.py</code>: lookalike skeleton hits and the sample rows. <code>test_verdict.py</code>: reply rejected when the request is missing or the sender does not match; a Yes rejected when not pending or expired; a late No still sets denied and overrides an earlier Yes; a second tap on another channel and a redelivered message id are logged, not applied; the receipt goes to <code>contactEmail</code> only. <code>test_policy.py</code> also covers two <code>X-Pidge-Auth</code> headers → <code>auth_tampered</code>, all three channels failing → WARN <code>unreachable</code>, one failing → hold stays. Run at the end of each build step; they prove the Rule of Two in code.</p></div></details>
+<details><summary>Onboarding</summary><div class="detail-body"><p>Contacts picker (manual entry fallback) → choose guardians → verification message over WhatsApp/SMS (template) → confirm → graph rows written. Mock data where the picker is unsupported.</p><p>PRD ref: <code>prd.md > Onboarding</code></p></div></details>
+
+<h2>File Structure</h2>
+<div class="tree">SendPidge/
+├── pwa/                          # Frontend PWA (static, hosted on S3)
+│   ├── index.html · manifest.json · sw.js
+│   ├── css/app.css               # MailPidge dark theme, liquid glass
+│   └── js/ app.js · websocket.js · pidge-overlay.js · onboarding.js · heuristics.js (T0, later)
+├── lambda/
+│   ├── pidge_reader/handler.py   # S3 event → Strands Reader → policy → ask
+│   ├── pidge_verdict/handler.py  # SNS + WebSocket $default → conditional verdict write → SES receipt → push
+│   ├── ws_connect/handler.py     # $connect (per-user token check) / $disconnect → connection ids
+│   └── shared/ reader_agent.py · policy.py · auth.py (X-Pidge-Auth → reasons) · graph.py · channels.py · lists.py (lookup tables, semi-stub) · sanitize.py
+├── infra/                        # AWS CDK v2 (TypeScript)
+│   ├── lib/sendpidge-stack.ts    # Mail Manager, S3 (+ lifecycle), Lambda + Strands layer (+ DLQ, alarm, log retention), DynamoDB (+ TTL), API GW WS, SNS ×2, EUM
+│   ├── scripts/rcs_agent_setup.sh # RCS agent + testing registration + testers + two-way (AWS sample's AGENTS.md)
+│   ├── brand-assets/             # logo 224×224 · banner 1440×448 (Pidge), accent colour ≥ 4.5:1
+│   └── seed/lists.sample.json    # ~20 sample LIST# rows (labelled sample; real tiers never in the repo)
+│   └── tests/                    # pytest: test_policy · test_sanitize · test_lists · test_verdict
+├── devpost/                      # this workspace
+└── README.md</div>
+
+<h2>External Services</h2>
+<div class="tbl"><table>
+<tr><th>Service</th><th>Setup / approval</th><th>Cost at POC</th></tr>
+<tr><td>Amazon SES Mail Manager</td><td>Ingress endpoint, traffic policy, rule set; MX record (hours)</td><td>Per-message + endpoint; check pricing day 1 <span class="tag tag-grey">unverified</span></td></tr>
+<tr><td>Amazon SES (sending)</td><td><code>SendEmail</code> from pidge-verdict to Jimin's <code>contactEmail</code>; sender identity verified; sandbox → verify Jimin's address too (day 1)</td><td>$0.10 per 1,000</td></tr>
+<tr><td>Amazon Bedrock · Haiku 5.5</td><td>Model access request (minutes–hours)</td><td>$0.000225 / email</td></tr>
+<tr><td>AWS End User Messaging Social</td><td>WABA + sandbox (5 numbers); template approval 1–24 h</td><td>Meta conversation fee + AWS per message <span class="tag tag-grey">unverified</span></td></tr>
+<tr><td>Amazon API Gateway WebSocket</td><td>None</td><td>Free tier</td></tr>
+<tr><td>Amazon SNS · S3 · DynamoDB · Lambda</td><td>None</td><td>Free tier</td></tr>
+<tr><td>AWS End User Messaging SMS (RCS)</td><td>Testing registration (minutes, no carrier approval); tester invite 2–20 min; brand assets + privacy/terms URLs</td><td>Standard RCS rate per delivered message; launch fees for a testing agent <span class="tag tag-grey">unverified</span></td></tr>
+<tr><td>Strands Agents SDK</td><td>Lambda layer <code>strands-agents-py3_12-x86_64</code></td><td>Open source</td></tr>
+</table></div>
+
+<h2>Failure Modes</h2>
+<div class="card card-warn"><h3>Haiku 5.5 access not granted in time</h3><p>Swap model id to <code>us.anthropic.claude-haiku-4-5</code>. Same code path. Confirm exact ids in the console on day 1.</p></div>
+<div class="card card-red"><h3>Reader can't produce a valid verdict</h3><p>WARN badge — "Pidge couldn't check this one" — plus a logged error. Never a silent pass: a classifier failure fails closed toward the user.</p></div>
+<div class="card card-warn"><h3>pidge-reader crashes or times out</h3><p>Async invocation retries twice, then the event lands in the SQS dead-letter queue and a CloudWatch alarm fires. A duplicate S3 delivery exits on the <code>EMAIL#</code> conditional put, so Jimin is never asked twice.</p></div>
+<div class="card card-warn"><h3>MX record not propagated</h3><p>Drop a .eml into the S3 bucket by hand — the pipeline starts at the S3 event, so the demo still runs.</p></div>
+<div class="card card-warn"><h3>WhatsApp template rejected or late</h3><p>RCS + in-app carry the demo; WhatsApp is the second CDS channel.</p></div>
+<div class="card card-warn"><h3>RCS tester invite never arrives, or the carrier does not deliver RBM to Jimin's phone</h3><p>Korea is not an RCS launch country; the docs say testers work in any country, unverified on a Korean SIM. <code>RCS_ENABLED=false</code>, WhatsApp + in-app carry the demo; the code path stays and is shown in the README. Any mocked tap in the video is labelled as mocked.</p></div>
+<div class="card card-red"><h3>Jimin silent for 60 s</h3><p>Shield icon; email stays held; 5 s long-press releases. A late No still lands and shows the warning; a late Yes is ignored (the hold already expired).</p></div>
+<div class="card card-warn"><h3>One channel fails to send</h3><p>The hold is already on Grandma's screen and the other channels carry it; <code>channelsSent</code> shows which went out. All three failing → WARN "Pidge couldn't reach Jimin", never a release.</p></div>
+<div class="card card-warn"><h3>SES receipt fails (sandbox, unverified address)</h3><p>Logged error; the verdict push to Grandma does not depend on it.</p></div>
+<div class="card card-warn"><h3>WebSocket drops</h3><p>Poll DynamoDB every 3 s during an active hold only; auto-reconnect.</p></div>
+
+<h2>Simplified on purpose</h2>
+<div class="card">
+<p><strong>Timeout counted in the PWA</strong>, backend marks <em>timeout</em> lazily on the next reply or read (a late No still applies, a late Yes does not) — no EventBridge Scheduler yet.</p>
+<p><strong>Orchestration in code</strong>, not a Strands Graph — one agent, one decision.</p>
+<p><strong>SMS fallback not built</strong>; RCS, WhatsApp and in-app are real. <code>FallbackConfiguration</code> needs a separate SMS number, and in-app already covers a phone without RCS.</p>
+<p><strong>Omni-inbox mock rows last</strong>; email-only inbox proves the kernel.</p>
+<p><strong>No auth</strong> — Grandma and Jimin are pre-provisioned.</p>
+</div>
+
+<h2>Open</h2>
+<div class="card card-warn">
+<p>Mail Manager and EUM Social pricing — read in the console on day 1.</p>
+<p>iOS Web Push on the real iPhone — verify early.</p>
+<p>Celebration animation for the happy path — CSS vs generated; decide in build.</p>
+<p>SES receiving domain — <code>sendpidge.mailpidge.com</code> from round 1, or a new one.</p>
+</div>
+
+<div class="footer">SendPidge · AWS CDS Agentic AI Partner Hackathon · deadline 2026-10-28<br>Next: <code>5-build</code></div>
+</div>
+</body>
+</html>
