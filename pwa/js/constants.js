@@ -3,6 +3,40 @@
 export const PUSH_MESSAGE_TYPE = Object.freeze({
   EMAIL_STATE: "email_state",
   VERIFICATION_CARD: "verification_card",
+  REQUEST_STATE: "request_state",
+  SYNC_STATE: "sync_state",
+  ACTION_REJECTED: "action_rejected",
+});
+
+export const CLIENT_ACTION = Object.freeze({
+  SYNC: "sync",
+  ANSWER: "answer",
+  CONFIRM: "confirm",
+});
+
+export const USER_ROLE = Object.freeze({
+  RECEIVER: "receiver",
+  CONTACT: "contact",
+});
+
+export const REQUEST_STATUS = Object.freeze({
+  PENDING: "pending",
+  DENIED: "denied",
+  CONFIRMED: "confirmed",
+  TIMEOUT: "timeout",
+});
+
+export const VERDICT_ANSWER = Object.freeze({
+  YES: "yes",
+  NO: "no",
+});
+
+export const ACTION_REJECTED_REASON = Object.freeze({
+  UNKNOWN_REQUEST: "unknown_request",
+  WRONG_SENDER: "wrong_sender",
+  NOT_APPLIED: "not_applied",
+  NOT_ALLOWED: "not_allowed",
+  BAD_MESSAGE: "bad_message",
 });
 
 export const POLICY_DECISION = Object.freeze({
@@ -36,4 +70,15 @@ export const INTENT = Object.freeze({
 export const CONNECTION_STATUS = Object.freeze({
   CONNECTED: "connected",
   RECONNECTING: "reconnecting",
+});
+
+// PWA-only: how one inbox row and its detail look, derived from state, request.status, quarantined and local release.
+export const EMAIL_DISPLAY_STATE = Object.freeze({
+  QUARANTINED: "quarantined",
+  DENIED: "denied",
+  CONFIRMED: "confirmed",
+  RELEASED_BY_USER: "released_by_user",
+  AWAITING_VERDICT: "awaiting_verdict",
+  FLAGGED: "flagged",
+  PLAIN: "plain",
 });

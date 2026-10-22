@@ -1,0 +1,186 @@
+"""The verdict rules, run against DynamoDB's own condition evaluator (moto), not a copy of them."""
+
+from datetime import datetime, timedelta, timezone
+
+import boto3
+import pytest
+from botocore.stub import Stubber
+from moto import mock_aws
+
+from shared import graph, verdict
+from shared.enums import ActionOutcome, Channel, RequestState, VerdictAnswer
+
+RECEIVER_ADDRESS = "grandma@example.com"
+RECEIVER_USER_ID = "grandma"
+CONTACT_EMAIL = "jimin@example.com"
+BUCKET_NAME = "test-emails"
+EMAIL_ID = "inbox/fake.eml"
+JIMIN = verdict.SenderIdentity(Channel.INAPP, "jimin")
+VERDICT_FIELDS = {"claimed_person": "Jimin", "intent": "money", "confidence": 0.95, "summary": "Asks for money."}
+
+
+@pytest.fixture
+def aws(monkeypatch):
+    monkeypatch.setenv("TABLE_NAME", "sendpidge-test")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    with mock_aws():
+        boto3.client("dynamodb").create_table(
+            TableName="sendpidge-test",
+            KeySchema=[{"AttributeName": "PK", "KeyType": "HASH"}, {"AttributeName": "SK", "KeyType": "RANGE"}],
+            AttributeDefinitions=[{"AttributeName": "PK", "AttributeType": "S"},
+                                  {"AttributeName": "SK", "AttributeType": "S"}],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        graph._table = None  # the module caches the table per container
+        yield
+        graph._table = None
+
+
+def seed_contact(contact_email: str | None = CONTACT_EMAIL) -> graph.Contact:
+    row = {"PK": f"RECEIVER#{RECEIVER_ADDRESS}", "SK": "CONTACT#jimin", "contactName": "Jimin",
+           "contactPwaUserId": "jimin"}
+    if contact_email:
+        row["contactEmail"] = contact_email
+    graph.get_table().put_item(Item=row)
+    return graph.Contact("CONTACT#jimin", "Jimin", "jimin")
+
+
+def new_request() -> str:
+    graph.claim_email(EMAIL_ID, {"s3Key": EMAIL_ID, "senderAddress": "Scammer@Lookalike.example", "quarantined": False})
+    return graph.request_id_of(graph.create_request(EMAIL_ID, RECEIVER_ADDRESS, seed_contact(), VERDICT_FIELDS))
+
+
+def at(seconds_from_now: int) -> str:
+    return graph.iso_timestamp(datetime.now(timezone.utc) + timedelta(seconds=seconds_from_now))
+
+
+def status_of(request_id: str) -> str:
+    return graph.get_request(request_id)["status"]
+
+
+def test_timestamps_are_fixed_width_utc():
+    assert graph.iso_timestamp(datetime(2026, 10, 22, 9, 5, 7, 123456, tzinfo=timezone.utc)) == "2026-10-22T09:05:07Z"
+    korea = timezone(timedelta(hours=9))
+    assert graph.iso_timestamp(datetime(2026, 10, 22, 18, 5, 7, tzinfo=korea)) == "2026-10-22T09:05:07Z"
+
+
+def test_no_while_pending_denies(aws):
+    request_id = new_request()
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    assert (result.outcome, result.status, status_of(request_id)) == (ActionOutcome.RECORDED, RequestState.DENIED, "denied")
+
+
+def test_yes_inside_the_hold_confirms(aws):
+    request_id = new_request()
+    result = verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.RECORDED, "confirmed")
+
+
+def test_late_yes_is_ignored(aws):
+    request_id = new_request()
+    result = verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(61))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.NOT_APPLIED, "pending")
+
+
+def test_late_no_still_lands_and_overrides_an_earlier_yes(aws):
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m2", at(600))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.RECORDED, "denied")
+
+
+def test_yes_after_no_is_ignored(aws):
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    result = verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m2", at(1))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.NOT_APPLIED, "denied")
+
+
+def test_redelivered_message_id_is_ignored(aws):
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(1))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.NOT_APPLIED, "confirmed")
+
+
+def test_answer_from_another_user_is_rejected(aws):
+    request_id = new_request()
+    stranger = verdict.SenderIdentity(Channel.INAPP, "grandma")
+    result = verdict.record_answer(request_id, VerdictAnswer.YES, stranger, "m1", at(0))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.WRONG_SENDER, "pending")
+
+
+def test_channel_without_a_registered_number_is_rejected(aws):
+    request_id = new_request()
+    whatsapp_sender = verdict.SenderIdentity(Channel.WHATSAPP, "jimin")
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, whatsapp_sender, "m1", at(0))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.WRONG_SENDER, "pending")
+
+
+def test_unknown_request_is_rejected(aws):
+    seed_contact()
+    result = verdict.record_answer("req-missing", VerdictAnswer.NO, JIMIN, "m1", at(0))
+    assert result.outcome is ActionOutcome.UNKNOWN_REQUEST
+
+
+def test_receipt_goes_only_to_the_contact_email():
+    ses_client = boto3.client("sesv2", region_name="us-east-1")
+    with Stubber(ses_client) as stubber:
+        stubber.add_response("send_email", {"MessageId": "x"}, {
+            "FromEmailAddress": "pidge@example.com",
+            "Destination": {"ToAddresses": [CONTACT_EMAIL]},
+            "Content": {"Simple": {
+                "Subject": {"Data": "Pidge: your answer was recorded"},
+                "Body": {"Text": {"Data": "You told Pidge you did not send the email to Grandma. It stays held."}},
+            }},
+        })
+        contact_row = {"SK": "CONTACT#jimin", "contactEmail": CONTACT_EMAIL}
+        assert verdict.send_receipt(ses_client, "pidge@example.com", contact_row, RequestState.DENIED, "Grandma")
+        stubber.assert_no_pending_responses()
+
+
+def test_no_receipt_without_a_contact_email():
+    ses_client = boto3.client("sesv2", region_name="us-east-1")
+    with Stubber(ses_client):  # any call would raise: no responses queued
+        assert not verdict.send_receipt(ses_client, "pidge@example.com", {"SK": "CONTACT#jimin"},
+                                        RequestState.DENIED, "Grandma")
+
+
+def make_bucket_with_email():
+    s3_client = boto3.client("s3")
+    s3_client.create_bucket(Bucket=BUCKET_NAME)
+    s3_client.put_object(Bucket=BUCKET_NAME, Key=EMAIL_ID, Body=b"raw")
+    return s3_client
+
+
+def test_confirm_after_no_quarantines_and_lists_the_full_address(aws):
+    s3_client = make_bucket_with_email()
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    result = verdict.confirm_quarantine(request_id, RECEIVER_USER_ID, RECEIVER_USER_ID, RECEIVER_ADDRESS,
+                                        s3_client, BUCKET_NAME)
+    assert result.outcome is ActionOutcome.RECORDED
+    assert s3_client.get_object_tagging(Bucket=BUCKET_NAME, Key=EMAIL_ID)["TagSet"] == [verdict.QUARANTINE_TAG]
+    assert graph.get_email(EMAIL_ID)["quarantined"] is True
+    listed = graph.get_table().get_item(Key={"PK": "LIST#address", "SK": "scammer@lookalike.example"})["Item"]
+    assert (listed["source"], listed["tier"]) == ("pidge-confirmed", 0)
+    assert "Item" not in graph.get_table().get_item(Key={"PK": "LIST#domain", "SK": "lookalike.example"})
+
+
+def test_confirm_before_any_no_is_not_applied(aws):
+    s3_client = make_bucket_with_email()
+    request_id = new_request()
+    result = verdict.confirm_quarantine(request_id, RECEIVER_USER_ID, RECEIVER_USER_ID, RECEIVER_ADDRESS,
+                                        s3_client, BUCKET_NAME)
+    assert result.outcome is ActionOutcome.NOT_APPLIED
+    assert graph.get_email(EMAIL_ID)["quarantined"] is False
+
+
+def test_confirm_by_the_contact_is_not_allowed(aws):
+    s3_client = make_bucket_with_email()
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    result = verdict.confirm_quarantine(request_id, "jimin", RECEIVER_USER_ID, RECEIVER_ADDRESS,
+                                        s3_client, BUCKET_NAME)
+    assert result.outcome is ActionOutcome.NOT_ALLOWED
+    assert graph.get_email(EMAIL_ID)["quarantined"] is False

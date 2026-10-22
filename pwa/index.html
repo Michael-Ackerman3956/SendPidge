@@ -19,18 +19,24 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
       </button>
       <img class="topbar-pidge" src="assets/pidge-icon.png" alt="">
-      <h1 id="topbar-title" class="topbar-title">Inbox</h1>
+      <h1 id="topbar-title" class="topbar-title">SendPidge</h1>
       <span id="connection-dot" class="connection-dot" role="status">
         <span id="connection-label" class="visually-hidden">Reconnecting</span>
       </span>
     </header>
     <main class="screen-body">
       <p id="token-error" class="token-error" role="alert" hidden>Open the link with your access token.</p>
-      <section id="inbox-screen" aria-labelledby="topbar-title" hidden>
+      <p id="loading-state" class="loading-state" role="status" hidden>Loading…</p>
+      <p id="action-status" class="action-status" aria-live="polite"></p>
+      <section id="inbox-screen" aria-label="Inbox" hidden>
         <ul id="inbox-list" class="inbox-list"></ul>
       </section>
       <section id="detail-screen" class="detail-screen" hidden>
         <article id="detail-content" class="detail-content"></article>
+      </section>
+      <section id="contact-screen" aria-label="Requests" hidden>
+        <ul id="contact-card-list" class="contact-card-list"></ul>
+        <p id="contact-empty-message" class="contact-empty-message" hidden>No requests.</p>
       </section>
     </main>
   </div>

@@ -191,6 +191,93 @@ button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .cancel-long-press-button.is-pressing .cancel-fill { transform: scaleX(1); transition: transform 5s linear; }
 .cancel-label { position: relative; }
 
+.loading-state { margin-top: 40vh; text-align: center; color: var(--text-secondary); font-size: 17px; }
+.action-status {
+  margin-bottom: 12px; padding: 10px 14px; border-radius: var(--card-radius);
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-primary); font-size: 16px; text-align: center;
+}
+.action-status:empty { display: none; }
+
+/* Verdict marks */
+.row-flag-mark.is-threat { background: var(--red); color: #fff; }
+.tick-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.row-verified-mark {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--green); color: #0e0e0e;
+}
+
+.threat-banner {
+  padding: 12px 14px; border-radius: var(--card-radius);
+  background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--red); font-size: 16px; font-weight: 700;
+}
+.verified-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: var(--card-radius);
+  background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.35);
+  color: var(--green); font-size: 16px; font-weight: 700; line-height: 1.35;
+}
+.verified-icon-group { position: relative; flex-shrink: 0; width: 44px; height: 44px; }
+.verified-pidge { width: 44px; height: 44px; border-radius: 50%; background: var(--surface-2); }
+.verified-tick {
+  position: absolute; right: -4px; bottom: -4px; width: 20px; height: 20px; padding: 3px;
+  border-radius: 50%; background: var(--green); color: #0e0e0e;
+}
+.verified-banner.is-celebrating .verified-pidge { animation: celebrate-pidge 1.2s ease-out; }
+.verified-banner.is-celebrating .verified-tick { animation: celebrate-tick 1.2s ease-out; }
+@keyframes celebrate-pidge {
+  0% { transform: scale(0.6); opacity: 0; }
+  50% { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes celebrate-tick {
+  0%, 40% { transform: scale(0); opacity: 0; }
+  75% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* Denied verdict overlay */
+.hold-overlay.is-denied { border-color: rgba(239, 68, 68, 0.5); }
+.denied-verdict-message { color: var(--red); }
+.denied-verdict-message:focus { outline: none; }
+.confirm-report-button {
+  width: 100%; max-width: 300px; min-height: 52px; margin-top: 8px;
+  border: none; border-radius: 26px; cursor: pointer;
+  background: var(--red); color: #fff; font-size: 17px; font-weight: 700;
+}
+.confirm-report-button:disabled { opacity: 0.6; cursor: default; }
+
+/* Jimin's cards */
+.contact-card-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.contact-card {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+  padding: 22px 18px; background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card);
+}
+.contact-card-pidge { width: 64px; height: 64px; border-radius: 50%; background: var(--surface-2); }
+.contact-card-title { font-size: 22px; font-weight: 700; }
+.contact-card-summary { font-size: 17px; line-height: 1.45; overflow-wrap: anywhere; }
+.contact-card-receiver { font-size: 15px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.contact-countdown { font-size: 28px; font-weight: 700; color: var(--orange); font-variant-numeric: tabular-nums; }
+.contact-card-late { font-size: 16px; color: var(--text-secondary); }
+.contact-answer-row { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.contact-answer-button {
+  width: 100%; min-height: 56px; border: none; border-radius: 28px; cursor: pointer;
+  font-size: 18px; font-weight: 700; color: #fff;
+}
+.contact-answer-button.is-yes { background: var(--teal); color: #0e0e0e; }
+.contact-answer-button.is-no { background: var(--red); }
+.contact-answer-button:disabled { opacity: 0.6; cursor: default; }
+.contact-card-result { display: inline-flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.contact-card-result.is-yes { color: var(--green); }
+.contact-card-result.is-yes .tick-icon { width: 20px; height: 20px; }
+.contact-card-result.is-no { color: var(--red); }
+.contact-empty-message { margin-top: 40vh; text-align: center; color: var(--text-secondary); font-size: 17px; }
+
 @media (prefers-reduced-motion: reduce) {
   .checking-pulse { animation: none; }
+  .verified-banner.is-celebrating .verified-pidge,
+  .verified-banner.is-celebrating .verified-tick { animation: none; }
 }

@@ -1,48 +1,29 @@
-// Grandma's PWA: access token, inbox, email detail, and live EMAIL_STATE pushes.
-// Email fields are attacker-controlled: rendered only through textContent / createElement.
-import { CONNECTION_STATUS, POLICY_DECISION, PUSH_MESSAGE_TYPE } from "./constants.js";
+// SendPidge PWA entry: access token, socket, role routing from sync_state, and push dispatch to the receiver or contact view.
+// The role is never stored: every sync_state names it again.
+import { ACTION_REJECTED_REASON, CONNECTION_STATUS, PUSH_MESSAGE_TYPE, USER_ROLE } from "./constants.js";
 import { connectToPushChannel } from "./websocket.js";
-import { buildWarnBannerElement, closeHoldOverlay, showHoldOverlay } from "./pidge-overlay.js";
+import { ACTION_STATUS_MESSAGE, showActionStatusMessage } from "./action-status.js";
+import {
+  applyReceiverSyncState, handleEmailStatePush, handleReceiverActionRejected, handleReceiverRequestStatePush,
+  hideReceiverView, showReceiverView,
+} from "./receiver-view.js";
+import {
+  applyContactSyncState, handleContactActionRejected, handleContactRequestStatePush, handleVerificationCardPush,
+  hideContactView, showContactView,
+} from "./contact-view.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
 const ACCESS_TOKEN_QUERY_PARAMETER = "token";
-const MILLISECONDS_PER_MINUTE = 60000;
-const MILLISECONDS_PER_HOUR = 3600000;
-const MILLISECONDS_PER_DAY = 86400000;
-const KNOWN_POLICY_DECISIONS = new Set(Object.values(POLICY_DECISION));
+const KNOWN_ACTION_REJECTED_REASONS = new Set(Object.values(ACTION_REJECTED_REASON));
 
-const emailsById = new Map();
-const releasedByUserEmailIds = new Set();
-let openEmailId = null;
+let activeUserRole = null;
 
 const pageElements = {
-  backButton: document.getElementById("back-button"),
-  topbarTitle: document.getElementById("topbar-title"),
   connectionDot: document.getElementById("connection-dot"),
   connectionLabel: document.getElementById("connection-label"),
   tokenError: document.getElementById("token-error"),
-  inboxScreen: document.getElementById("inbox-screen"),
-  inboxList: document.getElementById("inbox-list"),
-  detailScreen: document.getElementById("detail-screen"),
-  detailContent: document.getElementById("detail-content"),
+  loadingState: document.getElementById("loading-state"),
 };
-
-function buildMockFamilyEmails() {
-  const now = Date.now();
-  const receivedHoursAgo = (hours) => new Date(now - hours * MILLISECONDS_PER_HOUR).toISOString();
-  const mockEmail = (emailId, senderName, senderAddress, subject, hoursAgo, textBody) => ({
-    emailId, senderName, senderAddress, subject, receivedAt: receivedHoursAgo(hoursAgo), textBody,
-    state: POLICY_DECISION.PASS, warnReason: null, reasons: [], request: null,
-  });
-  return [
-    mockEmail("mock-sunday-lunch", "Minsoo", "minsoo@example.com", "Sunday lunch", 2,
-      "Hi Mom, we'll come by around noon on Sunday. I'll bring the kimchi jjigae you like. See you then!"),
-    mockEmail("mock-garden-photos", "Young-hee", "younghee@example.com", "Your tomatoes!", 27,
-      "The tomatoes from your garden were so sweet. Can you show me how you grow them next time?"),
-    mockEmail("mock-church-picnic", "Pastor Kim", "pastor.kim@example.com", "Picnic next Saturday", 75,
-      "Just a reminder that the church picnic is next Saturday at the park. Hope to see you there."),
-  ];
-}
 
 function readAccessTokenFromStorage() {
   try {
@@ -74,183 +55,88 @@ function resolveAccessToken() {
   return readAccessTokenFromStorage();
 }
 
-function parseTimestampMilliseconds(isoText) {
-  const timestampMilliseconds = Date.parse(isoText);
-  return Number.isNaN(timestampMilliseconds) ? null : timestampMilliseconds;
-}
-
-function formatRelativeReceivedTime(receivedAtIsoText) {
-  const receivedAtMilliseconds = parseTimestampMilliseconds(receivedAtIsoText);
-  if (receivedAtMilliseconds === null) {
-    console.error("SendPidge: email has an unreadable receivedAt", receivedAtIsoText);
-    return "";
+function handleSyncStatePush(pushMessage) {
+  switch (pushMessage.role) {
+    case USER_ROLE.RECEIVER:
+      if (activeUserRole === USER_ROLE.CONTACT) hideContactView();
+      activeUserRole = USER_ROLE.RECEIVER;
+      pageElements.loadingState.hidden = true;
+      showReceiverView();
+      applyReceiverSyncState(pushMessage.emails);
+      break;
+    case USER_ROLE.CONTACT:
+      if (activeUserRole === USER_ROLE.RECEIVER) hideReceiverView();
+      activeUserRole = USER_ROLE.CONTACT;
+      pageElements.loadingState.hidden = true;
+      showContactView();
+      applyContactSyncState(pushMessage.requests);
+      break;
+    default:
+      console.error("SendPidge: sync_state has an unknown role", pushMessage.role);
+      showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
   }
-  const elapsedMilliseconds = Date.now() - receivedAtMilliseconds;
-  if (elapsedMilliseconds < MILLISECONDS_PER_MINUTE) return "now";
-  if (elapsedMilliseconds < MILLISECONDS_PER_HOUR) return `${Math.floor(elapsedMilliseconds / MILLISECONDS_PER_MINUTE)}m`;
-  if (elapsedMilliseconds < MILLISECONDS_PER_DAY) return `${Math.floor(elapsedMilliseconds / MILLISECONDS_PER_HOUR)}h`;
-  if (elapsedMilliseconds < 7 * MILLISECONDS_PER_DAY) return new Date(receivedAtMilliseconds).toLocaleDateString(undefined, { weekday: "short" });
-  return new Date(receivedAtMilliseconds).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function createElementWithText(tagName, className, textContent) {
-  const element = document.createElement(tagName);
-  element.className = className;
-  if (textContent !== undefined) {
-    element.textContent = textContent;
-  }
-  return element;
-}
-
-function buildAvatarInitialElement(senderName) {
-  const avatar = createElementWithText("span", "avatar-initial", (senderName.trim()[0] || "?").toUpperCase());
-  avatar.setAttribute("aria-hidden", "true");
-  return avatar;
-}
-
-function isEmailFlagged(email) {
-  return email.state === POLICY_DECISION.HOLD || email.state === POLICY_DECISION.WARN;
-}
-
-function isEmailAwaitingVerdict(email) {
-  return email.state === POLICY_DECISION.HOLD && !releasedByUserEmailIds.has(email.emailId) && email.request !== null;
-}
-
-function buildRowStatusElement(email) {
-  if (releasedByUserEmailIds.has(email.emailId)) {
-    return createElementWithText("span", "row-released-tag", "Released by you");
-  }
-  if (isEmailFlagged(email)) {
-    const flagMark = createElementWithText("span", "row-flag-mark", "!");
-    flagMark.setAttribute("aria-label", "Flagged");
-    return flagMark;
-  }
-  return null;
-}
-
-function buildInboxRowElement(email) {
-  const listItem = document.createElement("li");
-  const rowButton = createElementWithText("button", "inbox-row");
-  rowButton.type = "button";
-  rowButton.dataset.emailId = email.emailId;
-  const avatar = buildAvatarInitialElement(email.senderName);
-  const rowText = createElementWithText("span", "row-text");
-  const rowTopLine = createElementWithText("span", "row-top-line");
-  rowTopLine.append(createElementWithText("span", "row-sender", email.senderName),
-    createElementWithText("span", "row-time", formatRelativeReceivedTime(email.receivedAt)));
-  const rowBottomLine = createElementWithText("span", "row-bottom-line");
-  rowBottomLine.append(createElementWithText("span", "channel-tag", "Email"));
-  const rowStatus = buildRowStatusElement(email);
-  if (rowStatus !== null) rowBottomLine.append(rowStatus);
-  rowText.append(rowTopLine, createElementWithText("span", "row-subject", email.subject),
-    createElementWithText("span", "row-preview", email.textBody), rowBottomLine);
-  rowButton.append(avatar, rowText);
-  rowButton.addEventListener("click", () => openEmailDetail(email.emailId));
-  listItem.append(rowButton);
-  return listItem;
-}
-
-function sortEmailsNewestFirst(emails) {
-  const sortKey = (email) => parseTimestampMilliseconds(email.receivedAt) ?? Number.NEGATIVE_INFINITY;
-  return [...emails].sort((first, second) => sortKey(second) - sortKey(first));
-}
-
-function renderInbox() {
-  const rowElements = sortEmailsNewestFirst(emailsById.values()).map(buildInboxRowElement);
-  pageElements.inboxList.replaceChildren(...rowElements);
-}
-
-function buildDetailHeaderElement(email) {
-  const headerElement = createElementWithText("div", "detail-header");
-  const senderBlock = createElementWithText("div", "detail-sender-block");
-  senderBlock.append(createElementWithText("p", "detail-sender-name", email.senderName),
-    createElementWithText("p", "detail-sender-address", email.senderAddress));
-  headerElement.append(buildAvatarInitialElement(email.senderName),
-    senderBlock, createElementWithText("span", "row-time", formatRelativeReceivedTime(email.receivedAt)));
-  return headerElement;
-}
-
-function renderEmailDetail(email) {
-  closeHoldOverlay();
-  const detailChildren = [buildDetailHeaderElement(email)];
-  if (email.state === POLICY_DECISION.WARN) {
-    detailChildren.push(buildWarnBannerElement(email));
-  }
-  const subjectHeading = createElementWithText("h2", "detail-subject", email.subject);
-  subjectHeading.tabIndex = -1;
-  detailChildren.push(subjectHeading, createElementWithText("p", "detail-body", email.textBody));
-  pageElements.detailContent.replaceChildren(...detailChildren);
-  if (isEmailAwaitingVerdict(email)) {
-    showHoldOverlay({ overlayHostElement: pageElements.detailScreen, email, onReleasedByUser: handleUserReleasedHeldEmail });
+function handleRequestStatePush(requestUpdate) {
+  if (activeUserRole === USER_ROLE.RECEIVER) {
+    handleReceiverRequestStatePush(requestUpdate);
   } else {
-    subjectHeading.focus();
+    handleContactRequestStatePush(requestUpdate);
   }
 }
 
-function openEmailDetail(emailId) {
-  openEmailId = emailId;
-  pageElements.inboxScreen.hidden = true;
-  pageElements.detailScreen.hidden = false;
-  pageElements.backButton.hidden = false;
-  pageElements.topbarTitle.textContent = "Email";
-  renderEmailDetail(emailsById.get(emailId));
-}
-
-function showInboxScreen() {
-  const previouslyOpenEmailId = openEmailId;
-  closeHoldOverlay();
-  openEmailId = null;
-  pageElements.detailScreen.hidden = true;
-  pageElements.backButton.hidden = true;
-  pageElements.inboxScreen.hidden = false;
-  pageElements.topbarTitle.textContent = "Inbox";
-  const previouslyOpenRow = [...pageElements.inboxList.querySelectorAll(".inbox-row")]
-    .find((rowButton) => rowButton.dataset.emailId === previouslyOpenEmailId);
-  if (previouslyOpenRow) previouslyOpenRow.focus();
-}
-
-// Local only in this slice: no server call is made.
-function handleUserReleasedHeldEmail(emailId) {
-  releasedByUserEmailIds.add(emailId);
-  renderInbox();
-  if (openEmailId === emailId) {
-    renderEmailDetail(emailsById.get(emailId));
+function handleActionRejectedPush(pushMessage) {
+  const requestId = typeof pushMessage.requestId === "string" ? pushMessage.requestId : null;
+  console.warn("SendPidge: client action rejected", pushMessage.reason, requestId);
+  if (!KNOWN_ACTION_REJECTED_REASONS.has(pushMessage.reason)) {
+    console.error("SendPidge: action_rejected has an unknown reason", pushMessage.reason);
+  }
+  const isAlreadyRecorded = pushMessage.reason === ACTION_REJECTED_REASON.NOT_APPLIED;
+  showActionStatusMessage(isAlreadyRecorded ? ACTION_STATUS_MESSAGE.ALREADY_RECORDED : ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
+  if (activeUserRole === USER_ROLE.RECEIVER) {
+    handleReceiverActionRejected(requestId);
+  } else {
+    handleContactActionRejected(requestId);
   }
 }
 
-function isValidEmailStatePayload(email) {
-  const hasRequiredFields = email !== null && typeof email === "object" && typeof email.emailId === "string"
-    && typeof email.senderName === "string" && typeof email.subject === "string" && typeof email.textBody === "string";
-  if (!hasRequiredFields || !KNOWN_POLICY_DECISIONS.has(email.state)) {
-    console.error("SendPidge: email_state push has a missing field or unknown state", email);
-    return false;
-  }
-  if (email.state === POLICY_DECISION.HOLD && (email.request === null || email.request === undefined)) {
-    console.error("SendPidge: HOLD push arrived without a request; showing the row flagged without the overlay", email.emailId);
-  }
-  return true;
-}
+// Which role each role-specific push belongs to; a push for the other role (or before sync_state) is ignored with a warning.
+const PUSH_MESSAGE_ROLES = Object.freeze({
+  [PUSH_MESSAGE_TYPE.EMAIL_STATE]: [USER_ROLE.RECEIVER],
+  [PUSH_MESSAGE_TYPE.VERIFICATION_CARD]: [USER_ROLE.CONTACT],
+  [PUSH_MESSAGE_TYPE.REQUEST_STATE]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT],
+  [PUSH_MESSAGE_TYPE.ACTION_REJECTED]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT],
+});
 
-function handleEmailStatePush(email) {
-  if (!isValidEmailStatePayload(email)) return;
-  const normalizedEmail = { ...email, request: email.request ?? null };
-  releasedByUserEmailIds.delete(normalizedEmail.emailId); // a newer server state replaces the local release
-  emailsById.set(normalizedEmail.emailId, normalizedEmail);
-  renderInbox();
-  if (isEmailAwaitingVerdict(normalizedEmail)) {
-    openEmailDetail(normalizedEmail.emailId);
-  } else if (openEmailId === normalizedEmail.emailId) {
-    renderEmailDetail(normalizedEmail);
-  }
+function isPushForActiveRole(pushMessageType) {
+  const allowedRoles = PUSH_MESSAGE_ROLES[pushMessageType];
+  if (allowedRoles === undefined) return true;
+  if (allowedRoles.includes(activeUserRole)) return true;
+  console.warn("SendPidge: ignoring push for another role or before sync_state", pushMessageType, activeUserRole);
+  return false;
 }
 
 function handlePushMessage(pushMessage) {
-  switch (pushMessage?.type) {
+  const pushMessageType = pushMessage?.type;
+  if (!isPushForActiveRole(pushMessageType)) return;
+  switch (pushMessageType) {
+    case PUSH_MESSAGE_TYPE.SYNC_STATE:
+      handleSyncStatePush(pushMessage);
+      break;
     case PUSH_MESSAGE_TYPE.EMAIL_STATE:
       handleEmailStatePush(pushMessage.email);
       break;
+    case PUSH_MESSAGE_TYPE.VERIFICATION_CARD:
+      handleVerificationCardPush(pushMessage.request);
+      break;
+    case PUSH_MESSAGE_TYPE.REQUEST_STATE:
+      handleRequestStatePush(pushMessage.request);
+      break;
+    case PUSH_MESSAGE_TYPE.ACTION_REJECTED:
+      handleActionRejectedPush(pushMessage);
+      break;
     default:
-      console.warn("SendPidge: ignoring push of unknown type", pushMessage?.type);
+      console.warn("SendPidge: ignoring push of unknown type", pushMessageType);
   }
 }
 
@@ -266,10 +152,7 @@ function startApp() {
     pageElements.tokenError.hidden = false;
     return;
   }
-  buildMockFamilyEmails().forEach((email) => emailsById.set(email.emailId, email));
-  pageElements.backButton.addEventListener("click", showInboxScreen);
-  pageElements.inboxScreen.hidden = false;
-  renderInbox();
+  pageElements.loadingState.hidden = false;
   connectToPushChannel({ accessToken, onPushMessage: handlePushMessage, onConnectionStatusChange: updateConnectionDot });
 }
 

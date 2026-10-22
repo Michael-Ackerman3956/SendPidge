@@ -1,9 +1,12 @@
-// Live push channel: connects with the access token, reconnects with backoff, parses JSON and hands each message on.
+// Live push channel: connects with the access token, reconnects with backoff, sends SYNC on every open,
+// parses JSON and hands each message on. sendClientAction writes one client action to the open socket.
 import { WEBSOCKET_URL } from "./config.js";
-import { CONNECTION_STATUS } from "./constants.js";
+import { CLIENT_ACTION, CONNECTION_STATUS } from "./constants.js";
 
 const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAXIMUM_RECONNECT_DELAY_MS = 10000;
+
+let openSocketForActions = null;
 
 function buildWebSocketUrlWithToken(accessToken) {
   return `${WEBSOCKET_URL}?token=${encodeURIComponent(accessToken)}`;
@@ -51,14 +54,35 @@ export function connectToPushChannel({ accessToken, onPushMessage, onConnectionS
     }
     socket.addEventListener("open", () => {
       reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
+      openSocketForActions = socket;
       onConnectionStatusChange(CONNECTION_STATUS.CONNECTED);
+      sendClientAction({ action: CLIENT_ACTION.SYNC });
     });
     socket.addEventListener("message", handleSocketMessage);
     socket.addEventListener("close", (closeEvent) => {
       console.warn("SendPidge: WebSocket closed", closeEvent.code);
+      if (openSocketForActions === socket) {
+        openSocketForActions = null;
+      }
       scheduleReconnectWithBackoff();
     });
   }
 
   openSocket();
+}
+
+// Sends one client action as JSON. Returns false (and warns) when the socket is not open, so the caller can tell the user.
+export function sendClientAction(clientAction) {
+  if (openSocketForActions === null || openSocketForActions.readyState !== WebSocket.OPEN) {
+    console.warn("SendPidge: socket not open; client action not sent", clientAction.action);
+    return false;
+  }
+  try {
+    openSocketForActions.send(JSON.stringify(clientAction));
+  } catch (sendError) {
+    console.error("SendPidge: client action could not be sent", clientAction.action, sendError.name);
+    return false;
+  }
+  console.info("SendPidge: client action sent", clientAction.action);
+  return true;
 }

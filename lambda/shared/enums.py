@@ -76,3 +76,32 @@ class PushMessageType(StrEnum):
 
     EMAIL_STATE = "email_state"              # to the receiver: one email row and its hold / warn / pass state
     VERIFICATION_CARD = "verification_card"  # to the contact: "Was this you?"
+    REQUEST_STATE = "request_state"          # to both: a request's status changed (answered, quarantined)
+    SYNC_STATE = "sync_state"                # reply to ClientAction.SYNC: the user's role and current rows
+    ACTION_REJECTED = "action_rejected"      # reply when a client action is refused
+
+
+class ClientAction(StrEnum):
+    """What a PWA may send on the WebSocket $default route. Mirrored in pwa/js/constants.js."""
+
+    SYNC = "sync"        # either user, right after connecting
+    ANSWER = "answer"    # the contact: yes / no on a request
+    CONFIRM = "confirm"  # the receiver: quarantine an email the contact denied
+
+
+class UserRole(StrEnum):
+    """Which screen a PWA shows. Mirrored in pwa/js/constants.js."""
+
+    RECEIVER = "receiver"
+    CONTACT = "contact"
+
+
+class ActionOutcome(StrEnum):
+    """What happened to one answer or Confirm. Every value but RECORDED is sent back as action_rejected."""
+
+    RECORDED = "recorded"
+    UNKNOWN_REQUEST = "unknown_request"
+    WRONG_SENDER = "wrong_sender"  # the reply did not come from the contact's own channel
+    NOT_APPLIED = "not_applied"    # duplicate, redelivered, or a Yes after the hold or after a No
+    NOT_ALLOWED = "not_allowed"    # this user may not do this action
+    BAD_MESSAGE = "bad_message"    # unparseable or missing fields

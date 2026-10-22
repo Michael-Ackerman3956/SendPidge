@@ -8,8 +8,8 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 
-from shared import graph
-from shared.enums import Channel, PushMessageType
+from shared import graph, payloads
+from shared.enums import Channel
 
 logger = logging.getLogger(__name__)
 
@@ -40,27 +40,30 @@ def push_to_user(user_id: str, message: dict) -> int:
     return delivered_count
 
 
-def ask_in_app(request: graph.VerificationRequest) -> Channel:
-    """The request row is already stored, so the contact's PWA shows it on connect; the live push is a bonus."""
-    card = {
-        "type": PushMessageType.VERIFICATION_CARD,
-        "request": {"requestId": request.request_id, "summary": request.summary, "expiresAt": request.expires_at},
-    }
-    delivered_count = push_to_user(request.contact.contact_pwa_user_id, card)
-    logger.info("in-app ask %s pushed to %d open connection(s)", request.request_id, delivered_count)
+def ask_in_app(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
+    """The request row is already stored, so the contact's PWA shows it on sync; the live push is a bonus."""
+    card = payloads.verification_card_message(request_row, receiver_name)
+    delivered_count = push_to_user(contact.contact_pwa_user_id, card)
+    logger.info("in-app ask %s pushed to %d open connection(s)", graph.request_id_of(request_row), delivered_count)
     return Channel.INAPP
 
 
-async def ask_on_every_channel(request: graph.VerificationRequest) -> list[Channel]:
+def push_to_connection(connection_id: str, message: dict) -> None:
+    """Reply to the one socket that sent a client action."""
+    get_management_client().post_to_connection(ConnectionId=connection_id, Data=json.dumps(message).encode())
+
+
+async def ask_on_every_channel(request_row: dict, contact: graph.Contact, receiver_name: str) -> list[Channel]:
     """Asks in parallel; returns the channels that sent. One failure never cancels the others."""
     channel_senders = [ask_in_app]  # RCS joins in slice 5, WhatsApp in slice 6
     outcomes = await asyncio.gather(
-        *(asyncio.to_thread(send, request) for send in channel_senders), return_exceptions=True
+        *(asyncio.to_thread(send, request_row, contact, receiver_name) for send in channel_senders),
+        return_exceptions=True,
     )
     channels_sent: list[Channel] = []
     for send, outcome in zip(channel_senders, outcomes):
         if isinstance(outcome, BaseException):
-            logger.error("channel %s failed for %s", send.__name__, request.request_id, exc_info=outcome)
+            logger.error("channel %s failed for %s", send.__name__, graph.request_id_of(request_row), exc_info=outcome)
         else:
             channels_sent.append(outcome)
     return channels_sent

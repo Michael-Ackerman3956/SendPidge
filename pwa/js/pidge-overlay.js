@@ -1,10 +1,10 @@
 // Pidge hold overlay (countdown, 5-second long-press cancel, shield on timeout) and the calm WARN banner.
 // All email fields are attacker-controlled: rendered only through textContent.
 import { INTENT, WARN_REASON } from "./constants.js";
+import { buildPidgeIconElement, buildShieldIcon, createElementWithText, formatRemainingTimeAsMinutesSeconds } from "./dom-helpers.js";
 
 const CANCEL_LONG_PRESS_DURATION_MS = 5000;
 const COUNTDOWN_TICK_INTERVAL_MS = 1000;
-const PIDGE_ICON_PATH = "assets/pidge-icon.png";
 
 const INTENT_PHRASES = Object.freeze({
   [INTENT.MONEY]: "money",
@@ -13,17 +13,6 @@ const INTENT_PHRASES = Object.freeze({
 });
 
 let activeOverlayTeardown = null;
-
-function createElementWithText(tagName, className, textContent) {
-  const element = document.createElement(tagName);
-  if (className) {
-    element.className = className;
-  }
-  if (textContent !== undefined) {
-    element.textContent = textContent;
-  }
-  return element;
-}
 
 function describeIntentForHoldMessage(intent) {
   const intentPhrase = INTENT_PHRASES[intent];
@@ -34,13 +23,6 @@ function describeIntentForHoldMessage(intent) {
   return intentPhrase;
 }
 
-function formatRemainingTimeAsMinutesSeconds(remainingMilliseconds) {
-  const totalSeconds = Math.max(0, Math.ceil(remainingMilliseconds / 1000));
-  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
-  return `${minutes}:${seconds}`;
-}
-
 function parseExpiryTimeOrReportError(expiresAtIsoText) {
   const expiresAtMilliseconds = Date.parse(expiresAtIsoText);
   if (Number.isNaN(expiresAtMilliseconds)) {
@@ -48,18 +30,6 @@ function parseExpiryTimeOrReportError(expiresAtIsoText) {
     return Date.now();
   }
   return expiresAtMilliseconds;
-}
-
-function buildShieldIcon() {
-  const svgNamespace = "http://www.w3.org/2000/svg";
-  const shieldSvg = document.createElementNS(svgNamespace, "svg");
-  shieldSvg.setAttribute("viewBox", "0 0 24 24");
-  shieldSvg.setAttribute("aria-hidden", "true");
-  shieldSvg.setAttribute("class", "shield-icon");
-  const shieldPath = document.createElementNS(svgNamespace, "path");
-  shieldPath.setAttribute("d", "M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z");
-  shieldSvg.append(shieldPath);
-  return shieldSvg;
 }
 
 // Starts the countdown to expiresAt. At 0 the checking line becomes the shield state.
@@ -134,11 +104,18 @@ function buildCancelButton() {
   return cancelButton;
 }
 
+// Closes whichever overlay holds the single slot (hold overlay or denied verdict overlay).
 export function closeHoldOverlay() {
   if (activeOverlayTeardown !== null) {
     activeOverlayTeardown();
     activeOverlayTeardown = null;
   }
+}
+
+// Lets another overlay (the denied verdict) take the single slot, closing the current one first.
+export function replaceActiveOverlay(overlayTeardown) {
+  closeHoldOverlay();
+  activeOverlayTeardown = overlayTeardown;
 }
 
 // Shows the hold overlay inside overlayHostElement for one held email. onReleasedByUser runs after the 5-second press.
@@ -150,9 +127,7 @@ export function showHoldOverlay({ overlayHostElement, email, onReleasedByUser })
   overlayElement.setAttribute("aria-modal", "true");
   overlayElement.setAttribute("aria-labelledby", "hold-overlay-message");
 
-  const pidgeIcon = createElementWithText("img", "hold-overlay-pidge");
-  pidgeIcon.src = PIDGE_ICON_PATH;
-  pidgeIcon.alt = "Pidge";
+  const pidgeIcon = buildPidgeIconElement("hold-overlay-pidge", "Pidge");
   const messageElement = createElementWithText("p", "hold-overlay-message",
     `This email says it is from ${contactName} and asks for ${describeIntentForHoldMessage(intent)}. I will check with ${contactName}.`);
   messageElement.id = "hold-overlay-message";

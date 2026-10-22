@@ -24,6 +24,8 @@ export class SendPidgeStack extends Stack {
     const receiverAddress: string = this.node.getContext("receiverAddress");
     const readerModel: string = this.node.getContext("readerModel");
     const receiverUserId: string = this.node.getContext("receiverUserId");
+    const receiverName: string = this.node.getContext("receiverName");
+    const receiptSender: string = this.node.getContext("receiptSender");
 
     const table = new Table(this, "Table", {
       tableName: "sendpidge",
@@ -33,6 +35,12 @@ export class SendPidgeStack extends Stack {
       // Retention TTL; separate from a request's 60 s hold expiry (expiresAt).
       timeToLiveAttribute: "ttlEpochSeconds",
       removalPolicy: RemovalPolicy.DESTROY,
+    });
+    // "<userId>#EMAIL" / "<userId>#REQUEST" → newest first, for the PWA's sync.
+    table.addGlobalSecondaryIndex({
+      indexName: "UserIndex",
+      partitionKey: { name: "userIndexPK", type: AttributeType.STRING },
+      sortKey: { name: "userIndexSK", type: AttributeType.STRING },
     });
 
     const emailBucket = new Bucket(this, "EmailBucket", {
@@ -100,6 +108,7 @@ export class SendPidgeStack extends Stack {
         READER_MODEL: readerModel,
         RECEIVER_ADDRESS: receiverAddress,
         RECEIVER_USER_ID: receiverUserId,
+        RECEIVER_NAME: receiverName,
         WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
       },
       logGroup: new LogGroup(this, "ReaderLogs", {
@@ -123,6 +132,45 @@ export class SendPidgeStack extends Stack {
     );
     emailBucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(readerFunction), {
       prefix: INBOX_PREFIX,
+    });
+
+    const verdictFunction = new Function(this, "VerdictFunction", {
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.X86_64,
+      code: lambdaCode,
+      handler: "pidge_verdict.handler.handle",
+      memorySize: 512,
+      timeout: Duration.seconds(15),
+      environment: {
+        TABLE_NAME: table.tableName,
+        RECEIVER_ADDRESS: receiverAddress,
+        RECEIVER_USER_ID: receiverUserId,
+        RECEIVER_NAME: receiverName,
+        EMAIL_BUCKET: emailBucket.bucketName,
+        RECEIPT_SENDER: receiptSender,
+        WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+      },
+      logGroup: new LogGroup(this, "VerdictLogs", {
+        retention: RetentionDays.TWO_WEEKS,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    table.grantReadWriteData(verdictFunction);
+    webSocketStage.grantManagementApiAccess(verdictFunction);
+    verdictFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["s3:PutObjectTagging"],
+        resources: [emailBucket.arnForObjects(`${INBOX_PREFIX}*`)],
+      }),
+    );
+    verdictFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["ses:SendEmail"],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${receiptSender}`],
+      }),
+    );
+    webSocketApi.addRoute("$default", {
+      integration: new WebSocketLambdaIntegration("DefaultIntegration", verdictFunction),
     });
 
     new Alarm(this, "ReaderDeadLetterAlarm", {

@@ -20,6 +20,12 @@ EMAIL_RETENTION_SECONDS = 90 * 24 * 3600
 CONNECTION_RETENTION_SECONDS = 24 * 3600
 CONDITIONAL_CHECK_FAILED = "ConditionalCheckFailedException"
 METADATA_SORT_KEY = "META"
+# UserIndex (GSI): "<userId>#EMAIL" or "<userId>#REQUEST" → rows newest first, for the PWA's sync.
+USER_INDEX_NAME = "UserIndex"
+USER_INDEX_PARTITION_KEY = "userIndexPK"
+USER_INDEX_SORT_KEY = "userIndexSK"
+EMAIL_ROW_KIND = "EMAIL"
+REQUEST_ROW_KIND = "REQUEST"
 
 _table = None
 
@@ -42,7 +48,12 @@ def retention_epoch(retention_seconds: int) -> int:
 
 
 def iso_timestamp(moment: datetime) -> str:
-    return moment.isoformat(timespec="seconds").replace("+00:00", "Z")
+    """Fixed-width UTC 'YYYY-MM-DDTHH:MM:SSZ', so stored times compare correctly as strings."""
+    return moment.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def user_index_partition(user_id: str, row_kind: str) -> str:
+    return f"{user_id}#{row_kind}"
 
 
 @dataclass(frozen=True)
@@ -132,38 +143,27 @@ def record_email_outcome(
     )
 
 
-@dataclass(frozen=True)
-class VerificationRequest:
-    request_id: str
-    contact: Contact
-    intent: str
-    summary: str
-    expires_at: str
-
-
-def create_request(email_id: str, receiver_address: str, contact: Contact, verdict_fields: dict) -> VerificationRequest:
-    """A pending 'Was this you?' that holds for HOLD_DURATION_SECONDS."""
+def create_request(email_id: str, receiver_address: str, contact: Contact, verdict_fields: dict) -> dict:
+    """Stores a pending 'Was this you?' that holds for HOLD_DURATION_SECONDS; returns the stored row."""
     created_at = datetime.now(timezone.utc)
-    request = VerificationRequest(
-        request_id=f"req-{uuid.uuid4()}",
-        contact=contact,
-        intent=verdict_fields["intent"],
-        summary=verdict_fields["summary"],
-        expires_at=iso_timestamp(created_at + timedelta(seconds=HOLD_DURATION_SECONDS)),
-    )
-    get_table().put_item(
-        Item={
-            "PK": f"REQUEST#{request.request_id}", "SK": METADATA_SORT_KEY,
-            "emailId": email_id, "receiverEmail": receiver_address,
-            "claimedPerson": verdict_fields["claimed_person"], "contactSK": contact.contact_key,
-            "verdict": {**verdict_fields, "confidence": Decimal(str(verdict_fields["confidence"]))},
-            "status": str(RequestState.PENDING), "channelsSent": [],
-            "createdAt": iso_timestamp(created_at), "expiresAt": request.expires_at,
-            "ttlEpochSeconds": retention_epoch(REQUEST_RETENTION_SECONDS),
-        },
-        ConditionExpression="attribute_not_exists(PK)",
-    )
-    return request
+    request_row = {
+        "PK": f"REQUEST#req-{uuid.uuid4()}", "SK": METADATA_SORT_KEY,
+        "emailId": email_id, "receiverEmail": receiver_address,
+        "claimedPerson": verdict_fields["claimed_person"], "contactSK": contact.contact_key,
+        "verdict": {**verdict_fields, "confidence": Decimal(str(verdict_fields["confidence"]))},
+        "status": str(RequestState.PENDING), "channelsSent": [], "inboundMessageIds": [],
+        "createdAt": iso_timestamp(created_at),
+        "expiresAt": iso_timestamp(created_at + timedelta(seconds=HOLD_DURATION_SECONDS)),
+        USER_INDEX_PARTITION_KEY: user_index_partition(contact.contact_pwa_user_id, REQUEST_ROW_KIND),
+        USER_INDEX_SORT_KEY: iso_timestamp(created_at),
+        "ttlEpochSeconds": retention_epoch(REQUEST_RETENTION_SECONDS),
+    }
+    get_table().put_item(Item=request_row, ConditionExpression="attribute_not_exists(PK)")
+    return request_row
+
+
+def request_id_of(request_row: dict) -> str:
+    return request_row["PK"].removeprefix("REQUEST#")
 
 
 def record_channels_sent(request_id: str, channels_sent: list[Channel]) -> None:
@@ -172,3 +172,68 @@ def record_channels_sent(request_id: str, channels_sent: list[Channel]) -> None:
         UpdateExpression="SET channelsSent = :channels",
         ExpressionAttributeValues={":channels": [str(channel) for channel in channels_sent]},
     )
+
+
+def get_connection_user_id(connection_id: str) -> str | None:
+    item = get_table().get_item(Key={"PK": f"CONN#{connection_id}", "SK": METADATA_SORT_KEY}).get("Item")
+    return item["userId"] if item else None
+
+
+def get_request(request_id: str) -> dict | None:
+    return get_table().get_item(Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY}).get("Item")
+
+
+def get_email(email_id: str) -> dict | None:
+    return get_table().get_item(Key={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY}).get("Item")
+
+
+def get_contact_row(receiver_address: str, contact_key: str) -> dict | None:
+    return get_table().get_item(Key={"PK": f"RECEIVER#{receiver_address}", "SK": contact_key}).get("Item")
+
+
+def list_recent_rows(user_id: str, row_kind: str, limit: int) -> list[dict]:
+    """Newest-first EMAIL or REQUEST rows that belong to one PWA user (via UserIndex), then the full rows."""
+    response = get_table().query(
+        IndexName=USER_INDEX_NAME,
+        KeyConditionExpression=Key(USER_INDEX_PARTITION_KEY).eq(user_index_partition(user_id, row_kind)),
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return [get_table().get_item(Key={"PK": item["PK"], "SK": item["SK"]})["Item"] for item in response["Items"]]
+
+
+def write_answer(request_id: str, update_arguments: dict) -> bool:
+    """Applies one conditional answer update; False when the condition refused it."""
+    try:
+        get_table().update_item(Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY}, **update_arguments)
+        return True
+    except ClientError as error:
+        if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
+            return False
+        raise
+
+
+def mark_email_quarantined(email_id: str) -> bool:
+    """False when the email was already quarantined."""
+    try:
+        get_table().update_item(
+            Key={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY},
+            UpdateExpression="SET quarantined = :true, quarantinedAt = :now",
+            ConditionExpression="attribute_exists(PK) AND quarantined = :false",
+            ExpressionAttributeValues={":true": True, ":false": False,
+                                       ":now": iso_timestamp(datetime.now(timezone.utc))},
+        )
+        return True
+    except ClientError as error:
+        if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
+            return False
+        raise
+
+
+def write_listed_address(sender_address: str, reason: str) -> None:
+    """Tier 0 lookup row from a Confirm: the full address, never the domain."""
+    get_table().put_item(Item={
+        "PK": "LIST#address", "SK": sender_address.lower(),
+        "category": "scam", "strength": "listed", "source": "pidge-confirmed", "tier": 0,
+        "reason": reason, "addedAt": iso_timestamp(datetime.now(timezone.utc)),
+    })

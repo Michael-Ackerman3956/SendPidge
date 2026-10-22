@@ -3,6 +3,8 @@
   "context": {
     "receiverAddress": "grandma@sendpidge.mailpidge.com",
     "readerModel": "haiku-4.5",
-    "receiverUserId": "grandma"
+    "receiverUserId": "grandma",
+    "receiverName": "Grandma",
+    "receiptSender": "pidge@mailpidge.com"
   }
 }

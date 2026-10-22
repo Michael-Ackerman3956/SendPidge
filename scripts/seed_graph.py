@@ -1,7 +1,8 @@
 """Writes the demo trust graph (Grandma → Jimin) and fresh PWA access tokens.
 
-Tokens go to .env.tokens (git-ignored, owner-only) and are never printed. Re-running rotates them.
-Usage: AWS_PROFILE=sendpidge python scripts/seed_graph.py
+Tokens go to .env.tokens (git-ignored, owner-only) and are never printed. Re-running keeps them unless
+--rotate-tokens is passed. JIMIN_CONTACT_EMAIL (optional) is where Jimin's verdict receipts go.
+Usage: AWS_PROFILE=sendpidge [JIMIN_CONTACT_EMAIL=...] python scripts/seed_graph.py [--rotate-tokens]
 """
 
 import json
@@ -41,13 +42,17 @@ def rotate_access_token(table, user_id: str) -> str:
 
 
 def write_contact(table) -> None:
-    table.put_item(Item={
+    contact_row = {
         "PK": f"RECEIVER#{RECEIVER_ADDRESS}",
         "SK": f"CONTACT#{CONTACT_USER_ID}",
         "contactName": CONTACT_NAME,
         "contactPwaUserId": CONTACT_USER_ID,
         "verifiedVia": "seed",
-    })
+    }
+    contact_email = os.environ.get("JIMIN_CONTACT_EMAIL")
+    if contact_email:
+        contact_row["contactEmail"] = contact_email
+    table.put_item(Item=contact_row)
 
 
 def save_tokens(tokens_by_variable: dict[str, str]) -> None:
@@ -58,6 +63,9 @@ def save_tokens(tokens_by_variable: dict[str, str]) -> None:
 def main() -> None:
     table = boto3.Session(region_name="us-east-1").resource("dynamodb").Table(TABLE_NAME)
     write_contact(table)
+    if TOKENS_FILE.exists() and "--rotate-tokens" not in sys.argv:
+        print(f"Seeded {RECEIVER_ADDRESS} → {CONTACT_NAME}; kept the tokens in {TOKENS_FILE.name}")
+        return
     save_tokens({
         "GRANDMA_PWA_TOKEN": rotate_access_token(table, RECEIVER_USER_ID),
         "JIMIN_PWA_TOKEN": rotate_access_token(table, CONTACT_USER_ID),
