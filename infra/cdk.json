@@ -1,0 +1,8 @@
+{
+  "app": "npx tsx bin/sendpidge.ts",
+  "context": {
+    "receiverAddress": "grandma@sendpidge.mailpidge.com",
+    "readerModel": "haiku-4.5",
+    "receiverUserId": "grandma"
+  }
+}

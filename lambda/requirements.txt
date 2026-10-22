@@ -1,0 +1,3 @@
+# Runtime dependencies for the Lambda layer (the Lambda runtime already ships boto3).
+strands-agents==1.62.0
+pydantic==2.14.1

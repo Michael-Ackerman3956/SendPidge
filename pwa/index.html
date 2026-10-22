@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src wss://*.execute-api.us-east-1.amazonaws.com; style-src 'self'; script-src 'self'">
+  <meta name="theme-color" content="#0e0e0e">
+  <title>SendPidge</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="assets/pidge-icon.png">
+  <link rel="apple-touch-icon" href="assets/pidge-icon.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <button id="back-button" class="topbar-back-button" type="button" aria-label="Back" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
+      </button>
+      <img class="topbar-pidge" src="assets/pidge-icon.png" alt="">
+      <h1 id="topbar-title" class="topbar-title">Inbox</h1>
+      <span id="connection-dot" class="connection-dot" role="status">
+        <span id="connection-label" class="visually-hidden">Reconnecting</span>
+      </span>
+    </header>
+    <main class="screen-body">
+      <p id="token-error" class="token-error" role="alert" hidden>Open the link with your access token.</p>
+      <section id="inbox-screen" aria-labelledby="topbar-title" hidden>
+        <ul id="inbox-list" class="inbox-list"></ul>
+      </section>
+      <section id="detail-screen" class="detail-screen" hidden>
+        <article id="detail-content" class="detail-content"></article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

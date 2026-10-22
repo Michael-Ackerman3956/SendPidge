@@ -69,3 +69,10 @@ class ReaderModelChoice(StrEnum):
     HAIKU_4_5 = "haiku-4.5"
     NOVA_MICRO = "nova-micro"
     GEMMA_4_E2B = "gemma-4-e2b"
+
+
+class PushMessageType(StrEnum):
+    """Kinds of message the backend pushes to a PWA over the WebSocket. Mirrored in pwa/js/constants.js."""
+
+    EMAIL_STATE = "email_state"              # to the receiver: one email row and its hold / warn / pass state
+    VERIFICATION_CARD = "verification_card"  # to the contact: "Was this you?"

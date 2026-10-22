@@ -1,0 +1,12 @@
+{
+  "name": "SendPidge",
+  "short_name": "SendPidge",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e0e0e",
+  "theme_color": "#0e0e0e",
+  "icons": [
+    { "src": "assets/pidge-icon.png", "sizes": "120x120", "type": "image/png" }
+  ]
+}

@@ -34,3 +34,6 @@ cdk.context.json
 .aws-sam/
 .wrangler/
 *.log
+
+# Built Lambda layer
+infra/build/

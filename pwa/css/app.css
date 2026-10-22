@@ -1,0 +1,196 @@
+:root {
+  --background: #0e0e0e;
+  --surface-1: #141414;
+  --surface-2: #191919;
+  --surface-3: #222222;
+  --teal: #3AA68E;
+  --green: #4ade80;
+  --red: #EF4444;
+  --orange: #F59E0B;
+  --text-primary: #f2f2f2;
+  --text-secondary: #a3a3a3;
+  --text-tertiary: #8a8a8a;
+  --border: rgba(255, 255, 255, 0.06);
+  --glass-background: rgba(14, 14, 14, 0.72);
+  --card-radius: 14px;
+  --font: "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body { background: var(--background); }
+body {
+  font-family: var(--font);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+button { font-family: inherit; color: inherit; }
+button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+/* Glass top bar */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 8px;
+  min-height: 52px;
+  padding: env(safe-area-inset-top) 16px 0;
+  background: var(--glass-background);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-title { flex: 1; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.topbar-pidge { width: 30px; height: 30px; border-radius: 50%; }
+.topbar-back-button {
+  width: 44px; height: 44px; margin-left: -10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 22px; cursor: pointer; color: var(--teal);
+}
+.topbar-back-button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.topbar-back-button:active { background: rgba(58, 166, 142, 0.12); }
+
+.connection-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+.connection-dot.is-connected { background: var(--green); box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18); }
+
+.screen-body { flex: 1; padding: 14px 16px calc(24px + env(safe-area-inset-bottom)); }
+
+.token-error {
+  margin-top: 40vh; text-align: center;
+  color: var(--text-secondary); font-size: 17px;
+}
+
+/* Inbox */
+.inbox-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.inbox-row {
+  width: 100%; display: flex; gap: 12px; align-items: flex-start; text-align: left;
+  padding: 14px; cursor: pointer;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-card);
+  -webkit-tap-highlight-color: transparent;
+}
+.inbox-row:active { background: var(--surface-2); }
+
+.avatar-initial {
+  flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(58, 166, 142, 0.18); color: var(--teal);
+  font-size: 18px; font-weight: 700;
+}
+
+.row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.row-top-line, .row-bottom-line { display: flex; align-items: center; gap: 8px; }
+.row-sender { flex: 1; font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-time { flex-shrink: 0; font-size: 14px; color: var(--text-tertiary); }
+.row-subject { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-preview {
+  font-size: 15px; color: var(--text-secondary); line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.row-bottom-line { margin-top: 4px; }
+
+.channel-tag {
+  font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: var(--surface-3); color: var(--text-secondary);
+}
+.row-flag-mark {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--orange); color: #111; font-size: 14px; font-weight: 800;
+}
+.row-released-tag { font-size: 13px; font-weight: 600; color: var(--text-tertiary); }
+
+/* Email detail */
+.detail-screen { position: relative; }
+.detail-content {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 16px; background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card);
+}
+.detail-header { display: flex; align-items: center; gap: 12px; }
+.detail-sender-block { flex: 1; min-width: 0; }
+.detail-sender-name { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.detail-sender-address { font-size: 14px; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.detail-subject { font-size: 22px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.detail-subject:focus { outline: none; }
+.detail-body { font-size: 17px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); }
+
+.warn-banner {
+  padding: 12px 14px; border-radius: var(--card-radius);
+  background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--orange); font-size: 16px; font-weight: 600; line-height: 1.35;
+}
+
+/* Pidge hold overlay */
+.hold-overlay {
+  position: fixed; z-index: 30;
+  top: calc(64px + env(safe-area-inset-top)); bottom: calc(16px + env(safe-area-inset-bottom));
+  left: 50%; transform: translateX(-50%); width: min(448px, calc(100% - 32px));
+  overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  padding: 28px 22px; text-align: center;
+  background: rgba(14, 14, 14, 0.9);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-float);
+}
+.hold-overlay-pidge { width: 96px; height: 96px; border-radius: 50%; background: var(--surface-2); }
+.hold-overlay-message { font-size: 19px; font-weight: 600; line-height: 1.4; max-width: 340px; }
+.hold-overlay-checking { display: flex; align-items: center; justify-content: center; min-height: 40px; }
+.checking-pulse {
+  width: 14px; height: 14px; border-radius: 50%; background: var(--orange);
+  animation: checking-pulse 1.4s ease-in-out infinite;
+}
+@keyframes checking-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+  50% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+}
+.shield-icon { width: 40px; height: 40px; fill: rgba(58, 166, 142, 0.2); stroke: var(--teal); stroke-width: 1.8; stroke-linejoin: round; }
+.hold-overlay-status { font-size: 16px; color: var(--text-secondary); }
+.hold-overlay-countdown { font-size: 34px; font-weight: 700; color: var(--orange); font-variant-numeric: tabular-nums; }
+
+.cancel-long-press-button {
+  position: relative; overflow: hidden;
+  width: 100%; max-width: 300px; min-height: 52px; margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 26px;
+  background: var(--surface-3); cursor: pointer;
+  font-size: 16px; font-weight: 700;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.cancel-fill {
+  position: absolute; inset: 0;
+  background: rgba(58, 166, 142, 0.45);
+  transform: scaleX(0); transform-origin: left center;
+  transition: transform 0.2s ease-out;
+}
+.cancel-long-press-button.is-pressing .cancel-fill { transform: scaleX(1); transition: transform 5s linear; }
+.cancel-label { position: relative; }
+
+@media (prefers-reduced-motion: reduce) {
+  .checking-pulse { animation: none; }
+}
