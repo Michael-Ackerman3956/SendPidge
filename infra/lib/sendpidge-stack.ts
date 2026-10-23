@@ -2,6 +2,9 @@ import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from "aws-cdk-l
 import { WebSocketApi, WebSocketStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { Alarm, ComparisonOperator, TreatMissingData } from "aws-cdk-lib/aws-cloudwatch";
+import { Certificate, CertificateValidation } from "aws-cdk-lib/aws-certificatemanager";
+import { Distribution, ResponseHeadersPolicy, ViewerProtocolPolicy } from "aws-cdk-lib/aws-cloudfront";
+import { S3BucketOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
 import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
 import { PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Architecture, Code, Function, LayerVersion, Runtime } from "aws-cdk-lib/aws-lambda";
@@ -9,6 +12,7 @@ import { SqsDestination } from "aws-cdk-lib/aws-lambda-destinations";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { BlockPublicAccess, Bucket, BucketEncryption, EventType } from "aws-cdk-lib/aws-s3";
 import { CfnMailManagerIngressPoint, CfnMailManagerRuleSet, CfnMailManagerTrafficPolicy, EmailIdentity, Identity } from "aws-cdk-lib/aws-ses";
+import { BucketDeployment, Source } from "aws-cdk-lib/aws-s3-deployment";
 import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
 import { Queue } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
@@ -31,9 +35,42 @@ export class SendPidgeStack extends Stack {
     const receiverName: string = this.node.getContext("receiverName");
     const receiptSender: string = this.node.getContext("receiptSender");
     const sendingDomain = receiptSender.split("@")[1];
+    const pwaDomain: string = this.node.getContext("pwaDomain");
 
     // Sending identity for pidge@<domain> (receipts, later chat replies); Easy DKIM, three CNAMEs at the DNS host.
     const sendingIdentity = new EmailIdentity(this, "SendingIdentity", { identity: Identity.domain(sendingDomain) });
+
+    // The PWA at https://<pwaDomain>: private bucket, CloudFront with origin access control, our own certificate.
+    // ACM validates by DNS with no Route 53 zone, so the first deploy pauses until the validation CNAME exists at Cloudflare.
+    const pwaBucket = new Bucket(this, "PwaBucket", {
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      encryption: BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+    const pwaCertificate = new Certificate(this, "PwaCertificate", {
+      domainName: pwaDomain,
+      validation: CertificateValidation.fromDns(),
+    });
+    const pwaDistribution = new Distribution(this, "PwaDistribution", {
+      defaultBehavior: {
+        origin: S3BucketOrigin.withOriginAccessControl(pwaBucket),
+        viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        // HSTS, nosniff, frame and referrer protection; the CSP stays a meta tag in index.html.
+        responseHeadersPolicy: ResponseHeadersPolicy.SECURITY_HEADERS,
+      },
+      defaultRootObject: "index.html",
+      domainNames: [pwaDomain],
+      certificate: pwaCertificate,
+    });
+    // Every deploy ships the current pwa/ plus the public privacy and terms pages, then invalidates the cache.
+    new BucketDeployment(this, "PwaFiles", {
+      sources: [Source.asset("../pwa"), Source.asset("../edge/public")],
+      destinationBucket: pwaBucket,
+      distribution: pwaDistribution,
+      distributionPaths: ["/*"],
+    });
 
     const table = new Table(this, "Table", {
       tableName: "sendpidge",
@@ -252,6 +289,11 @@ export class SendPidgeStack extends Stack {
     new CfnOutput(this, "MailManagerARecord", {
       value: ingressPoint.attrARecord,
       description: `Create an MX record for the receiver's domain pointing at this host`,
+    });
+    new CfnOutput(this, "PwaUrl", { value: `https://${pwaDomain}/` });
+    new CfnOutput(this, "PwaDistributionDomain", {
+      value: pwaDistribution.distributionDomainName,
+      description: `Create a CNAME for ${pwaDomain} pointing at this host (DNS only; CloudFront serves the certificate)`,
     });
     new CfnOutput(this, "SendingDomainDkimRecords", {
       value: [

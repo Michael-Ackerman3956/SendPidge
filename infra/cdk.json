@@ -5,6 +5,7 @@
     "readerModel": "haiku-4.5",
     "receiverUserId": "grandma",
     "receiverName": "Grandma",
-    "receiptSender": "pidge@sendpidge.com"
+    "receiptSender": "pidge@sendpidge.com",
+    "pwaDomain": "app.sendpidge.com"
   }
 }

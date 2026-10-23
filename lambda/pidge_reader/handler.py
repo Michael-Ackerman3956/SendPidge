@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from dataclasses import replace
 from datetime import datetime, timezone
 from urllib.parse import unquote_plus
 
@@ -54,7 +55,9 @@ def process_email_object(bucket_name: str, object_key: str) -> None:
 def read_and_look_up_contact(parsed_email: ParsedEmail) -> tuple[EmailVerdict | ReaderFailure, graph.Contact | None]:
     """Any Reader or graph failure becomes ReaderFailure (WARN unreadable) plus a logged error; never a PASS."""
     try:
-        verdict = read_email(reader, parsed_email)
+        # Same cap as the stored copy: a 10 MB email never becomes a full-context model call.
+        capped_email = replace(parsed_email, text_body=parsed_email.text_body[:TEXT_BODY_MAX_CHARACTERS])
+        verdict = read_email(reader, capped_email)
         return verdict, graph.find_contact(RECEIVER_ADDRESS, verdict.claimed_person)
     except Exception as error:
         logger.exception("reader or contact lookup failed")
