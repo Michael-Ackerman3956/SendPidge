@@ -35,7 +35,7 @@ class ReasonCode(StrEnum):
 
     AUTH_MISSING = "auth_missing"      # no X-Pidge-Auth header at all
     AUTH_TAMPERED = "auth_tampered"    # more than one X-Pidge-Auth header
-    DMARC_FAIL = "dmarc_fail"
+    AUTH_FAILED = "auth_failed"      # neither SPF nor DKIM passed at ingress
 
 
 class RequestState(StrEnum):

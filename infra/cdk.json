@@ -1,10 +1,10 @@
 {
   "app": "npx tsx bin/sendpidge.ts",
   "context": {
-    "receiverAddress": "grandma@sendpidge.mailpidge.com",
+    "receiverAddress": "grandma@sendpidge.com",
     "readerModel": "haiku-4.5",
     "receiverUserId": "grandma",
     "receiverName": "Grandma",
-    "receiptSender": "pidge@mailpidge.com"
+    "receiptSender": "pidge@sendpidge.com"
   }
 }

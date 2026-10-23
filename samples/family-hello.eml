@@ -2,7 +2,7 @@ From: Jimin <jimin@example.com>
 To: grandma@sendpidge.example
 Subject: Photos from the weekend
 Date: Wed, 22 Oct 2026 09:30:00 +0900
-X-Pidge-Auth: spf=pass;dkim=pass;dmarc=pass
+X-Pidge-Auth: spf=pass;dkim=pass
 Content-Type: text/plain; charset="utf-8"
 MIME-Version: 1.0
 

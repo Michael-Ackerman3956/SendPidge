@@ -3,11 +3,12 @@ import { WebSocketApi, WebSocketStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { Alarm, ComparisonOperator, TreatMissingData } from "aws-cdk-lib/aws-cloudwatch";
 import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
-import { PolicyStatement } from "aws-cdk-lib/aws-iam";
+import { PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Architecture, Code, Function, LayerVersion, Runtime } from "aws-cdk-lib/aws-lambda";
 import { SqsDestination } from "aws-cdk-lib/aws-lambda-destinations";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { BlockPublicAccess, Bucket, BucketEncryption, EventType } from "aws-cdk-lib/aws-s3";
+import { CfnMailManagerIngressPoint, CfnMailManagerRuleSet, CfnMailManagerTrafficPolicy, EmailIdentity, Identity } from "aws-cdk-lib/aws-ses";
 import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
 import { Queue } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
@@ -16,6 +17,9 @@ import { Construct } from "constructs";
 const INBOX_PREFIX = "inbox/";
 const WEBSOCKET_STAGE_NAME = "live";
 const LAMBDA_SOURCE_DIRECTORY = "../lambda";
+// Stamped by Mail Manager at ingress; a sender-written copy is dropped before it can be trusted.
+const PIDGE_AUTH_HEADER_NAME = "X-Pidge-Auth";
+const MAXIMUM_INBOUND_MESSAGE_BYTES = 10 * 1024 * 1024;
 
 export class SendPidgeStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -26,6 +30,10 @@ export class SendPidgeStack extends Stack {
     const receiverUserId: string = this.node.getContext("receiverUserId");
     const receiverName: string = this.node.getContext("receiverName");
     const receiptSender: string = this.node.getContext("receiptSender");
+    const sendingDomain = receiptSender.split("@")[1];
+
+    // Sending identity for pidge@<domain> (receipts, later chat replies); Easy DKIM, three CNAMEs at the DNS host.
+    const sendingIdentity = new EmailIdentity(this, "SendingIdentity", { identity: Identity.domain(sendingDomain) });
 
     const table = new Table(this, "Table", {
       tableName: "sendpidge",
@@ -48,6 +56,62 @@ export class SendPidgeStack extends Stack {
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       lifecycleRules: [{ prefix: INBOX_PREFIX, expiration: Duration.days(30) }],
+    });
+
+    const mailManagerWriteRole = new Role(this, "MailManagerWriteRole", {
+      assumedBy: new ServicePrincipal("ses.amazonaws.com", {
+        conditions: { StringEquals: { "aws:SourceAccount": this.account } },
+      }),
+    });
+    emailBucket.grantPut(mailManagerWriteRole, `${INBOX_PREFIX}*`);
+
+    const inboundRuleSet = new CfnMailManagerRuleSet(this, "InboundRuleSet", {
+      ruleSetName: "sendpidge-inbound",
+      rules: [
+        // A sender cannot pre-write the verdict header.
+        {
+          name: "drop-forged-auth-header",
+          conditions: [{ stringExpression: {
+            evaluate: { mimeHeaderAttribute: PIDGE_AUTH_HEADER_NAME },
+            operator: "CONTAINS",
+            values: ["=", "pass", "fail", "spf", "dkim", "dmarc", "verified"],
+          } }],
+          actions: [{ drop: {} }],
+        },
+        // Exactly one of the next four matches, so the stored email carries exactly one header.
+        ...buildAuthHeaderRules(),
+        {
+          name: "store-raw-email",
+          actions: [{ writeToS3: {
+            roleArn: mailManagerWriteRole.roleArn,
+            s3Bucket: emailBucket.bucketName,
+            s3Prefix: INBOX_PREFIX,
+            actionFailurePolicy: "DROP",
+          } }],
+        },
+      ],
+    });
+    inboundRuleSet.node.addDependency(mailManagerWriteRole);
+
+    const inboundTrafficPolicy = new CfnMailManagerTrafficPolicy(this, "InboundTrafficPolicy", {
+      trafficPolicyName: "sendpidge-receiver-only",
+      defaultAction: "DENY",
+      maxMessageSizeBytes: MAXIMUM_INBOUND_MESSAGE_BYTES,
+      policyStatements: [{
+        action: "ALLOW",
+        conditions: [{ stringExpression: {
+          evaluate: { attribute: "RECIPIENT" },
+          operator: "EQUALS",
+          values: [receiverAddress],
+        } }],
+      }],
+    });
+
+    const ingressPoint = new CfnMailManagerIngressPoint(this, "IngressPoint", {
+      ingressPointName: "sendpidge-inbound",
+      type: "OPEN",
+      ruleSetId: inboundRuleSet.attrRuleSetId,
+      trafficPolicyId: inboundTrafficPolicy.attrTrafficPolicyId,
     });
 
     const dependencyLayer = new LayerVersion(this, "DependencyLayer", {
@@ -166,7 +230,7 @@ export class SendPidgeStack extends Stack {
     verdictFunction.addToRolePolicy(
       new PolicyStatement({
         actions: ["ses:SendEmail"],
-        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${receiptSender}`],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${sendingDomain}`],
       }),
     );
     webSocketApi.addRoute("$default", {
@@ -185,5 +249,38 @@ export class SendPidgeStack extends Stack {
     new CfnOutput(this, "EmailBucketName", { value: emailBucket.bucketName });
     new CfnOutput(this, "TableName", { value: table.tableName });
     new CfnOutput(this, "WebSocketUrl", { value: webSocketStage.url });
+    new CfnOutput(this, "MailManagerARecord", {
+      value: ingressPoint.attrARecord,
+      description: `Create an MX record for the receiver's domain pointing at this host`,
+    });
+    new CfnOutput(this, "SendingDomainDkimRecords", {
+      value: [
+        `${sendingIdentity.dkimDnsTokenName1} CNAME ${sendingIdentity.dkimDnsTokenValue1}`,
+        `${sendingIdentity.dkimDnsTokenName2} CNAME ${sendingIdentity.dkimDnsTokenValue2}`,
+        `${sendingIdentity.dkimDnsTokenName3} CNAME ${sendingIdentity.dkimDnsTokenValue3}`,
+      ].join(" | "),
+      description: `Create these three CNAME records (DNS-only) so SES can sign mail from ${sendingDomain}`,
+    });
   }
+}
+
+/** One rule per SPF × DKIM outcome; the four are mutually exclusive, so exactly one header is added. */
+function buildAuthHeaderRules(): CfnMailManagerRuleSet.RuleProperty[] {
+  const outcomes: Array<{ spfPassed: boolean; dkimPassed: boolean }> = [
+    { spfPassed: true, dkimPassed: true },
+    { spfPassed: true, dkimPassed: false },
+    { spfPassed: false, dkimPassed: true },
+    { spfPassed: false, dkimPassed: false },
+  ];
+  return outcomes.map(({ spfPassed, dkimPassed }) => ({
+    name: `stamp-auth-spf-${spfPassed ? "pass" : "fail"}-dkim-${dkimPassed ? "pass" : "fail"}`,
+    conditions: [
+      { verdictExpression: { evaluate: { attribute: "SPF" }, operator: spfPassed ? "EQUALS" : "NOT_EQUALS", values: ["PASS"] } },
+      { verdictExpression: { evaluate: { attribute: "DKIM" }, operator: dkimPassed ? "EQUALS" : "NOT_EQUALS", values: ["PASS"] } },
+    ],
+    actions: [{ addHeader: {
+      headerName: PIDGE_AUTH_HEADER_NAME,
+      headerValue: `spf=${spfPassed ? "pass" : "fail"};dkim=${dkimPassed ? "pass" : "fail"}`,
+    } }],
+  }));
 }

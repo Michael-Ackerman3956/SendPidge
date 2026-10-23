@@ -56,7 +56,7 @@ export const WARN_REASON = Object.freeze({
 export const REASON_CODE = Object.freeze({
   AUTH_MISSING: "auth_missing",
   AUTH_TAMPERED: "auth_tampered",
-  DMARC_FAIL: "dmarc_fail",
+  AUTH_FAILED: "auth_failed",
 });
 
 export const INTENT = Object.freeze({

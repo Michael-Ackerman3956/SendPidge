@@ -4,11 +4,12 @@ from collections.abc import Sequence
 
 from shared.enums import ReasonCode
 
-DMARC_FAIL_VALUE = "fail"
+PASS_VALUE = "pass"
+MECHANISMS_THAT_VOUCH = ("spf", "dkim")  # Mail Manager stamps these two; DMARC is not a verdict it exposes
 
 
 def parse_authentication_header(header_value: str) -> dict[str, str]:
-    """'spf=pass;dkim=pass;dmarc=fail' -> {'spf': 'pass', 'dkim': 'pass', 'dmarc': 'fail'}."""
+    """'spf=pass;dkim=fail' -> {'spf': 'pass', 'dkim': 'fail'}."""
     verdicts: dict[str, str] = {}
     for pair in header_value.split(";"):
         mechanism, separator, result = pair.strip().partition("=")
@@ -25,6 +26,6 @@ def authentication_reasons(pidge_auth_header_values: Sequence[str]) -> list[Reas
     if header_count > 1:
         return [ReasonCode.AUTH_TAMPERED]
     verdicts = parse_authentication_header(pidge_auth_header_values[0])
-    if verdicts.get("dmarc") == DMARC_FAIL_VALUE:
-        return [ReasonCode.DMARC_FAIL]
+    if not any(verdicts.get(mechanism) == PASS_VALUE for mechanism in MECHANISMS_THAT_VOUCH):
+        return [ReasonCode.AUTH_FAILED]
     return []

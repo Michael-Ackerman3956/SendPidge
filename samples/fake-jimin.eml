@@ -2,7 +2,7 @@ From: Jimin <jimin.kim@jimin-help.example>
 To: grandma@sendpidge.example
 Subject: Grandma please help, urgent
 Date: Wed, 22 Oct 2026 04:10:00 +0900
-X-Pidge-Auth: spf=pass;dkim=pass;dmarc=pass
+X-Pidge-Auth: spf=pass;dkim=pass
 Content-Type: text/plain; charset="utf-8"
 MIME-Version: 1.0
 

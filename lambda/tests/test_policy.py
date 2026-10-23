@@ -15,7 +15,7 @@ def make_verdict(intent: Intent, confidence: float, claimed_person: str | None =
     [
         (Intent.MONEY, 0.9, True, [], PolicyDecision.HOLD, None),
         (Intent.CODE, HOLD_CONFIDENCE_THRESHOLD, True, [], PolicyDecision.HOLD, None),
-        (Intent.URGENT_ACTION, 0.7, True, [ReasonCode.DMARC_FAIL], PolicyDecision.HOLD, None),
+        (Intent.URGENT_ACTION, 0.7, True, [ReasonCode.AUTH_FAILED], PolicyDecision.HOLD, None),
         (Intent.MONEY, 0.9, False, [], PolicyDecision.WARN, WarnReason.UNKNOWN_NAME),
         (Intent.MONEY, 0.3, False, [], PolicyDecision.WARN, WarnReason.UNKNOWN_NAME),
         (Intent.MONEY, 0.3, True, [], PolicyDecision.WARN, WarnReason.LOW_CONFIDENCE),
@@ -36,9 +36,9 @@ def test_reader_failure_is_warn_never_pass_never_hold():
 
 
 def test_reasons_never_create_a_hold():
-    outcome = decide(make_verdict(Intent.NONE, 0.9), True, [ReasonCode.DMARC_FAIL, ReasonCode.AUTH_MISSING])
+    outcome = decide(make_verdict(Intent.NONE, 0.9), True, [ReasonCode.AUTH_FAILED, ReasonCode.AUTH_MISSING])
     assert outcome.decision is PolicyDecision.WARN
-    assert outcome.reasons == (ReasonCode.DMARC_FAIL, ReasonCode.AUTH_MISSING)
+    assert outcome.reasons == (ReasonCode.AUTH_FAILED, ReasonCode.AUTH_MISSING)
 
 
 def test_confidence_must_be_between_zero_and_one():
@@ -50,10 +50,12 @@ def test_confidence_must_be_between_zero_and_one():
     ("header_values", "expected_reasons"),
     [
         ([], [ReasonCode.AUTH_MISSING]),
-        (["spf=pass;dkim=pass;dmarc=pass"], []),
-        (["spf=pass; dkim=pass; dmarc=FAIL"], [ReasonCode.DMARC_FAIL]),
-        (["spf=pass;dkim=pass;dmarc=pass", "spf=pass;dkim=pass;dmarc=pass"], [ReasonCode.AUTH_TAMPERED]),
-        (["spf=pass;dkim=pass;dmarc=fail", "spf=fail"], [ReasonCode.AUTH_TAMPERED]),
+        (["spf=pass;dkim=pass"], []),
+        (["spf=fail;dkim=pass"], []),
+        (["spf=pass; dkim=FAIL"], []),
+        (["spf=fail;dkim=fail"], [ReasonCode.AUTH_FAILED]),
+        (["spf=pass;dkim=pass", "spf=pass;dkim=pass"], [ReasonCode.AUTH_TAMPERED]),
+        (["spf=fail;dkim=fail", "spf=pass;dkim=pass"], [ReasonCode.AUTH_TAMPERED]),
     ],
 )
 def test_authentication_reasons(header_values, expected_reasons):
