@@ -1,3 +1,4 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from "aws-cdk-lib";
 import { WebSocketApi, WebSocketStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -31,6 +32,21 @@ const LAMBDA_SOURCE_DIRECTORY = "../lambda";
 // Stamped by Mail Manager at ingress; a sender-written copy is dropped before it can be trusted.
 const PIDGE_AUTH_HEADER_NAME = "X-Pidge-Auth";
 const MAXIMUM_INBOUND_MESSAGE_BYTES = 10 * 1024 * 1024;
+
+
+// The AgentCore zip is built by scripts/build_case_agent.sh; a deploy from a stale build ships old shared code.
+function assertCaseAgentBuildIsCurrent(buildDirectory: string): string {
+  const sourceFiles: Array<[string, string]> = [["../agent/pidge_case/main.py", `${buildDirectory}/main.py`]];
+  for (const fileName of readdirSync("../lambda/shared").filter((name) => name.endsWith(".py"))) {
+    sourceFiles.push([`../lambda/shared/${fileName}`, `${buildDirectory}/shared/${fileName}`]);
+  }
+  const staleFiles = sourceFiles.filter(([sourcePath, builtPath]) =>
+    !existsSync(builtPath) || readFileSync(sourcePath, "utf8") !== readFileSync(builtPath, "utf8"));
+  if (staleFiles.length > 0) {
+    throw new Error(`case agent build is stale (${staleFiles.map(([sourcePath]) => sourcePath).join(", ")}); run: npm run build-agent`);
+  }
+  return buildDirectory;
+}
 
 export class SendPidgeStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -563,7 +579,7 @@ export class SendPidgeStack extends Stack {
       runtimeName: "sendpidge_case_agent",
       description: "Pidge case agent: reads one family's case rows, writes the case note, drafts the recovery pack",
       agentRuntimeArtifact: agentcore.AgentRuntimeArtifact.fromCodeAsset({
-        path: "build/case_agent",
+        path: assertCaseAgentBuildIsCurrent("build/case_agent"),
         runtime: agentcore.AgentCoreRuntime.PYTHON_3_12,
         entrypoint: ["opentelemetry-instrument", "main.py"],
         exclude: ["**/__pycache__"],
