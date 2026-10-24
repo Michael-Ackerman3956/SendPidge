@@ -9,6 +9,7 @@ export const PUSH_MESSAGE_TYPE = Object.freeze({
   CASE_NOTE: "case_note",
   CASE_STATE: "case_state",
   CONTACT_NOTICE: "contact_notice",
+  PIDGE_REPLY: "pidge_reply",
 });
 
 export const CLIENT_ACTION = Object.freeze({
@@ -21,6 +22,11 @@ export const CLIENT_ACTION = Object.freeze({
   SEND_REPORT: "send_report",
   CLOSE_CASE: "close_case",
   SAVE_PUSH_SUBSCRIPTION: "save_push_subscription",
+  ASK_PIDGE: "ask_pidge",
+});
+
+export const CHAT_CARD_KIND = Object.freeze({
+  REFUSAL: "refusal",
 });
 
 export const CASE_STATUS = Object.freeze({

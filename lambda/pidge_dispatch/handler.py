@@ -1,4 +1,5 @@
-"""DynamoDB Streams → the case agent. A final REQUEST# status or a new CASE# row becomes one case note pushed to Grandma."""
+"""DynamoDB Streams → the case agent. A final REQUEST# status or a new CASE# row becomes one case note pushed to Grandma;
+a new question row under CHAT# becomes one Pidge reply (guardrail first) pushed to her."""
 
 import hashlib
 import json
@@ -9,8 +10,11 @@ import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.config import Config
 
-from shared import case_agent, channels, graph, payloads
-from shared.enums import FINAL_REQUEST_STATES, CaseAgentRuntime, CaseState, CaseTrigger, ReaderModelChoice, RequestState
+from shared import case_agent, channels, chat, chat_agent, graph, payloads
+from shared.enums import (
+    FINAL_REQUEST_STATES, AgentInvocationKind, CaseAgentRuntime, CaseState, CaseTrigger, GuardrailOutcome, ReaderModelChoice,
+    RequestState,
+)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -22,6 +26,7 @@ CASE_AGENT_RUNTIME_ARN = os.environ.get("CASE_AGENT_RUNTIME_ARN", "")
 AGENTCORE_QUALIFIER = "DEFAULT"
 AGENTCORE_READ_TIMEOUT_SECONDS = 80  # under the Lambda's 90 s; no retries, a retry would run the agent twice
 NOTE_WORTHY_STATES = (*FINAL_REQUEST_STATES, RequestState.TIMEOUT)
+CHAT_GUARDRAIL_ENABLED = os.environ.get("CHAT_GUARDRAIL_ENABLED") == "true"
 
 deserializer = TypeDeserializer()
 _agentcore_client = None
@@ -38,6 +43,10 @@ def get_agentcore_client():
 
 def handle(event, context):
     for record in event["Records"]:
+        question_key = chat.question_key_from_stream_keys(deserialize(record["dynamodb"].get("Keys")))
+        if question_key is not None:
+            answer_and_push_question(*question_key)
+            continue
         scope = scope_for_record(record)
         if scope is None:
             continue
@@ -105,3 +114,50 @@ def invoke_case_agent_on_agentcore(scope: case_agent.CaseScope) -> case_agent.Ca
     if "note" not in answer:
         raise RuntimeError(f"case agent runtime returned no note: {answer}")
     return case_agent.CaseNote.model_validate(answer["note"])
+
+
+def check_question_with_guardrail(question: str) -> GuardrailOutcome:
+    if not CHAT_GUARDRAIL_ENABLED:
+        logger.warning("CHAT_GUARDRAIL_ENABLED is off; the question goes to the agent unchecked")
+        return GuardrailOutcome.PASSED
+    return chat.check_prompt_attack(question)
+
+
+def ask_chat_agent(user_id: str, question: str) -> str:
+    if CASE_AGENT_RUNTIME is CaseAgentRuntime.LAMBDA:
+        return chat_agent.run_chat_agent(chat_agent.build_chat_agent(CASE_AGENT_MODEL, user_id), question).reply_text
+    return invoke_chat_agent_on_agentcore(user_id, question)
+
+
+def answer_and_push_question(user_id: str, sort_key: str) -> None:
+    """One question → one stored reply → pushed to the asker's open sockets. A redelivered question is skipped."""
+    reply_row = chat.answer_question(user_id, sort_key, check_question_with_guardrail, ask_chat_agent)
+    if reply_row is None:
+        logger.info("question %s for %s already answered", sort_key, user_id)
+        return
+    delivered_count = channels.push_to_user(user_id, chat.pidge_reply_message_for_row(reply_row))
+    logger.info("reply to %s for %s stored; pushed to %d connection(s)", sort_key, user_id, delivered_count)
+
+
+def chat_session_id(user_id: str) -> str:
+    """Deterministic and at least 33 characters: one chat session per user, so follow-up questions keep context."""
+    return f"chat-{hashlib.sha256(user_id.encode()).hexdigest()}"
+
+
+def invoke_chat_agent_on_agentcore(user_id: str, question: str) -> str:
+    payload = {"kind": str(AgentInvocationKind.CHAT), "userId": user_id, "question": question}
+    response = get_agentcore_client().invoke_agent_runtime(
+        agentRuntimeArn=CASE_AGENT_RUNTIME_ARN,
+        runtimeSessionId=chat_session_id(user_id),
+        qualifier=AGENTCORE_QUALIFIER,
+        contentType="application/json",
+        accept="application/json",
+        payload=json.dumps(payload).encode(),
+    )
+    body = response["response"].read()
+    if response.get("statusCode", 200) >= 300:
+        raise RuntimeError(f"case agent runtime answered {response.get('statusCode')}: {body[:200]!r}")
+    answer = json.loads(body)
+    if "reply" not in answer:
+        raise RuntimeError(f"case agent runtime returned no reply: {answer}")
+    return chat_agent.ChatReply.model_validate(answer["reply"]).reply_text

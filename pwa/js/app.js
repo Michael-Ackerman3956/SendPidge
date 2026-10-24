@@ -12,6 +12,7 @@ import {
   applyContactSyncState, handleContactActionRejected, handleContactRequestStatePush, handleVerificationCardPush,
   hideContactView, showContactView,
 } from "./contact-view.js";
+import { handlePidgeReplyPush, startPidgeChat } from "./pidge-chat.js";
 import { applyPidgeSyncState, handleCaseNotePush, handleCaseStatePush, handlePidgeActionRejected, hidePidgeView, showPidgeView } from "./pidge-view.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
@@ -137,6 +138,7 @@ const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.CASE_NOTE]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CASE_STATE]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CONTACT_NOTICE]: [USER_ROLE.CONTACT],
+  [PUSH_MESSAGE_TYPE.PIDGE_REPLY]: [USER_ROLE.RECEIVER],
 });
 
 function isPushForActiveRole(pushMessageType) {
@@ -173,6 +175,9 @@ function handlePushMessage(pushMessage) {
     case PUSH_MESSAGE_TYPE.CASE_STATE:
       handleCaseStatePush(pushMessage.case);
       break;
+    case PUSH_MESSAGE_TYPE.PIDGE_REPLY:
+      handlePidgeReplyPush(pushMessage);
+      break;
     case PUSH_MESSAGE_TYPE.CONTACT_NOTICE:
       if (typeof pushMessage.text === "string") showActionStatusMessage(pushMessage.text);
       break;
@@ -190,6 +195,7 @@ function updateConnectionDot(connectionStatus) {
 function startApp() {
   pageElements.inboxTab.addEventListener("click", () => showReceiverTab(RECEIVER_TAB.INBOX));
   pageElements.pidgeTab.addEventListener("click", () => showReceiverTab(RECEIVER_TAB.PIDGE));
+  startPidgeChat();
   const accessToken = resolveAccessToken();
   if (!accessToken) {
     pageElements.tokenError.hidden = false;

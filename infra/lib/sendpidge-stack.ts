@@ -3,6 +3,7 @@ import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from "aws-cdk-l
 import { WebSocketApi, WebSocketStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as agentcore from "aws-cdk-lib/aws-bedrockagentcore";
+import { CfnGuardrail, CfnGuardrailVersion } from "aws-cdk-lib/aws-bedrock";
 import { Alarm, ComparisonOperator, TreatMissingData } from "aws-cdk-lib/aws-cloudwatch";
 import { Certificate, CertificateValidation } from "aws-cdk-lib/aws-certificatemanager";
 import { Distribution, ResponseHeadersPolicy, ViewerProtocolPolicy } from "aws-cdk-lib/aws-cloudfront";
@@ -85,6 +86,8 @@ export class SendPidgeStack extends Stack {
     const casesAddress = `cases@${receiverDomain}`;
     const caseAgentModel: string = this.node.getContext("caseAgentModel") ?? readerModel;
     const escalationModel: string = this.node.getContext("escalationModel") ?? "opus-4.5";
+    const chatEnabled: boolean = this.node.tryGetContext("chatEnabled") === true;
+    const chatGuardrailEnabled: boolean = this.node.tryGetContext("chatGuardrailEnabled") === true;
 
     // Sending identity for pidge@<domain> (receipts, later chat replies); Easy DKIM, three CNAMEs at the DNS host.
     const sendingIdentity = new EmailIdentity(this, "SendingIdentity", { identity: Identity.domain(sendingDomain) });
@@ -545,6 +548,7 @@ export class SendPidgeStack extends Stack {
         BANK_FOLLOW_UP_ENABLED: bankFollowUpEnabled ? "true" : "false",
         BANK_FOLLOW_UP_DELAY_SECONDS: String(bankFollowUpDelaySeconds),
         CASE_FOLLOWUP_FUNCTION_ARN: caseFollowUpFunction.functionArn,
+        CHAT_ENABLED: chatEnabled ? "true" : "false",
       },
       logGroup: new LogGroup(this, "VerdictLogs", {
         retention: RetentionDays.TWO_WEEKS,
@@ -619,6 +623,19 @@ export class SendPidgeStack extends Stack {
     caseAgentMemory.grantWrite(caseAgentRuntime);
     caseAgentMemory.grantRead(caseAgentRuntime);
 
+    // Bedrock Guardrails prompt-attack filter on Grandma's chat questions (input only), pinned to a numbered version.
+    const chatGuardrail = new CfnGuardrail(this, "ChatGuardrail", {
+      name: "sendpidge-chat-prompt-attack",
+      description: "Blocks prompt attacks in questions typed to Pidge",
+      contentPolicyConfig: { filtersConfig: [{ type: "PROMPT_ATTACK", inputStrength: "HIGH", outputStrength: "NONE" }] },
+      blockedInputMessaging: "I can only help with your own emails and cases.",
+      blockedOutputsMessaging: "I can only help with your own emails and cases.",
+    });
+    const chatGuardrailVersion = new CfnGuardrailVersion(this, "ChatGuardrailVersion", {
+      guardrailIdentifier: chatGuardrail.attrGuardrailId,
+      description: "PROMPT_ATTACK HIGH on input",
+    });
+
     // pidge-dispatch wakes on the table stream and asks the case agent (on AgentCore, or in-process in lambda mode)
     // for the note, then writes the NOTE# row and pushes it to Grandma.
     const dispatchFunction = new Function(this, "DispatchFunction", {
@@ -636,6 +653,9 @@ export class SendPidgeStack extends Stack {
         CASE_AGENT_MODEL: caseAgentModel,
         CASE_AGENT_RUNTIME_ARN: caseAgentRuntime.agentRuntimeArn,
         WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+        CHAT_GUARDRAIL_ENABLED: chatGuardrailEnabled ? "true" : "false",
+        CHAT_GUARDRAIL_ID: chatGuardrail.attrGuardrailId,
+        CHAT_GUARDRAIL_VERSION: chatGuardrailVersion.attrVersion,
       },
       logGroup: new LogGroup(this, "DispatchLogs", {
         retention: RetentionDays.TWO_WEEKS,
@@ -660,7 +680,11 @@ export class SendPidgeStack extends Stack {
       }),
     );
     caseAgentRuntime.grantInvoke(dispatchFunction);
-    // Three filters: a REQUEST# META whose new status is final, a CASE# META insert, or a CASE# META closed. Nothing else wakes it.
+    dispatchFunction.addToRolePolicy(
+      new PolicyStatement({ actions: ["bedrock:ApplyGuardrail"], resources: [chatGuardrail.attrGuardrailArn] }),
+    );
+    // Four filters: a REQUEST# META whose new status is final, a CASE# META insert, a CASE# META closed, or a new
+    // question row (CHAT# MSG# with role grandma; replies, guardrailHit updates and RATE# counters never match).
     dispatchFunction.addEventSource(new DynamoEventSource(table, {
       startingPosition: StartingPosition.LATEST,
       batchSize: 5,
@@ -683,6 +707,13 @@ export class SendPidgeStack extends Stack {
           dynamodb: {
             Keys: { PK: { S: FilterRule.beginsWith("CASE#") }, SK: { S: FilterRule.isEqual("META") } },
             NewImage: { status: { S: FilterRule.isEqual("closed") } },
+          },
+        }),
+        FilterCriteria.filter({
+          eventName: FilterRule.isEqual("INSERT"),
+          dynamodb: {
+            Keys: { PK: { S: FilterRule.beginsWith("CHAT#") }, SK: { S: FilterRule.beginsWith("MSG#") } },
+            NewImage: { role: { S: FilterRule.isEqual("grandma") } },
           },
         }),
       ],

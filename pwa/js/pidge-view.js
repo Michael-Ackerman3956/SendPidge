@@ -108,10 +108,20 @@ function describeCaseStatus(caseRow) {
   return caseRow.followUpSentAt ? "Reminder sent. Waiting for your bank." : "Sent. Waiting for your bank.";
 }
 
+// Display only: the bank's new words, without the quoted Pidge report that mail clients append ("On … wrote: > …").
+function stripQuotedHistory(replyText) {
+  const quoteStart = replyText.search(/\s*On [^\n]{5,200}?wrote:/);
+  const newText = (quoteStart >= 0 ? replyText.slice(0, quoteStart) : replyText).trim();
+  return newText || replyText;
+}
+
 function buildReplyElement(reply) {
   const replyElement = createElementWithText("blockquote", "pidge-case-reply");
-  replyElement.append(createElementWithText("p", "pidge-note-time", `${reply.from} · ${formatNoteTime(reply.receivedAt)}`),
-    createElementWithText("p", "pidge-case-reply-text", reply.textContent));
+  const headerElement = document.createElement("div");
+  headerElement.className = "pidge-case-reply-header";
+  headerElement.append(createElementWithText("span", "pidge-case-reply-sender", reply.from),
+    createElementWithText("span", "pidge-note-time", formatNoteTime(reply.receivedAt)));
+  replyElement.append(headerElement, createElementWithText("p", "pidge-case-reply-text", stripQuotedHistory(reply.textContent)));
   return replyElement;
 }
 

@@ -40,6 +40,13 @@
       </section>
       <section id="pidge-screen" aria-label="Pidge" hidden>
         <button id="enable-notifications-button" class="contact-secondary-button enable-notifications-button" type="button" hidden>Turn on notifications</button>
+        <section class="pidge-chat" aria-label="Ask Pidge">
+          <ol id="pidge-chat-thread" class="pidge-chat-thread" aria-live="polite" hidden></ol>
+          <form id="pidge-chat-form" class="pidge-chat-composer">
+            <input id="pidge-chat-input" type="text" placeholder="Ask Pidge" aria-label="Ask Pidge" autocomplete="off">
+            <button type="submit" aria-label="Send">Send</button>
+          </form>
+        </section>
         <div id="pidge-report-host"></div>
         <ul id="pidge-case-list" class="pidge-note-list"></ul>
         <ul id="pidge-note-list" class="pidge-note-list"></ul>

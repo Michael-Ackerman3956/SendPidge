@@ -142,6 +142,7 @@ class PushMessageType(StrEnum):
     CASE_NOTE = "case_note"                  # to the receiver: the case agent wrote a note (and maybe a recovery pack)
     CASE_STATE = "case_state"                # to the receiver: a case changed (sent, bank replied, reminded, closed)
     CONTACT_NOTICE = "contact_notice"        # to the contact: one fixed sentence (the bank replied to the receiver's case)
+    PIDGE_REPLY = "pidge_reply"              # to the receiver: Pidge's answer to her question, or a refusal
 
 
 class ClientAction(StrEnum):
@@ -156,13 +157,48 @@ class ClientAction(StrEnum):
     SEND_REPORT = "send_report"        # the receiver: "Send to my bank" → code emails the SIMULATED bank
     CLOSE_CASE = "close_case"          # the receiver: "Done" → the case is closed
     SAVE_PUSH_SUBSCRIPTION = "save_push_subscription"  # either user: this browser may get Web Push notifications
-
+    ASK_PIDGE = "ask_pidge"                            # the receiver: a question typed in the Pidge chat window
 
 
 class PushNotice(StrEnum):
     """Which Web Push notification is sent; each maps to one fixed sentence in shared/web_push.py, never email text."""
 
     BANK_REPLIED = "bank_replied"
+
+
+class ChatRole(StrEnum):
+    """Who wrote one CHAT# message row."""
+
+    GRANDMA = "grandma"
+    PIDGE = "pidge"
+
+
+class ChatVia(StrEnum):
+    """How the receiver's question arrived (email is slice 8 stage 6b)."""
+
+    WINDOW = "window"
+    EMAIL = "email"
+
+
+class ChatCardKind(StrEnum):
+    """The card a Pidge reply carries. Mirrored in pwa/js/constants.js."""
+
+    REFUSAL = "refusal"
+
+
+class GuardrailOutcome(StrEnum):
+    """The prompt-attack check on a question; a failed call raises instead of returning."""
+
+    PASSED = "passed"
+    INTERVENED = "intervened"
+
+
+class AgentInvocationKind(StrEnum):
+    """What pidge-dispatch asks the AgentCore runtime for; a payload without a kind is a case note."""
+
+    CASE_NOTE = "case_note"
+    CHAT = "chat"
+
 
 class UserRole(StrEnum):
     """Which screen a PWA shows. Mirrored in pwa/js/constants.js."""

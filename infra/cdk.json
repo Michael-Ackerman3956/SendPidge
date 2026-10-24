@@ -24,6 +24,8 @@
     "retrySchedulerEnabled": true,
     "reAskDelaySeconds": 600,
     "bankFollowUpEnabled": true,
-    "bankFollowUpDelaySeconds": 120
+    "bankFollowUpDelaySeconds": 120,
+    "chatEnabled": true,
+    "chatGuardrailEnabled": true
   }
 }

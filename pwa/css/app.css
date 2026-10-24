@@ -352,10 +352,33 @@ button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 }
 .pidge-case-title { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
 .pidge-case-status { font-size: 15px; color: var(--text-secondary); }
-.pidge-case-reply { margin: 0; padding: 10px 12px; border-left: 3px solid var(--teal); background: var(--surface-2); border-radius: 8px; }
+.pidge-case-reply {
+  margin: 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+}
+.pidge-case-reply-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.pidge-case-reply-sender { font-size: 14px; font-weight: 600; color: var(--text-secondary); overflow-wrap: anywhere; }
 .pidge-case-reply-text { font-size: 16px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pidge-case-done-button {
   width: 100%; min-height: 48px; border: none; border-radius: 24px; cursor: pointer;
   background: var(--teal); color: #0e0e0e; font-size: 16px; font-weight: 700;
 }
 .pidge-case-done-button:disabled, .pidge-report-button:disabled { opacity: 0.6; cursor: default; }
+.pidge-chat {
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding: 14px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card);
+}
+.pidge-chat-thread { list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+.pidge-chat-bubble { max-width: 86%; padding: 10px 13px; border-radius: 18px; font-size: 16px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; }
+.pidge-chat-bubble.is-grandma { align-self: flex-end; background: var(--teal); color: #06231c; border-bottom-right-radius: 6px; }
+.pidge-chat-bubble.is-pidge { align-self: flex-start; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); border-bottom-left-radius: 6px; }
+.pidge-chat-bubble.is-refusal { border-color: rgba(245, 158, 11, 0.4); }
+.pidge-chat-composer { display: flex; gap: 8px; }
+.pidge-chat-composer input {
+  flex: 1; min-width: 0; height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 22px;
+  background: var(--surface-2); color: var(--text-primary); font-size: 16px; font-family: inherit;
+}
+.pidge-chat-composer button {
+  height: 44px; padding: 0 18px; border: none; border-radius: 22px; cursor: pointer;
+  background: var(--teal); color: #06231c; font-size: 16px; font-weight: 700; font-family: inherit;
+}

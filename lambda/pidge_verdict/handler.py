@@ -1,5 +1,5 @@
-"""WebSocket $default: sync, the contact's Yes / No / Undo / Reverse, the receiver's Confirm and case actions,
-a browser's Web Push subscription; SNS: phone-channel taps.
+"""WebSocket $default: sync, the contact's Yes / No / Undo / Reverse, the receiver's Confirm, case actions and questions
+to Pidge, a browser's Web Push subscription; SNS: phone-channel taps.
 
 The user comes from the connection row, never from the message body.
 """
@@ -11,8 +11,8 @@ from datetime import datetime, timedelta, timezone
 
 import boto3
 
-from shared import cases, channels, graph, payloads, push_subscriptions, rcs, schedules, verdict, whatsapp
-from shared.enums import ActionOutcome, CaseEvent, Channel, ClientAction, PushMessageType, RequestState, UserRole, VerdictAnswer
+from shared import cases, channels, chat, graph, payloads, push_subscriptions, rcs, schedules, verdict, whatsapp
+from shared.enums import ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, PushMessageType, RequestState, UserRole, VerdictAnswer
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -73,6 +73,8 @@ def handle(event, context):
         handle_close_case(connection_id, user_id, body)
     elif action is ClientAction.SAVE_PUSH_SUBSCRIPTION:
         handle_save_push_subscription(connection_id, user_id, body)
+    elif action is ClientAction.ASK_PIDGE:
+        handle_ask_pidge(connection_id, user_id, body)
     else:
         handle_confirm(connection_id, user_id, body)
     return HANDLED
@@ -279,3 +281,16 @@ def handle_save_push_subscription(connection_id: str, user_id: str, body: dict) 
     outcome = push_subscriptions.save_subscription(user_id, body)
     if outcome is not ActionOutcome.RECORDED:
         reject(connection_id, None, outcome)
+
+
+def handle_ask_pidge(connection_id: str, user_id: str, body: dict) -> None:
+    """The receiver's question: cap and grandma row here; pidge-dispatch answers from the stream. A refusal is a reply bubble."""
+    if user_id != RECEIVER_USER_ID:
+        reject(connection_id, None, ActionOutcome.NOT_ALLOWED)
+        return
+    accepted = chat.accept_question(user_id, body.get("text"), ChatVia.WINDOW)
+    if accepted.refusal_text is not None:
+        logger.info("question from %s refused: %s", user_id, accepted.refusal_text)
+        channels.push_to_connection(connection_id, chat.pidge_reply_message(None, accepted.refusal_text, ChatCardKind.REFUSAL))
+        return
+    logger.info("question %s stored for %s (%d characters)", accepted.message_row["SK"], user_id, len(accepted.message_row["text"]))
