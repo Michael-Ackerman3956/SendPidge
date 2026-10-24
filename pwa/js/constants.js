@@ -51,12 +51,22 @@ export const WARN_REASON = Object.freeze({
   LOW_CONFIDENCE: "low_confidence",
   LISTED_SENDER: "listed_sender",
   UNREACHABLE: "unreachable",
+  ESCALATION_CLEARED: "escalation_cleared",
 });
 
 export const REASON_CODE = Object.freeze({
   AUTH_MISSING: "auth_missing",
   AUTH_TAMPERED: "auth_tampered",
   AUTH_FAILED: "auth_failed",
+  UNKNOWN_ADDRESS: "unknown_address",
+  ESCALATION_CLEARED: "escalation_cleared",
+  ESCALATION_FAILED: "escalation_failed",
+  PERSON_CONFLICT: "person_conflict",
+});
+
+export const FRICTION = Object.freeze({
+  SINGLE_TAP: "single_tap",
+  DOUBLE_TAP: "double_tap",
 });
 
 export const INTENT = Object.freeze({

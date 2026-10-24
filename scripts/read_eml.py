@@ -1,6 +1,9 @@
-"""Feed one .eml to the Reader and print the verdict and the policy decision.
+"""Feed one .eml to the Reader and print the verdict and the policy decision, offline except for the model call.
 
-Usage: python scripts/read_eml.py samples/fake-jimin.eml [--contact Jimin ...]
+Usage: python scripts/read_eml.py samples/fake-jimin.eml [--contact Jimin ...] [--known-address jimin@example.com ...]
+                                  [--escalation hold|warn]
+--known-address lists the addresses the contacts are known to write from (gate 1 holds a contact's name from any other).
+--escalation fakes the second reviewer's answer (its claimed_person echoes the Reader's) so the escalation path runs offline.
 Needs AWS_PROFILE (or ambient credentials) and READER_MODEL in the environment; see .env.example.
 """
 
@@ -16,8 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lambda"))
 
 from shared.auth import authentication_reasons  # noqa: E402
 from shared.email_parse import parse_eml  # noqa: E402
-from shared.enums import ReaderModelChoice  # noqa: E402
-from shared.policy import ReaderFailure, decide  # noqa: E402
+from shared.enums import EscalationDecision, ReaderModelChoice  # noqa: E402
+from shared.graph import Contact  # noqa: E402
+from shared.policy import EscalationAnswer, ReaderFailure, apply_escalation, decide, needs_escalation  # noqa: E402
 from shared.reader_agent import BEDROCK_REGION, build_reader, read_email  # noqa: E402
 from shared.sanitize import sanitize_summary  # noqa: E402
 
@@ -51,18 +55,26 @@ class ConverseRequestRecorder:
         return f"tools sent: {self.tool_names or 'none'} · outputConfig schema: {self.output_schema_name or 'none'}"
 
 
-def is_claimed_person_a_contact(claimed_person: str | None, contact_names: list[str]) -> bool:
-    if claimed_person is None:
-        return False
-    return claimed_person.strip().casefold() in {name.casefold() for name in contact_names}
+def find_local_contact(contacts: list[Contact], person_name: str | None) -> Contact | None:
+    """The same rule as graph.find_contact, over the contacts named on the command line."""
+    if not person_name:
+        return None
+    wanted_name = " ".join(person_name.split()).casefold()
+    return next((contact for contact in contacts if " ".join(contact.contact_name.split()).casefold() == wanted_name), None)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("eml_path", type=Path)
     parser.add_argument("--contact", action="append", dest="contact_names", default=None, help="a known contact name; repeatable")
+    parser.add_argument("--known-address", action="append", dest="known_addresses", default=[],
+                        help="an address every named contact is known to write from; repeatable")
+    parser.add_argument("--escalation", type=EscalationDecision, choices=list(EscalationDecision), default=None,
+                        help="fake the second reviewer's decision instead of calling Opus")
     arguments = parser.parse_args()
     contact_names = arguments.contact_names or DEFAULT_CONTACT_NAMES
+    known_addresses = tuple(address.casefold() for address in arguments.known_addresses)
+    contacts = [Contact(f"CONTACT#{name.casefold()}", name, name.casefold(), known_addresses=known_addresses) for name in contact_names]
 
     model_choice = ReaderModelChoice(read_required_setting("READER_MODEL"))
     session = boto3.Session(profile_name=os.environ.get("AWS_PROFILE"), region_name=BEDROCK_REGION)
@@ -81,8 +93,14 @@ def main() -> None:
         reader_outcome = ReaderFailure(str(error))
         print(f"reader failed: {error}")
 
-    outcome = decide(reader_outcome, is_claimed_person_a_contact(getattr(reader_outcome, "claimed_person", None), contact_names), reasons)
-    print(f"decision={outcome.decision.upper()}  warn_reason={outcome.warn_reason}  reasons={[reason.value for reason in outcome.reasons]}")
+    contact_by_name = find_local_contact(contacts, parsed_email.sender_name)
+    contact_by_claim = find_local_contact(contacts, getattr(reader_outcome, "claimed_person", None))
+    outcome = decide(reader_outcome, contact_by_name, contact_by_claim, parsed_email.sender_address, reasons)
+    if needs_escalation(outcome, arguments.escalation is not None):
+        print(f"escalation (faked): decision={arguments.escalation} applied to {outcome.gate}")
+        outcome = apply_escalation(outcome, EscalationAnswer(arguments.escalation, contact_by_claim))
+    print(f"decision={outcome.decision.upper()}  warn_reason={outcome.warn_reason}  gate={outcome.gate}  "
+          f"friction={outcome.friction}  reasons={[reason.value for reason in outcome.reasons]}")
     print(f"converse request: {recorder.describe()}")
 
 

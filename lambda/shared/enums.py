@@ -28,6 +28,7 @@ class WarnReason(StrEnum):
     LOW_CONFIDENCE = "low_confidence"  # a weak ask from a known name
     LISTED_SENDER = "listed_sender"    # no ask, but the sender carries reasons
     UNREACHABLE = "unreachable"        # every channel failed; the hold is kept
+    ESCALATION_CLEARED = "escalation_cleared"  # a model-driven hold that the second reviewer downgraded to a mark
 
 
 class ReasonCode(StrEnum):
@@ -36,6 +37,31 @@ class ReasonCode(StrEnum):
     AUTH_MISSING = "auth_missing"      # no X-Pidge-Auth header at all
     AUTH_TAMPERED = "auth_tampered"    # more than one X-Pidge-Auth header
     AUTH_FAILED = "auth_failed"      # neither SPF nor DKIM passed at ingress
+    UNKNOWN_ADDRESS = "unknown_address"        # gate 1: a contact's display name from an address not in knownAddresses
+    ESCALATION_CLEARED = "escalation_cleared"  # the second reviewer said a mark is enough (gate 2 only)
+    ESCALATION_FAILED = "escalation_failed"    # the second reviewer could not answer; the hold stays
+    PERSON_CONFLICT = "person_conflict"        # the two models named different people; the hold stays
+
+
+class GateFired(StrEnum):
+    """Which policy gate created a hold."""
+
+    GATE_1 = "gate_1"  # code: known display name, unknown address
+    GATE_2 = "gate_2"  # model: a clear ask from a claimed contact
+
+
+class Friction(StrEnum):
+    """How many taps the contact's Yes needs."""
+
+    SINGLE_TAP = "single_tap"
+    DOUBLE_TAP = "double_tap"  # impersonator asking for money or a code
+
+
+class EscalationDecision(StrEnum):
+    """What the second reviewer (Opus) says about a hold it was shown."""
+
+    HOLD = "hold"
+    WARN = "warn"
 
 
 class RequestState(StrEnum):
@@ -81,6 +107,8 @@ class ReaderModelChoice(StrEnum):
     HAIKU_4_5 = "haiku-4.5"
     NOVA_MICRO = "nova-micro"
     GEMMA_4_E2B = "gemma-4-e2b"
+    OPUS_4_5 = "opus-4.5"  # the escalation reviewer, never the Reader (the only Opus this account can call, 2026-10-24)
+    OPUS_5_5 = "opus-5.5"  # the escalation reviewer once the account is granted access
 
 
 class PushMessageType(StrEnum):

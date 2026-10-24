@@ -12,7 +12,7 @@
 /devpost/research/
 /docs/
 /.scratch/
-/agent/
+/agent/skills/
 
 # Local tool config with machine paths (the .kiro/specs mirror stays tracked)
 /.kiro/agents/

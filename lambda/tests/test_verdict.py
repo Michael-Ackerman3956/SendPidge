@@ -8,7 +8,7 @@ from botocore.stub import Stubber
 from moto import mock_aws
 
 from shared import graph, verdict
-from shared.enums import ActionOutcome, Channel, RequestState, VerdictAnswer
+from shared.enums import ActionOutcome, Channel, Friction, RequestState, VerdictAnswer
 
 RECEIVER_ADDRESS = "grandma@example.com"
 RECEIVER_USER_ID = "grandma"
@@ -51,7 +51,7 @@ def seed_contact(contact_email: str | None = CONTACT_EMAIL) -> graph.Contact:
 
 def new_request() -> str:
     graph.claim_email(EMAIL_ID, {"s3Key": EMAIL_ID, "senderAddress": "Scammer@Lookalike.example", "quarantined": False})
-    return graph.request_id_of(graph.create_request(EMAIL_ID, RECEIVER_ADDRESS, seed_contact(), VERDICT_FIELDS))
+    return graph.request_id_of(graph.create_request(EMAIL_ID, RECEIVER_ADDRESS, seed_contact(), VERDICT_FIELDS, Friction.SINGLE_TAP, None))
 
 
 def at(seconds_from_now: int) -> str:

@@ -12,11 +12,14 @@ from shared.enums import Intent, ReaderModelChoice
 
 BEDROCK_REGION = "us-east-1"
 SUMMARY_MAX_LENGTH = 140
+MODEL_MAX_OUTPUT_TOKENS = 400  # a verdict is a few lines; an unset maximum reserves the model's full quota per call
 
 BEDROCK_MODEL_IDS: dict[ReaderModelChoice, str] = {
     ReaderModelChoice.HAIKU_5_5: "global.anthropic.claude-haiku-5-5",
     ReaderModelChoice.HAIKU_4_5: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ReaderModelChoice.NOVA_MICRO: "us.amazon.nova-micro-v1:0",
+    ReaderModelChoice.OPUS_4_5: "global.anthropic.claude-opus-4-5-20251101-v1:0",
+    ReaderModelChoice.OPUS_5_5: "global.anthropic.claude-opus-5-5",
 }
 
 
@@ -50,7 +53,7 @@ def build_bedrock_model(model_choice: ReaderModelChoice, boto_session: boto3.Ses
     if model_choice is ReaderModelChoice.GEMMA_4_E2B:
         raise NotImplementedError("gemma-4-e2b runs on bedrock-mantle, not Converse; not wired in this build")
     session = boto_session or boto3.Session(region_name=BEDROCK_REGION)
-    return BedrockModel(model_id=BEDROCK_MODEL_IDS[model_choice], boto_session=session)
+    return BedrockModel(model_id=BEDROCK_MODEL_IDS[model_choice], boto_session=session, max_tokens=MODEL_MAX_OUTPUT_TOKENS)
 
 
 def build_reader(model_choice: ReaderModelChoice, boto_session: boto3.Session | None = None) -> Agent:

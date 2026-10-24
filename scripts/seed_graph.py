@@ -2,7 +2,8 @@
 
 Tokens go to .env.tokens (git-ignored, owner-only) and are never printed. Re-running keeps them unless
 --rotate-tokens is passed. JIMIN_CONTACT_EMAIL (optional) is where Jimin's verdict receipts go.
-Usage: AWS_PROFILE=sendpidge [JIMIN_CONTACT_EMAIL=...] python scripts/seed_graph.py [--rotate-tokens]
+JIMIN_KNOWN_ADDRESSES (comma-separated) is the list gate 1 trusts: a "Jimin" email from any other address is held.
+Usage: AWS_PROFILE=sendpidge [JIMIN_CONTACT_EMAIL=...] [JIMIN_KNOWN_ADDRESSES=a@x.com,b@y.com] python scripts/seed_graph.py [--rotate-tokens]
 """
 
 import json
@@ -26,6 +27,13 @@ RECEIVER_USER_ID = CDK_CONTEXT["receiverUserId"]
 CONTACT_USER_ID = "jimin"
 CONTACT_NAME = "Jimin"
 PROFILE_SORT_KEY = "PROFILE"
+DEFAULT_KNOWN_ADDRESSES = ["jimin@example.com"]  # the address samples/family-hello.eml is sent from
+
+
+def known_addresses_from_environment() -> list[str]:
+    configured = os.environ.get("JIMIN_KNOWN_ADDRESSES", "")
+    addresses = [address.strip().casefold() for address in configured.split(",") if address.strip()]
+    return addresses or DEFAULT_KNOWN_ADDRESSES
 
 
 def rotate_access_token(table, user_id: str) -> str:
@@ -47,6 +55,7 @@ def write_contact(table) -> None:
         "SK": f"CONTACT#{CONTACT_USER_ID}",
         "contactName": CONTACT_NAME,
         "contactPwaUserId": CONTACT_USER_ID,
+        "knownAddresses": known_addresses_from_environment(),
         "verifiedVia": "seed",
     }
     contact_email = os.environ.get("JIMIN_CONTACT_EMAIL")

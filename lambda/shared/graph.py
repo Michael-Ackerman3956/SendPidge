@@ -12,7 +12,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared.enums import Channel, PolicyDecision, ReasonCode, RequestState, WarnReason
+from shared.enums import Channel, Friction, PolicyDecision, ReasonCode, RequestState, WarnReason
 
 HOLD_DURATION_SECONDS = 60
 REQUEST_RETENTION_SECONDS = 30 * 24 * 3600
@@ -63,6 +63,10 @@ class Contact:
     contact_pwa_user_id: str
     contact_rcs: str | None = None  # E.164, exactly as RCS reports originationNumber
     contact_whatsapp: str | None = None  # E.164 with "+"; whatsapp.parse_inbound_reply adds the "+" Meta omits
+    known_addresses: tuple[str, ...] = ()  # CONTACT#.knownAddresses, lower-cased; gate 1 compares the sender address here
+
+    def is_known_address(self, sender_address: str) -> bool:
+        return sender_address.casefold() in self.known_addresses
 
 
 def find_user_id_for_access_token(access_token: str) -> str | None:
@@ -96,19 +100,27 @@ def list_connection_ids(user_id: str) -> list[str]:
     return [item["SK"].removeprefix("CONN#") for item in response["Items"]]
 
 
-def find_contact(receiver_address: str, claimed_person: str | None) -> Contact | None:
-    """Exact name match (case and spacing ignored) against the receiver's own contacts."""
-    if not claimed_person:
+def contact_from_row(item: dict) -> Contact:
+    return Contact(
+        item["SK"], item["contactName"], item["contactPwaUserId"], item.get("contactRcs"), item.get("contactWhatsApp"),
+        tuple(str(address).casefold() for address in item.get("knownAddresses", [])),
+    )
+
+
+def find_contact(receiver_address: str, person_name: str | None) -> Contact | None:
+    """Exact name match (case and spacing ignored) against the receiver's own contacts.
+
+    Called with the sender's display name for gate 1 and with the Reader's claimed_person for gate 2.
+    """
+    if not person_name:
         return None
-    wanted_name = " ".join(claimed_person.split()).casefold()
+    wanted_name = " ".join(person_name.split()).casefold()
     response = get_table().query(
         KeyConditionExpression=Key("PK").eq(f"RECEIVER#{receiver_address}") & Key("SK").begins_with("CONTACT#")
     )
     for item in response["Items"]:
         if " ".join(item["contactName"].split()).casefold() == wanted_name:
-            return Contact(
-                item["SK"], item["contactName"], item["contactPwaUserId"], item.get("contactRcs"), item.get("contactWhatsApp")
-            )
+            return contact_from_row(item)
     return None
 
 
@@ -147,14 +159,33 @@ def record_email_outcome(
     )
 
 
-def create_request(email_id: str, receiver_address: str, contact: Contact, verdict_fields: dict) -> dict:
+def record_email_escalation(email_id: str, escalation_fields: dict) -> None:
+    """EMAIL#.escalation: the second reviewer's answer on a WARN that was cleared (no REQUEST# row exists for it)."""
+    get_table().update_item(
+        Key={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY},
+        UpdateExpression="SET escalation = :escalation",
+        ExpressionAttributeValues={":escalation": decimal_fields(escalation_fields)},
+    )
+
+
+def decimal_fields(fields: dict) -> dict:
+    """DynamoDB refuses floats; every float in a model dump becomes a Decimal."""
+    return {key: Decimal(str(value)) if isinstance(value, float) else value for key, value in fields.items()}
+
+
+def create_request(
+    email_id: str, receiver_address: str, contact: Contact, verdict_fields: dict,
+    friction: Friction, escalation_fields: dict | None,
+) -> dict:
     """Stores a pending 'Was this you?' that holds for HOLD_DURATION_SECONDS; returns the stored row."""
     created_at = datetime.now(timezone.utc)
     request_row = {
         "PK": f"REQUEST#req-{uuid.uuid4()}", "SK": METADATA_SORT_KEY,
         "emailId": email_id, "receiverEmail": receiver_address,
         "claimedPerson": verdict_fields["claimed_person"], "contactSK": contact.contact_key,
-        "verdict": {**verdict_fields, "confidence": Decimal(str(verdict_fields["confidence"]))},
+        "verdict": decimal_fields(verdict_fields),
+        "friction": str(friction),
+        "escalation": decimal_fields(escalation_fields) if escalation_fields else None,
         "status": str(RequestState.PENDING), "channelsSent": [], "inboundMessageIds": [],
         "createdAt": iso_timestamp(created_at),
         "expiresAt": iso_timestamp(created_at + timedelta(seconds=HOLD_DURATION_SECONDS)),

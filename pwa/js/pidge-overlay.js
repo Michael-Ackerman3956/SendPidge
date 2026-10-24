@@ -167,6 +167,8 @@ function describeWarnReason(email) {
       return "This sender has warning signs.";
     case WARN_REASON.UNREACHABLE:
       return describeUnreachableWarning(email);
+    case WARN_REASON.ESCALATION_CLEARED:
+      return "Pidge checked twice; a ! mark, not a hold.";
     default:
       console.error("SendPidge: WARN email has an unknown warnReason", email.warnReason);
       return "Pidge has a warning about this email.";

@@ -47,6 +47,8 @@ export class SendPidgeStack extends Stack {
     const whatsappPhoneNumberArn: string = this.node.getContext("whatsappPhoneNumberArn") ?? "";
     const whatsappMetaApiVersion: string = this.node.getContext("whatsappMetaApiVersion") ?? "v20.0";
     const whatsappTemplateName: string = this.node.getContext("whatsappTemplateName") ?? "";
+    const escalationEnabled: boolean = this.node.getContext("escalationEnabled") === true;
+    const escalationModel: string = this.node.getContext("escalationModel") ?? "opus-4.5";
 
     // Sending identity for pidge@<domain> (receipts, later chat replies); Easy DKIM, three CNAMEs at the DNS host.
     const sendingIdentity = new EmailIdentity(this, "SendingIdentity", { identity: Identity.domain(sendingDomain) });
@@ -247,6 +249,8 @@ export class SendPidgeStack extends Stack {
       environment: {
         TABLE_NAME: table.tableName,
         READER_MODEL: readerModel,
+        ESCALATION_ENABLED: escalationEnabled ? "true" : "false",
+        ESCALATION_MODEL: escalationModel,
         RECEIVER_ADDRESS: receiverAddress,
         RECEIVER_USER_ID: receiverUserId,
         RECEIVER_NAME: receiverName,
@@ -275,6 +279,11 @@ export class SendPidgeStack extends Stack {
           "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-5-5*",
           `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/us.anthropic.claude-haiku-4-5*`,
           `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-haiku-5-5*`,
+          // The second reviewer (escalation) runs on Opus; a global profile may route to any commercial region.
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-5*",
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-5-5*",
+          `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-opus-4-5*`,
+          `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-opus-5-5*`,
         ],
       }),
     );
