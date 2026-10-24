@@ -140,7 +140,7 @@ export class SendPidgeStack extends Stack {
       billingMode: BillingMode.PAY_PER_REQUEST,
       // Retention TTL; separate from a request's 60 s hold expiry (expiresAt).
       timeToLiveAttribute: "ttlEpochSeconds",
-      // The stream wakes pidge-dispatch (the case agent) on a final verdict or a new CASE# row.
+      // The stream wakes pidge-dispatch (the case agent) on a final verdict, a new CASE# row or a closed case.
       stream: StreamViewType.NEW_AND_OLD_IMAGES,
       removalPolicy: RemovalPolicy.DESTROY,
     });
@@ -627,7 +627,7 @@ export class SendPidgeStack extends Stack {
       }),
     );
     caseAgentRuntime.grantInvoke(dispatchFunction);
-    // Two filters: a REQUEST# META whose new status is final, or a CASE# META insert. Everything else never wakes it.
+    // Three filters: a REQUEST# META whose new status is final, a CASE# META insert, or a CASE# META closed. Nothing else wakes it.
     dispatchFunction.addEventSource(new DynamoEventSource(table, {
       startingPosition: StartingPosition.LATEST,
       batchSize: 5,
@@ -644,6 +644,13 @@ export class SendPidgeStack extends Stack {
         FilterCriteria.filter({
           eventName: FilterRule.isEqual("INSERT"),
           dynamodb: { Keys: { PK: { S: FilterRule.beginsWith("CASE#") }, SK: { S: FilterRule.isEqual("META") } } },
+        }),
+        FilterCriteria.filter({
+          eventName: FilterRule.isEqual("MODIFY"),
+          dynamodb: {
+            Keys: { PK: { S: FilterRule.beginsWith("CASE#") }, SK: { S: FilterRule.isEqual("META") } },
+            NewImage: { status: { S: FilterRule.isEqual("closed") } },
+          },
         }),
       ],
     }));
