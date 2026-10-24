@@ -72,3 +72,17 @@ def request_state_message(request_row: dict, status: RequestState, contact_name:
             **request_timing(request_row),
         },
     }
+
+
+def note_for_receiver(note_row: dict) -> dict:
+    return {
+        "noteId": note_row["SK"],
+        "requestId": note_row["PK"].removeprefix("REQUEST#"),
+        "writtenAt": note_row["writtenAt"],
+        "noteText": note_row["noteText"],
+        "recoveryPack": note_row.get("recoveryPack"),
+    }
+
+
+def case_note_message(note_row: dict) -> dict:
+    return {"type": PushMessageType.CASE_NOTE, "note": note_for_receiver(note_row)}

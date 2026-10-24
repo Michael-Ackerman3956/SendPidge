@@ -12,7 +12,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared.enums import Channel, Friction, PolicyDecision, ReasonCode, RequestState, WarnReason
+from shared.enums import CaseState, Channel, Friction, PolicyDecision, ReasonCode, RequestState, WarnReason
 
 HOLD_DURATION_SECONDS = 60
 REQUEST_RETENTION_SECONDS = 30 * 24 * 3600
@@ -26,6 +26,10 @@ USER_INDEX_PARTITION_KEY = "userIndexPK"
 USER_INDEX_SORT_KEY = "userIndexSK"
 EMAIL_ROW_KIND = "EMAIL"
 REQUEST_ROW_KIND = "REQUEST"
+NOTE_ROW_KIND = "NOTE"
+CASE_ROW_KIND = "CASE"
+NOTE_SORT_KEY_PREFIX = "NOTE#"
+CASE_NOTE_WRITER = "case_agent"
 
 _table = None
 
@@ -293,3 +297,44 @@ def write_listed_address(sender_address: str, reason: str) -> None:
 def delete_listed_address(sender_address: str) -> None:
     """Removes the Confirm row for an address; a reversed No means the report no longer stands."""
     get_table().delete_item(Key={"PK": "LIST#address", "SK": sender_address.lower()})
+
+
+def write_case_note(request_id: str, receiver_user_id: str, note_text: str, recovery_pack: dict | None, note_for: str) -> dict:
+    """NOTE#<writtenAt> under the request; note_for names the trigger so the same verdict never gets two notes."""
+    written_at = iso_timestamp(datetime.now(timezone.utc))
+    note_row = {
+        "PK": f"REQUEST#{request_id}", "SK": f"{NOTE_SORT_KEY_PREFIX}{written_at}",
+        "noteText": note_text, "recoveryPack": recovery_pack, "writtenBy": CASE_NOTE_WRITER, "noteFor": note_for,
+        "writtenAt": written_at,
+        USER_INDEX_PARTITION_KEY: user_index_partition(receiver_user_id, NOTE_ROW_KIND),
+        USER_INDEX_SORT_KEY: written_at,
+        "ttlEpochSeconds": retention_epoch(REQUEST_RETENTION_SECONDS),
+    }
+    get_table().put_item(Item=note_row)
+    return note_row
+
+
+def list_case_notes(request_id: str) -> list[dict]:
+    """The notes written for one request, oldest first."""
+    response = get_table().query(
+        KeyConditionExpression=Key("PK").eq(f"REQUEST#{request_id}") & Key("SK").begins_with(NOTE_SORT_KEY_PREFIX)
+    )
+    return response["Items"]
+
+
+def create_case(receiver_user_id: str, case_fields: dict) -> dict:
+    """CASE#<uuid>: Grandma's record of a payment she already made; the stream wakes the case agent."""
+    created_at = iso_timestamp(datetime.now(timezone.utc))
+    case_row = {
+        "PK": f"CASE#case-{uuid.uuid4()}", "SK": METADATA_SORT_KEY, **case_fields,
+        "status": str(CaseState.OPEN), "disputeNumber": None, "createdAt": created_at,
+        USER_INDEX_PARTITION_KEY: user_index_partition(receiver_user_id, CASE_ROW_KIND),
+        USER_INDEX_SORT_KEY: created_at,
+        "ttlEpochSeconds": retention_epoch(EMAIL_RETENTION_SECONDS),
+    }
+    get_table().put_item(Item=case_row, ConditionExpression="attribute_not_exists(PK)")
+    return case_row
+
+
+def get_case(case_id: str) -> dict | None:
+    return get_table().get_item(Key={"PK": f"CASE#{case_id}", "SK": METADATA_SORT_KEY}).get("Item")

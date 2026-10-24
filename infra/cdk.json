@@ -18,6 +18,8 @@
     "whatsappTemplateName": "pidge_was_this_you",
     "escalationEnabled": true,
     "escalationModel": "opus-4.5",
-    "releaseSchedulerEnabled": true
+    "releaseSchedulerEnabled": true,
+    "caseAgentRuntime": "lambda",
+    "caseAgentModel": "haiku-4.5"
   }
 }

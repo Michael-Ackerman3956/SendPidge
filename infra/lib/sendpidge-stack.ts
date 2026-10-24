@@ -5,9 +5,10 @@ import { Alarm, ComparisonOperator, TreatMissingData } from "aws-cdk-lib/aws-clo
 import { Certificate, CertificateValidation } from "aws-cdk-lib/aws-certificatemanager";
 import { Distribution, ResponseHeadersPolicy, ViewerProtocolPolicy } from "aws-cdk-lib/aws-cloudfront";
 import { S3BucketOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
-import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
+import { AttributeType, BillingMode, StreamViewType, Table } from "aws-cdk-lib/aws-dynamodb";
 import { Effect, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
-import { Architecture, Code, Function, LayerVersion, Runtime } from "aws-cdk-lib/aws-lambda";
+import { Architecture, Code, FilterCriteria, FilterRule, Function, LayerVersion, Runtime, StartingPosition } from "aws-cdk-lib/aws-lambda";
+import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { SqsDestination } from "aws-cdk-lib/aws-lambda-destinations";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { BlockPublicAccess, Bucket, BucketEncryption, EventType } from "aws-cdk-lib/aws-s3";
@@ -50,6 +51,8 @@ export class SendPidgeStack extends Stack {
     const whatsappTemplateName: string = this.node.getContext("whatsappTemplateName") ?? "";
     const escalationEnabled: boolean = this.node.getContext("escalationEnabled") === true;
     const releaseSchedulerEnabled: boolean = this.node.getContext("releaseSchedulerEnabled") === true;
+    const caseAgentRuntime: string = this.node.getContext("caseAgentRuntime") ?? "lambda";
+    const caseAgentModel: string = this.node.getContext("caseAgentModel") ?? readerModel;
     const escalationModel: string = this.node.getContext("escalationModel") ?? "opus-4.5";
 
     // Sending identity for pidge@<domain> (receipts, later chat replies); Easy DKIM, three CNAMEs at the DNS host.
@@ -123,6 +126,8 @@ export class SendPidgeStack extends Stack {
       billingMode: BillingMode.PAY_PER_REQUEST,
       // Retention TTL; separate from a request's 60 s hold expiry (expiresAt).
       timeToLiveAttribute: "ttlEpochSeconds",
+      // The stream wakes pidge-dispatch (the case agent) on a final verdict or a new CASE# row.
+      stream: StreamViewType.NEW_AND_OLD_IMAGES,
       removalPolicy: RemovalPolicy.DESTROY,
     });
     // "<userId>#EMAIL" / "<userId>#REQUEST" → newest first, for the PWA's sync.
@@ -418,6 +423,61 @@ export class SendPidgeStack extends Stack {
     });
     rcsInboundTopic.addSubscription(new LambdaSubscription(verdictFunction));
     whatsappInboundTopic.addSubscription(new LambdaSubscription(verdictFunction));
+
+    // The case agent (lambda mode): wakes on the table stream, writes the NOTE# row, pushes it to Grandma.
+    const dispatchFunction = new Function(this, "DispatchFunction", {
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.X86_64,
+      code: lambdaCode,
+      handler: "pidge_dispatch.handler.handle",
+      layers: [dependencyLayer],
+      memorySize: 1024,
+      timeout: Duration.seconds(90),
+      environment: {
+        TABLE_NAME: table.tableName,
+        RECEIVER_USER_ID: receiverUserId,
+        CASE_AGENT_RUNTIME: caseAgentRuntime,
+        CASE_AGENT_MODEL: caseAgentModel,
+        WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+      },
+      logGroup: new LogGroup(this, "DispatchLogs", {
+        retention: RetentionDays.TWO_WEEKS,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    table.grantReadWriteData(dispatchFunction);
+    webSocketStage.grantManagementApiAccess(dispatchFunction);
+    dispatchFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+        resources: [
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5*",
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-5-5*",
+          `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/us.anthropic.claude-haiku-4-5*`,
+          `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-haiku-5-5*`,
+        ],
+      }),
+    );
+    // Two filters: a REQUEST# META whose new status is final, or a CASE# META insert. Everything else never wakes it.
+    dispatchFunction.addEventSource(new DynamoEventSource(table, {
+      startingPosition: StartingPosition.LATEST,
+      batchSize: 5,
+      retryAttempts: 2,
+      bisectBatchOnError: true,
+      filters: [
+        FilterCriteria.filter({
+          eventName: FilterRule.isEqual("MODIFY"),
+          dynamodb: {
+            Keys: { PK: { S: FilterRule.beginsWith("REQUEST#") }, SK: { S: FilterRule.isEqual("META") } },
+            NewImage: { status: { S: FilterRule.or("denied", "confirmed", "reversed_no", "timeout") } },
+          },
+        }),
+        FilterCriteria.filter({
+          eventName: FilterRule.isEqual("INSERT"),
+          dynamodb: { Keys: { PK: { S: FilterRule.beginsWith("CASE#") }, SK: { S: FilterRule.isEqual("META") } } },
+        }),
+      ],
+    }));
 
     new Alarm(this, "ReaderDeadLetterAlarm", {
       alarmDescription: "pidge-reader gave up on an email after retries",

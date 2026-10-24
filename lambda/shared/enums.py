@@ -127,6 +127,7 @@ class PushMessageType(StrEnum):
     REQUEST_STATE = "request_state"          # to both: a request's status changed (answered, quarantined)
     SYNC_STATE = "sync_state"                # reply to ClientAction.SYNC: the user's role and current rows
     ACTION_REJECTED = "action_rejected"      # reply when a client action is refused
+    CASE_NOTE = "case_note"                  # to the receiver: the case agent wrote a note (and maybe a recovery pack)
 
 
 class ClientAction(StrEnum):
@@ -137,6 +138,7 @@ class ClientAction(StrEnum):
     UNDO = "undo"        # the contact: take back a Yes within the release delay
     REVERSE = "reverse"  # the contact: take back a No within the reverse window
     CONFIRM = "confirm"  # the receiver: quarantine an email the contact denied
+    REPORT_PAYMENT = "report_payment"  # the receiver: "I already paid" → a CASE# row
 
 
 class UserRole(StrEnum):
@@ -155,3 +157,58 @@ class ActionOutcome(StrEnum):
     NOT_APPLIED = "not_applied"    # duplicate, redelivered, or a Yes after the hold or after a No
     NOT_ALLOWED = "not_allowed"    # this user may not do this action
     BAD_MESSAGE = "bad_message"    # unparseable or missing fields
+
+
+class CaseState(StrEnum):
+    """Lifecycle of a lost-payment case."""
+
+    OPEN = "open"
+    REPORTED = "reported"
+    CLOSED = "closed"
+
+
+class PaymentRail(StrEnum):
+    """How the money left, as Grandma picks it."""
+
+    CARD = "card"
+    ZELLE = "zelle"
+    WIRE = "wire"
+    GIFT_CARD = "gift_card"
+
+
+class Jurisdiction(StrEnum):
+    """Which country's refund rules apply."""
+
+    US = "US"
+    KR = "KR"
+    GB = "GB"
+
+
+class RuleState(StrEnum):
+    """A refund rule version's status; only live rows are ever read for a recovery pack."""
+
+    LIVE = "live"
+    PROPOSED = "proposed"
+    REJECTED = "rejected"
+
+
+class ProposedBy(StrEnum):
+    """Who wrote a refund rule version."""
+
+    SEED = "seed"
+    ADMIN = "admin"
+    KEEPER = "keeper"
+
+
+class CaseTrigger(StrEnum):
+    """What woke the case agent."""
+
+    VERDICT = "verdict"  # a REQUEST# reached a final state
+    CASE = "case"        # Grandma reported a payment (CASE# written)
+
+
+class CaseAgentRuntime(StrEnum):
+    """Where the case agent runs."""
+
+    AGENTCORE = "agentcore"
+    LAMBDA = "lambda"

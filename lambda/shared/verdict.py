@@ -4,15 +4,19 @@ import hmac
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
-from shared import graph
-from shared.enums import FINAL_REQUEST_STATES, ActionOutcome, Channel, RequestState, VerdictAnswer
+from shared import graph, refund_rules
+from shared.enums import FINAL_REQUEST_STATES, ActionOutcome, Channel, Jurisdiction, PaymentRail, RequestState, VerdictAnswer
 
 logger = logging.getLogger(__name__)
 
 RELEASE_DELAY_SECONDS = 10  # a Yes waits this long for an Undo before the email is released
 REVERSE_WINDOW_SECONDS = 5 * 60  # a No can be taken back for this long
 QUARANTINE_TAG = {"Key": "quarantine", "Value": "true"}
+REPORTABLE_REQUEST_STATES = (RequestState.DENIED, RequestState.TIMEOUT)  # "I already paid" only after a No or a silence
+PAYEE_HINT_MAX_LENGTH = 40
+BANK_NAME_MAX_LENGTH = 60
 CONTACT_FIELD_FOR_CHANNEL = {
     Channel.INAPP: "contactPwaUserId",
     Channel.WHATSAPP: "contactWhatsApp",
@@ -188,3 +192,49 @@ def confirm_quarantine(
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row, email_row=email_row)
     graph.write_listed_address(email_row["senderAddress"], "Reported after the real contact said they did not send it")
     return ActionResult(ActionOutcome.RECORDED, request_row, email_row=email_row, status=RequestState.DENIED)
+
+
+@dataclass(frozen=True)
+class PaymentReport:
+    """What Grandma typed on "I already paid", parsed at the boundary; raises ValueError on anything odd."""
+
+    request_id: str
+    jurisdiction: Jurisdiction
+    payment_rail: PaymentRail
+    bank: str
+    amount: Decimal
+    currency: str
+    paid_at: str
+    payee_hint: str
+
+    @classmethod
+    def from_client_body(cls, body: dict) -> "PaymentReport":
+        amount = Decimal(str(body["amount"]))
+        if amount <= 0 or not amount.is_finite():
+            raise ValueError("amount must be positive")
+        bank, payee_hint, currency = str(body["bank"]).strip(), str(body.get("payeeHint", "")).strip(), str(body["currency"]).strip().upper()
+        if not bank or len(bank) > BANK_NAME_MAX_LENGTH or len(payee_hint) > PAYEE_HINT_MAX_LENGTH or len(currency) != 3:
+            raise ValueError("bank, payee hint or currency out of shape")
+        return cls(str(body["requestId"]), Jurisdiction(body["jurisdiction"]), PaymentRail(body["paymentRail"]),
+                   bank, amount, currency, parse_timestamp(str(body["paidAt"])).strftime("%Y-%m-%dT%H:%M:%SZ"), payee_hint)
+
+
+def report_payment(report: PaymentReport, reporting_user_id: str, receiver_user_id: str, receiver_address: str) -> ActionResult:
+    """Only the receiver, only on a denied or timed-out request: writes the CASE# row (ruleGap from the live RULE# rows)."""
+    if not hmac.compare_digest(reporting_user_id, receiver_user_id):
+        return ActionResult(ActionOutcome.NOT_ALLOWED)
+    request_row = graph.get_request(report.request_id)
+    if request_row is None:
+        return ActionResult(ActionOutcome.UNKNOWN_REQUEST)
+    if request_row["receiverEmail"] != receiver_address:
+        return ActionResult(ActionOutcome.NOT_ALLOWED, request_row)
+    if request_row["status"] not in REPORTABLE_REQUEST_STATES:
+        return ActionResult(ActionOutcome.NOT_APPLIED, request_row)
+    rule = refund_rules.find_live_rule(report.jurisdiction, report.payment_rail)
+    case_row = graph.create_case(receiver_user_id, {
+        "requestId": report.request_id, "receiverEmail": receiver_address,
+        "jurisdiction": str(report.jurisdiction), "paymentRail": str(report.payment_rail), "bank": report.bank,
+        "amount": report.amount, "currency": report.currency, "paidAt": report.paid_at, "payeeHint": report.payee_hint,
+        "ruleGap": rule is None,
+    })
+    return ActionResult(ActionOutcome.RECORDED, request_row, email_row=case_row, status=RequestState(request_row["status"]))

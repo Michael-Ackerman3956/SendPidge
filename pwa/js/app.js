@@ -11,6 +11,7 @@ import {
   applyContactSyncState, handleContactActionRejected, handleContactRequestStatePush, handleVerificationCardPush,
   hideContactView, showContactView,
 } from "./contact-view.js";
+import { applyPidgeSyncState, handleCaseNotePush, handlePidgeActionRejected, hidePidgeView, showPidgeView } from "./pidge-view.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
 const ACCESS_TOKEN_QUERY_PARAMETER = "token";
@@ -18,12 +19,34 @@ const KNOWN_ACTION_REJECTED_REASONS = new Set(Object.values(ACTION_REJECTED_REAS
 
 let activeUserRole = null;
 
+const RECEIVER_TAB = Object.freeze({ INBOX: "inbox", PIDGE: "pidge" });
+let activeReceiverTab = RECEIVER_TAB.INBOX;
+
 const pageElements = {
   connectionDot: document.getElementById("connection-dot"),
   connectionLabel: document.getElementById("connection-label"),
   tokenError: document.getElementById("token-error"),
   loadingState: document.getElementById("loading-state"),
+  receiverTabs: document.getElementById("receiver-tabs"),
+  inboxTab: document.getElementById("tab-inbox"),
+  pidgeTab: document.getElementById("tab-pidge"),
 };
+
+function showReceiverTab(tab) {
+  activeReceiverTab = tab;
+  const isInbox = tab === RECEIVER_TAB.INBOX;
+  pageElements.inboxTab.classList.toggle("is-active", isInbox);
+  pageElements.inboxTab.setAttribute("aria-pressed", String(isInbox));
+  pageElements.pidgeTab.classList.toggle("is-active", !isInbox);
+  pageElements.pidgeTab.setAttribute("aria-pressed", String(!isInbox));
+  if (isInbox) {
+    hidePidgeView();
+    showReceiverView();
+  } else {
+    hideReceiverView();
+    showPidgeView();
+  }
+}
 
 function readAccessTokenFromStorage() {
   try {
@@ -61,11 +84,13 @@ function handleSyncStatePush(pushMessage) {
       if (activeUserRole === USER_ROLE.CONTACT) hideContactView();
       activeUserRole = USER_ROLE.RECEIVER;
       pageElements.loadingState.hidden = true;
-      showReceiverView();
+      pageElements.receiverTabs.hidden = false;
+      if (activeReceiverTab === RECEIVER_TAB.INBOX) showReceiverView();
       applyReceiverSyncState(pushMessage.emails);
+      applyPidgeSyncState(pushMessage.notes ?? []);
       break;
     case USER_ROLE.CONTACT:
-      if (activeUserRole === USER_ROLE.RECEIVER) hideReceiverView();
+      if (activeUserRole === USER_ROLE.RECEIVER) { hideReceiverView(); hidePidgeView(); pageElements.receiverTabs.hidden = true; }
       activeUserRole = USER_ROLE.CONTACT;
       pageElements.loadingState.hidden = true;
       showContactView();
@@ -95,6 +120,7 @@ function handleActionRejectedPush(pushMessage) {
   showActionStatusMessage(isAlreadyRecorded ? ACTION_STATUS_MESSAGE.ALREADY_RECORDED : ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
   if (activeUserRole === USER_ROLE.RECEIVER) {
     handleReceiverActionRejected(requestId);
+    handlePidgeActionRejected();
   } else {
     handleContactActionRejected(requestId);
   }
@@ -106,6 +132,7 @@ const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.VERIFICATION_CARD]: [USER_ROLE.CONTACT],
   [PUSH_MESSAGE_TYPE.REQUEST_STATE]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT],
   [PUSH_MESSAGE_TYPE.ACTION_REJECTED]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT],
+  [PUSH_MESSAGE_TYPE.CASE_NOTE]: [USER_ROLE.RECEIVER],
 });
 
 function isPushForActiveRole(pushMessageType) {
@@ -124,6 +151,7 @@ function handlePushMessage(pushMessage) {
       handleSyncStatePush(pushMessage);
       break;
     case PUSH_MESSAGE_TYPE.EMAIL_STATE:
+      if (activeReceiverTab === RECEIVER_TAB.PIDGE) showReceiverTab(RECEIVER_TAB.INBOX); // a new hold must be seen
       handleEmailStatePush(pushMessage.email);
       break;
     case PUSH_MESSAGE_TYPE.VERIFICATION_CARD:
@@ -134,6 +162,9 @@ function handlePushMessage(pushMessage) {
       break;
     case PUSH_MESSAGE_TYPE.ACTION_REJECTED:
       handleActionRejectedPush(pushMessage);
+      break;
+    case PUSH_MESSAGE_TYPE.CASE_NOTE:
+      handleCaseNotePush(pushMessage.note);
       break;
     default:
       console.warn("SendPidge: ignoring push of unknown type", pushMessageType);
@@ -147,6 +178,8 @@ function updateConnectionDot(connectionStatus) {
 }
 
 function startApp() {
+  pageElements.inboxTab.addEventListener("click", () => showReceiverTab(RECEIVER_TAB.INBOX));
+  pageElements.pidgeTab.addEventListener("click", () => showReceiverTab(RECEIVER_TAB.PIDGE));
   const accessToken = resolveAccessToken();
   if (!accessToken) {
     pageElements.tokenError.hidden = false;

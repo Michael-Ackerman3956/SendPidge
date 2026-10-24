@@ -28,7 +28,15 @@ def aws(monkeypatch):
             TableName="sendpidge-test",
             KeySchema=[{"AttributeName": "PK", "KeyType": "HASH"}, {"AttributeName": "SK", "KeyType": "RANGE"}],
             AttributeDefinitions=[{"AttributeName": "PK", "AttributeType": "S"},
-                                  {"AttributeName": "SK", "AttributeType": "S"}],
+                                  {"AttributeName": "SK", "AttributeType": "S"},
+                                  {"AttributeName": graph.USER_INDEX_PARTITION_KEY, "AttributeType": "S"},
+                                  {"AttributeName": graph.USER_INDEX_SORT_KEY, "AttributeType": "S"}],
+            GlobalSecondaryIndexes=[{  # the same UserIndex the CDK table declares
+                "IndexName": graph.USER_INDEX_NAME,
+                "KeySchema": [{"AttributeName": graph.USER_INDEX_PARTITION_KEY, "KeyType": "HASH"},
+                              {"AttributeName": graph.USER_INDEX_SORT_KEY, "KeyType": "RANGE"}],
+                "Projection": {"ProjectionType": "ALL"},
+            }],
             BillingMode="PAY_PER_REQUEST",
         )
         graph._table = None  # the module caches the table per container

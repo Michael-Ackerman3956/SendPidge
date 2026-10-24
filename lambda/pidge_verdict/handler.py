@@ -27,6 +27,7 @@ RELEASE_SCHEDULER_ENABLED = os.environ.get("RELEASE_SCHEDULER_ENABLED") == "true
 RELEASE_FUNCTION_ARN = os.environ.get("RELEASE_FUNCTION_ARN", "")
 SYNC_EMAIL_LIMIT = 20
 SYNC_REQUEST_LIMIT = 10
+SYNC_NOTE_LIMIT = 20
 HANDLED = {"statusCode": 200}
 FORBIDDEN = {"statusCode": 403}
 ANSWER_FOR_ACTION = {ClientAction.UNDO: VerdictAnswer.UNDO, ClientAction.REVERSE: VerdictAnswer.REVERSE}
@@ -57,6 +58,8 @@ def handle(event, context):
         handle_answer(connection_id, user_id, body, request_context["messageId"], parse_answer(body))
     elif action in ANSWER_FOR_ACTION:
         handle_answer(connection_id, user_id, body, request_context["messageId"], ANSWER_FOR_ACTION[action])
+    elif action is ClientAction.REPORT_PAYMENT:
+        handle_report_payment(connection_id, user_id, body)
     else:
         handle_confirm(connection_id, user_id, body)
     return HANDLED
@@ -89,7 +92,8 @@ def handle_sync(connection_id: str, user_id: str) -> None:
             contact_name = contact_name_for(request_row) if request_row else None
             status = verdict.effective_status(request_row, now) if request_row else None
             emails.append(payloads.email_for_receiver(email_row, request_row, contact_name, status))
-        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "emails": emails}
+        notes = [payloads.note_for_receiver(note_row) for note_row in graph.list_recent_rows(user_id, graph.NOTE_ROW_KIND, SYNC_NOTE_LIMIT)]
+        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "emails": emails, "notes": notes}
     else:
         cards = []
         for request_row in graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT):
@@ -199,3 +203,15 @@ def handle_confirm(connection_id: str, user_id: str, body: dict) -> None:
     message = payloads.request_state_message(result.request_row, result.status, contact_row["contactName"], True)
     channels.push_to_user(RECEIVER_USER_ID, message)
     channels.push_to_user(contact_row["contactPwaUserId"], message)
+
+
+def handle_report_payment(connection_id: str, user_id: str, body: dict) -> None:
+    """Grandma's "I already paid": the CASE# row is written here; the stream wakes the case agent for the pack."""
+    try:
+        report = verdict.PaymentReport.from_client_body(body)
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        reject(connection_id, body.get("requestId") if isinstance(body.get("requestId"), str) else None, ActionOutcome.BAD_MESSAGE)
+        return
+    result = verdict.report_payment(report, user_id, RECEIVER_USER_ID, RECEIVER_ADDRESS)
+    if result.outcome is not ActionOutcome.RECORDED:
+        reject(connection_id, report.request_id, result.outcome)

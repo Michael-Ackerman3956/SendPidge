@@ -6,6 +6,7 @@ export const PUSH_MESSAGE_TYPE = Object.freeze({
   REQUEST_STATE: "request_state",
   SYNC_STATE: "sync_state",
   ACTION_REJECTED: "action_rejected",
+  CASE_NOTE: "case_note",
 });
 
 export const CLIENT_ACTION = Object.freeze({
@@ -14,6 +15,20 @@ export const CLIENT_ACTION = Object.freeze({
   UNDO: "undo",
   REVERSE: "reverse",
   CONFIRM: "confirm",
+  REPORT_PAYMENT: "report_payment",
+});
+
+export const PAYMENT_RAIL = Object.freeze({
+  CARD: "card",
+  ZELLE: "zelle",
+  WIRE: "wire",
+  GIFT_CARD: "gift_card",
+});
+
+export const JURISDICTION = Object.freeze({
+  US: "US",
+  KR: "KR",
+  GB: "GB",
 });
 
 export const USER_ROLE = Object.freeze({

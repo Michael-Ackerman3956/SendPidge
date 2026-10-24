@@ -274,3 +274,10 @@ export function hideReceiverView() {
   pageElements.detailScreen.hidden = true;
   pageElements.backButton.hidden = true;
 }
+
+// The requests behind the live rows, newest first, for the Pidge tab's "I already paid" picker.
+export function listReceiverRequests() {
+  return sortEmailsNewestFirst(emailsById.values())
+    .filter((email) => email.request !== null)
+    .map((email) => ({ ...email.request, emailId: email.emailId }));
+}
