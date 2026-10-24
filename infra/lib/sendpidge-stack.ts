@@ -421,6 +421,8 @@ export class SendPidgeStack extends Stack {
     });
     emailBucket.grantRead(readerFunction);
     table.grantReadWriteData(readerFunction);
+    scheduleGroup.grantWriteSchedules(readerFunction);
+    schedulerRole.grantPassRole(readerFunction.grantPrincipal);
     webSocketStage.grantManagementApiAccess(readerFunction);
     readerFunction.addToRolePolicy(
       new PolicyStatement({
