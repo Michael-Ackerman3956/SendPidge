@@ -19,7 +19,7 @@
     "escalationEnabled": true,
     "escalationModel": "opus-4.5",
     "releaseSchedulerEnabled": true,
-    "caseAgentRuntime": "lambda",
+    "caseAgentRuntime": "agentcore",
     "caseAgentModel": "haiku-4.5"
   }
 }
