@@ -145,8 +145,8 @@ def run_prompt(scope: CaseScope) -> str:
     if scope.trigger is CaseTrigger.CASE:
         return "The receiver just reported that she already paid. Write the case note with the recovery steps."
     if scope.trigger is CaseTrigger.CASE_CLOSED:
-        return ("The receiver just closed the case after hearing back from her bank. Write the closing note: what was done, "
-                "in order, and that the case is closed. Do not repeat the recovery steps.")
+        return ("The receiver just closed the case. Write the closing note from the reportedPayment timeline and bankReplyCount: "
+                "what was done, in order, whether the bank ever replied, and that the case is closed. Do not repeat the recovery steps.")
     return "A verdict just landed on this request. Write the case note."
 
 
