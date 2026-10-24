@@ -91,6 +91,7 @@ export const WARN_REASON = Object.freeze({
   LISTED_SENDER: "listed_sender",
   UNREACHABLE: "unreachable",
   ESCALATION_CLEARED: "escalation_cleared",
+  LINK_REASONS: "link_reasons",
 });
 
 export const REASON_CODE = Object.freeze({
@@ -101,6 +102,11 @@ export const REASON_CODE = Object.freeze({
   ESCALATION_CLEARED: "escalation_cleared",
   ESCALATION_FAILED: "escalation_failed",
   PERSON_CONFLICT: "person_conflict",
+  LINK_TEXT_HREF_MISMATCH: "link_text_href_mismatch",
+  HIDDEN_LINK: "hidden_link",
+  KNOWN_SHORTENER: "known_shortener",
+  LOOKALIKE_LINK_DOMAIN: "lookalike_link_domain",
+  LINKS_UNREADABLE: "links_unreadable",
 });
 
 export const FRICTION = Object.freeze({

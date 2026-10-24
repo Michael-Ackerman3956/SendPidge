@@ -10,7 +10,7 @@ export function buildMockFamilyEmails() {
   const receivedHoursAgo = (hours) => new Date(now - hours * MILLISECONDS_PER_HOUR).toISOString();
   const mockEmail = (emailId, senderName, senderAddress, subject, hoursAgo, textBody) => ({
     emailId, senderName, senderAddress, subject, receivedAt: receivedHoursAgo(hoursAgo), textBody,
-    state: POLICY_DECISION.PASS, warnReason: null, reasons: [], request: null, quarantined: false,
+    state: POLICY_DECISION.PASS, warnReason: null, reasons: [], links: [], request: null, quarantined: false,
   });
   return [
     mockEmail("mock-sunday-lunch", "Minsoo", "minsoo@example.com", "Sunday lunch", 2,
@@ -47,10 +47,29 @@ function isValidEmailPayload(email) {
   return true;
 }
 
-// Returns the email with request and quarantined made explicit, or null (after logging) when the payload is invalid.
+function isValidEmailLink(link) {
+  return link !== null && typeof link === "object" && typeof link.text === "string" && typeof link.domain === "string"
+    && typeof link.href === "string" && typeof link.flagged === "boolean";
+}
+
+// links is absent on rows written before slice 9a (then []); a malformed entry is logged and dropped, never rendered.
+function normalizeEmailLinks(email) {
+  if (email.links === undefined) return [];
+  if (!Array.isArray(email.links)) {
+    console.error("SendPidge: email push has a non-array links field", email.emailId);
+    return [];
+  }
+  return email.links.filter((link) => {
+    if (isValidEmailLink(link)) return true;
+    console.error("SendPidge: dropping a malformed link entry", email.emailId);
+    return false;
+  });
+}
+
+// Returns the email with request, quarantined and links made explicit, or null (after logging) when the payload is invalid.
 export function normalizeEmailPayloadOrReportError(email) {
   if (!isValidEmailPayload(email)) return null;
-  return { ...email, request: email.request ?? null, quarantined: email.quarantined === true };
+  return { ...email, request: email.request ?? null, quarantined: email.quarantined === true, links: normalizeEmailLinks(email) };
 }
 
 export function isValidRequestStateUpdate(requestUpdate) {

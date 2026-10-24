@@ -29,6 +29,7 @@ class WarnReason(StrEnum):
     LISTED_SENDER = "listed_sender"    # no ask, but the sender carries reasons
     UNREACHABLE = "unreachable"        # every channel failed; the hold is kept
     ESCALATION_CLEARED = "escalation_cleared"  # a model-driven hold that the second reviewer downgraded to a mark
+    LINK_REASONS = "link_reasons"      # no ask, and every reason is about a link
 
 
 class ReasonCode(StrEnum):
@@ -41,6 +42,17 @@ class ReasonCode(StrEnum):
     ESCALATION_CLEARED = "escalation_cleared"  # the second reviewer said a mark is enough (gate 2 only)
     ESCALATION_FAILED = "escalation_failed"    # the second reviewer could not answer; the hold stays
     PERSON_CONFLICT = "person_conflict"        # the two models named different people; the hold stays
+    LINK_TEXT_HREF_MISMATCH = "link_text_href_mismatch"  # a link's visible text names one domain, its href another
+    HIDDEN_LINK = "hidden_link"                          # an anchor with no visible text
+    KNOWN_SHORTENER = "known_shortener"                  # a link through a public URL shortener
+    LOOKALIKE_LINK_DOMAIN = "lookalike_link_domain"      # a link domain that imitates a family domain
+    LINKS_UNREADABLE = "links_unreadable"                # the HTML part would not parse, so the links are unknown
+
+
+LINK_REASON_CODES = frozenset({
+    ReasonCode.LINK_TEXT_HREF_MISMATCH, ReasonCode.HIDDEN_LINK, ReasonCode.KNOWN_SHORTENER,
+    ReasonCode.LOOKALIKE_LINK_DOMAIN, ReasonCode.LINKS_UNREADABLE,
+})
 
 
 class GateFired(StrEnum):

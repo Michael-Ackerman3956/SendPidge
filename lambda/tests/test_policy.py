@@ -142,3 +142,18 @@ def test_confidence_must_be_between_zero_and_one():
 )
 def test_authentication_reasons(header_values, expected_reasons):
     assert authentication_reasons(header_values) == expected_reasons
+
+
+def test_link_reasons_alone_warn_never_hold():
+    outcome = decide(make_verdict(Intent.NONE, 0.0, claimed_person=None), None, None, "hello@gardenweekly.example", [ReasonCode.LINK_TEXT_HREF_MISMATCH])
+    assert (outcome.decision, outcome.warn_reason, outcome.reasons) == (PolicyDecision.WARN, WarnReason.LINK_REASONS, (ReasonCode.LINK_TEXT_HREF_MISMATCH,))
+    assert outcome.contact is None and outcome.gate is None
+
+
+def test_link_only_reasons_pick_warn_reason_link_reasons():
+    links_only = decide(make_verdict(Intent.NONE, 0.0, claimed_person=None), None, None, "a@b.example", [ReasonCode.HIDDEN_LINK, ReasonCode.KNOWN_SHORTENER])
+    mixed = decide(make_verdict(Intent.NONE, 0.0, claimed_person=None), None, None, "a@b.example", [ReasonCode.AUTH_FAILED, ReasonCode.HIDDEN_LINK])
+    held = decide(make_verdict(Intent.MONEY, 0.9), None, JIMIN, "a@b.example", [ReasonCode.LINK_TEXT_HREF_MISMATCH])
+    assert links_only.warn_reason is WarnReason.LINK_REASONS
+    assert mixed.warn_reason is WarnReason.LISTED_SENDER
+    assert (held.decision, held.reasons) == (PolicyDecision.HOLD, (ReasonCode.LINK_TEXT_HREF_MISMATCH,))

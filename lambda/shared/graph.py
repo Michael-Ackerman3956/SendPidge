@@ -121,13 +121,22 @@ def find_contact(receiver_address: str, person_name: str | None) -> Contact | No
     if not person_name:
         return None
     wanted_name = " ".join(person_name.split()).casefold()
+    for contact in list_contacts(receiver_address):
+        if " ".join(contact.contact_name.split()).casefold() == wanted_name:
+            return contact
+    return None
+
+
+def list_contacts(receiver_address: str) -> list[Contact]:
     response = get_table().query(
         KeyConditionExpression=Key("PK").eq(f"RECEIVER#{receiver_address}") & Key("SK").begins_with("CONTACT#")
     )
-    for item in response["Items"]:
-        if " ".join(item["contactName"].split()).casefold() == wanted_name:
-            return contact_from_row(item)
-    return None
+    return [contact_from_row(item) for item in response["Items"]]
+
+
+def contact_domains(receiver_address: str) -> frozenset[str]:
+    """The domains the family writes from (from every contact's knownAddresses); link lookalikes are judged against these."""
+    return frozenset(address.rpartition("@")[2] for contact in list_contacts(receiver_address) for address in contact.known_addresses if "@" in address)
 
 
 def claim_email(email_id: str, email_fields: dict) -> bool:

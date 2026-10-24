@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
-from shared.enums import EscalationDecision, Friction, GateFired, Intent, PolicyDecision, ReasonCode, WarnReason
+from shared.enums import LINK_REASON_CODES, EscalationDecision, Friction, GateFired, Intent, PolicyDecision, ReasonCode, WarnReason
 from shared.graph import Contact
 from shared.reader_agent import EmailVerdict
 
@@ -88,7 +88,8 @@ def decide(
     if has_ask:
         return PolicyOutcome(PolicyDecision.WARN, WarnReason.LOW_CONFIDENCE, tuple(reasons_list))
     if reasons_list:
-        return PolicyOutcome(PolicyDecision.WARN, WarnReason.LISTED_SENDER, tuple(reasons_list))
+        is_links_only = all(reason in LINK_REASON_CODES for reason in reasons_list)
+        return PolicyOutcome(PolicyDecision.WARN, WarnReason.LINK_REASONS if is_links_only else WarnReason.LISTED_SENDER, tuple(reasons_list))
     return PolicyOutcome(PolicyDecision.PASS, None, tuple(reasons_list))
 
 

@@ -2,6 +2,7 @@
 
 Usage: python scripts/read_eml.py samples/fake-jimin.eml [--contact Jimin ...] [--known-address jimin@example.com ...]
                                   [--escalation hold|warn]
+--known-address also supplies the family domains that link lookalikes are judged against.
 --known-address lists the addresses the contacts are known to write from (gate 1 holds a contact's name from any other).
 --escalation fakes the second reviewer's answer (its claimed_person echoes the Reader's) so the escalation path runs offline.
 Needs AWS_PROFILE (or ambient credentials) and READER_MODEL in the environment; see .env.example.
@@ -21,6 +22,7 @@ from shared.auth import authentication_reasons  # noqa: E402
 from shared.email_parse import parse_eml  # noqa: E402
 from shared.enums import EscalationDecision, ReaderModelChoice  # noqa: E402
 from shared.graph import Contact  # noqa: E402
+from shared.links import assess_links, link_reasons  # noqa: E402
 from shared.policy import EscalationAnswer, ReaderFailure, apply_escalation, decide, needs_escalation  # noqa: E402
 from shared.reader_agent import BEDROCK_REGION, build_reader, read_email  # noqa: E402
 from shared.sanitize import sanitize_summary  # noqa: E402
@@ -82,7 +84,12 @@ def main() -> None:
     recorder.attach(session)
 
     parsed_email = parse_eml(arguments.eml_path.read_bytes())
+    family_domains = frozenset(address.rpartition("@")[2] for address in known_addresses if "@" in address)
+    link_assessments = assess_links(parsed_email.links, family_domains)
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
+    reasons.extend(link_reasons(link_assessments, parsed_email.links_unreadable))
+    for assessment in link_assessments:
+        print(f"link: text={assessment.link.visible_text!r} domain={assessment.link.registrable_domain} flagged={assessment.is_flagged}")
     reader = build_reader(model_choice, session)
     try:
         verdict = read_email(reader, parsed_email)

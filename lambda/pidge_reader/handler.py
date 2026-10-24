@@ -11,6 +11,7 @@ import boto3
 
 from shared import channels, graph, payloads, schedules
 from shared.auth import authentication_reasons
+from shared import links as link_checks
 from shared.email_parse import ParsedEmail, parse_eml
 from shared.enums import PolicyDecision, ReaderModelChoice, RequestState, WarnReason
 from shared.escalation import EscalationFacts, EscalationVerdict, build_escalation_reader, escalate, escalation_fields
@@ -46,11 +47,13 @@ def handle(event, context):
 def process_email_object(bucket_name: str, object_key: str) -> None:
     raw_email = s3_client.get_object(Bucket=bucket_name, Key=object_key)["Body"].read()
     parsed_email = parse_eml(raw_email)
-    email_row = build_email_row(object_key, parsed_email)
+    link_assessments = link_checks.assess_links(parsed_email.links, graph.contact_domains(RECEIVER_ADDRESS))
+    email_row = build_email_row(object_key, parsed_email, link_assessments)
     if not graph.claim_email(object_key, email_row):
         logger.info("duplicate event for %s; already processed", object_key)
         return
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
+    reasons.extend(link_checks.link_reasons(link_assessments, parsed_email.links_unreadable))
     # Same cap as the stored copy: a 10 MB email never becomes a full-context model call.
     capped_email = replace(parsed_email, text_body=parsed_email.text_body[:TEXT_BODY_MAX_CHARACTERS])
     contact_by_name = graph.find_contact(RECEIVER_ADDRESS, capped_email.sender_name)  # gate 1: display name only
@@ -133,7 +136,7 @@ def schedule_re_ask(request_id: str) -> None:
         logger.exception("re-ask schedule for %s failed; the hold stays without a retry", request_id)
 
 
-def build_email_row(object_key: str, parsed_email: ParsedEmail) -> dict:
+def build_email_row(object_key: str, parsed_email: ParsedEmail, link_assessments: list[link_checks.LinkAssessment]) -> dict:
     received_at = graph.iso_timestamp(datetime.now(timezone.utc))
     return {
         "s3Key": object_key,
@@ -141,6 +144,7 @@ def build_email_row(object_key: str, parsed_email: ParsedEmail) -> dict:
         "senderAddress": parsed_email.sender_address,
         "subject": parsed_email.subject,
         "textBody": parsed_email.text_body[:TEXT_BODY_MAX_CHARACTERS],
+        "links": [assessment.as_row() for assessment in link_assessments],
         "receivedAt": received_at,
         "receiverEmail": RECEIVER_ADDRESS,
         "quarantined": False,

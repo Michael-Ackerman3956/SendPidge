@@ -143,6 +143,20 @@ button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
   background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35);
   color: var(--orange); font-size: 16px; font-weight: 600; line-height: 1.35;
 }
+.reason-line { font-size: 15px; line-height: 1.4; color: var(--text-secondary); overflow-wrap: anywhere; }
+
+/* Link strip: what each link says, and where it really goes */
+.link-strip { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+.link-chip {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border);
+  font-size: 15px; -webkit-user-select: none; user-select: none; touch-action: manipulation;
+}
+.link-chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.link-text { font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.link-domain { color: var(--text-tertiary); overflow-wrap: anywhere; }
+.link-chip.is-mismatch { border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.08); }
+.link-chip.is-mismatch .link-domain { color: var(--orange); font-weight: 700; }
 
 /* Pidge hold overlay */
 .hold-overlay {

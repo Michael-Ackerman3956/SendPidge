@@ -7,6 +7,7 @@ import { buildDetailBannerElement, buildRowStatusElement, deriveEmailDisplayStat
 import { buildMockFamilyEmails, isValidRequestStateUpdate, normalizeEmailPayloadOrReportError } from "./receiver-payloads.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
+import { buildLinkReasonLineElements, buildLinkStripElement } from "./link-strip.js";
 
 const MILLISECONDS_PER_MINUTE = 60000;
 const MILLISECONDS_PER_HOUR = 3600000;
@@ -114,10 +115,12 @@ function renderEmailDetail(email, shouldCelebrate = false) {
   const emailDisplayState = getEmailDisplayState(email);
   const detailChildren = [buildDetailHeaderElement(email)];
   const bannerElement = buildDetailBannerElement(email, emailDisplayState, shouldCelebrate);
-  if (bannerElement !== null) detailChildren.push(bannerElement);
+  if (bannerElement !== null) detailChildren.push(bannerElement, ...buildLinkReasonLineElements(email.links));
   const subjectHeading = createElementWithText("h2", "detail-subject", email.subject);
   subjectHeading.tabIndex = -1;
   detailChildren.push(subjectHeading, createElementWithText("p", "detail-body", email.textBody));
+  const linkStrip = buildLinkStripElement(email.links);
+  if (linkStrip !== null) detailChildren.push(linkStrip);
   pageElements.detailContent.replaceChildren(...detailChildren);
   if (emailDisplayState === EMAIL_DISPLAY_STATE.AWAITING_VERDICT) {
     showHoldOverlay({ overlayHostElement: pageElements.detailScreen, email, onReleasedByUser: handleUserReleasedHeldEmail });

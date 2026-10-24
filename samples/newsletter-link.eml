@@ -1,0 +1,27 @@
+From: Garden Weekly <hello@gardenweekly.example>
+To: grandma@sendpidge.example
+Subject: October in the garden
+Date: Fri, 24 Oct 2026 09:00:00 +0900
+X-Pidge-Auth: spf=pass;dkim=pass
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="pidge-sample-boundary"
+
+--pidge-sample-boundary
+Content-Type: text/plain; charset="utf-8"
+
+Hello from Garden Weekly!
+This month: putting the tomato beds to rest, planting garlic, and what to do with the last green tomatoes.
+Members can renew their subscription at zelle.com with the usual reference.
+Happy digging, the Garden Weekly team
+
+--pidge-sample-boundary
+Content-Type: text/html; charset="utf-8"
+
+<html><body>
+<p>Hello from Garden Weekly!</p>
+<p>This month: putting the tomato beds to rest, planting garlic, and what to do with the last green tomatoes.</p>
+<p>Members can renew their subscription at <a href="https://zelle-pay-help.example/renew">zelle.com</a> with the usual reference.</p>
+<p>Happy digging, the Garden Weekly team</p>
+</body></html>
+
+--pidge-sample-boundary--

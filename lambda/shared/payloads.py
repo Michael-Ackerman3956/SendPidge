@@ -33,6 +33,7 @@ def email_for_receiver(email_row: dict, request_row: dict | None, contact_name: 
         "state": email_row["state"],
         "warnReason": email_row.get("warnReason"),
         "reasons": list(email_row.get("reasons", [])),
+        "links": list(email_row.get("links", [])),  # absent on rows written before slice 9a
         "quarantined": bool(email_row.get("quarantined", False)),
         "request": request_for_receiver(request_row, contact_name, status) if request_row else None,
     }
