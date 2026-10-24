@@ -331,3 +331,16 @@ button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .pidge-report-actions button { flex: 1; min-height: 48px; border: none; border-radius: 24px; cursor: pointer; font-size: 16px; font-weight: 700; }
 .pidge-report-send { background: var(--teal); color: #0e0e0e; }
 .pidge-report-cancel { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border) !important; }
+.pidge-case {
+  display: flex; flex-direction: column; gap: 8px; padding: 16px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card);
+}
+.pidge-case-title { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.pidge-case-status { font-size: 15px; color: var(--text-secondary); }
+.pidge-case-reply { margin: 0; padding: 10px 12px; border-left: 3px solid var(--teal); background: var(--surface-2); border-radius: 8px; }
+.pidge-case-reply-text { font-size: 16px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pidge-case-done-button {
+  width: 100%; min-height: 48px; border: none; border-radius: 24px; cursor: pointer;
+  background: var(--teal); color: #0e0e0e; font-size: 16px; font-weight: 700;
+}
+.pidge-case-done-button:disabled, .pidge-report-button:disabled { opacity: 0.6; cursor: default; }

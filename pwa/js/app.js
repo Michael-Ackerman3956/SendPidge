@@ -11,7 +11,7 @@ import {
   applyContactSyncState, handleContactActionRejected, handleContactRequestStatePush, handleVerificationCardPush,
   hideContactView, showContactView,
 } from "./contact-view.js";
-import { applyPidgeSyncState, handleCaseNotePush, handlePidgeActionRejected, hidePidgeView, showPidgeView } from "./pidge-view.js";
+import { applyPidgeSyncState, handleCaseNotePush, handleCaseStatePush, handlePidgeActionRejected, hidePidgeView, showPidgeView } from "./pidge-view.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
 const ACCESS_TOKEN_QUERY_PARAMETER = "token";
@@ -87,7 +87,7 @@ function handleSyncStatePush(pushMessage) {
       pageElements.receiverTabs.hidden = false;
       if (activeReceiverTab === RECEIVER_TAB.INBOX) showReceiverView();
       applyReceiverSyncState(pushMessage.emails);
-      applyPidgeSyncState(pushMessage.notes ?? []);
+      applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);
       break;
     case USER_ROLE.CONTACT:
       if (activeUserRole === USER_ROLE.RECEIVER) { hideReceiverView(); hidePidgeView(); pageElements.receiverTabs.hidden = true; }
@@ -133,6 +133,8 @@ const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.REQUEST_STATE]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT],
   [PUSH_MESSAGE_TYPE.ACTION_REJECTED]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT],
   [PUSH_MESSAGE_TYPE.CASE_NOTE]: [USER_ROLE.RECEIVER],
+  [PUSH_MESSAGE_TYPE.CASE_STATE]: [USER_ROLE.RECEIVER],
+  [PUSH_MESSAGE_TYPE.CONTACT_NOTICE]: [USER_ROLE.CONTACT],
 });
 
 function isPushForActiveRole(pushMessageType) {
@@ -165,6 +167,12 @@ function handlePushMessage(pushMessage) {
       break;
     case PUSH_MESSAGE_TYPE.CASE_NOTE:
       handleCaseNotePush(pushMessage.note);
+      break;
+    case PUSH_MESSAGE_TYPE.CASE_STATE:
+      handleCaseStatePush(pushMessage.case);
+      break;
+    case PUSH_MESSAGE_TYPE.CONTACT_NOTICE:
+      if (typeof pushMessage.text === "string") showActionStatusMessage(pushMessage.text);
       break;
     default:
       console.warn("SendPidge: ignoring push of unknown type", pushMessageType);

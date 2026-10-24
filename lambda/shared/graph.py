@@ -29,6 +29,7 @@ REQUEST_ROW_KIND = "REQUEST"
 NOTE_ROW_KIND = "NOTE"
 CASE_ROW_KIND = "CASE"
 NOTE_SORT_KEY_PREFIX = "NOTE#"
+CASE_REPLY_SORT_KEY_PREFIX = "REPLY#"
 CASE_NOTE_WRITER = "case_agent"
 
 _table = None
@@ -338,3 +339,48 @@ def create_case(receiver_user_id: str, case_fields: dict) -> dict:
 
 def get_case(case_id: str) -> dict | None:
     return get_table().get_item(Key={"PK": f"CASE#{case_id}", "SK": METADATA_SORT_KEY}).get("Item")
+
+
+def list_case_replies(case_id: str) -> list[dict]:
+    """Bank replies stored verbatim under the case, oldest first. Never handed to the agent."""
+    response = get_table().query(
+        KeyConditionExpression=Key("PK").eq(f"CASE#{case_id}") & Key("SK").begins_with(CASE_REPLY_SORT_KEY_PREFIX)
+    )
+    return response["Items"]
+
+
+def write_case_token(reply_token: str, case_id: str) -> None:
+    """CASETOKEN#<token> → case, written before the report is sent so a reply always resolves."""
+    get_table().put_item(Item={"PK": f"CASETOKEN#{reply_token}", "SK": METADATA_SORT_KEY, "caseId": case_id,
+                               "ttlEpochSeconds": retention_epoch(EMAIL_RETENTION_SECONDS)})
+
+
+def find_case_id_for_token(reply_token: str) -> str | None:
+    item = get_table().get_item(Key={"PK": f"CASETOKEN#{reply_token}", "SK": METADATA_SORT_KEY}).get("Item")
+    return item["caseId"] if item else None
+
+
+def update_case(case_id: str, update_arguments: dict) -> bool:
+    """One conditional case update; False when the condition refused it."""
+    try:
+        get_table().update_item(Key={"PK": f"CASE#{case_id}", "SK": METADATA_SORT_KEY}, **update_arguments)
+        return True
+    except ClientError as error:
+        if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
+            return False
+        raise
+
+
+def write_case_reply(case_id: str, s3_key: str, reply_fields: dict) -> bool:
+    """REPLY#<s3Key>: the same object twice writes one row (False the second time)."""
+    try:
+        get_table().put_item(
+            Item={"PK": f"CASE#{case_id}", "SK": f"{CASE_REPLY_SORT_KEY_PREFIX}{s3_key}", **reply_fields,
+                  "ttlEpochSeconds": retention_epoch(EMAIL_RETENTION_SECONDS)},
+            ConditionExpression="attribute_not_exists(SK)",
+        )
+        return True
+    except ClientError as error:
+        if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
+            return False
+        raise

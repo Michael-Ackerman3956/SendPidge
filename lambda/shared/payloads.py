@@ -1,6 +1,6 @@
 """The JSON shapes pushed to the PWAs. One place, so the Reader, the verdict handler and sync agree."""
 
-from shared.enums import PushMessageType, RequestState
+from shared.enums import CaseEvent, PushMessageType, RequestState
 
 EMAIL_FIELDS_FOR_PWA = ("senderName", "senderAddress", "subject", "receivedAt", "textBody")
 
@@ -86,3 +86,24 @@ def note_for_receiver(note_row: dict) -> dict:
 
 def case_note_message(note_row: dict) -> dict:
     return {"type": PushMessageType.CASE_NOTE, "note": note_for_receiver(note_row)}
+
+
+CASE_FIELDS_FOR_PWA = ("requestId", "jurisdiction", "paymentRail", "bank", "amount", "currency", "paidAt", "payeeHint", "status",
+                       "ruleGap", "createdAt", "reportSentAt", "followUpSentAt", "bankRepliedAt", "closedAt")
+
+
+def case_for_receiver(case_row: dict, reply_rows: list[dict]) -> dict:
+    """The case and the bank's replies as quoted text. The reply token and the mock mailbox stay server-side."""
+    return {
+        "caseId": case_row["PK"].removeprefix("CASE#"),
+        **{field: (str(case_row[field]) if field == "amount" else case_row.get(field)) for field in CASE_FIELDS_FOR_PWA},
+        "replies": [{"from": reply["from"], "receivedAt": reply["receivedAt"], "textContent": reply["textContent"]} for reply in reply_rows],
+    }
+
+
+def case_state_message(case_row: dict, reply_rows: list[dict], event: CaseEvent) -> dict:
+    return {"type": PushMessageType.CASE_STATE, "event": event, "case": case_for_receiver(case_row, reply_rows)}
+
+
+def contact_notice_message(text: str) -> dict:
+    return {"type": PushMessageType.CONTACT_NOTICE, "text": text}

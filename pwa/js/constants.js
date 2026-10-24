@@ -7,6 +7,8 @@ export const PUSH_MESSAGE_TYPE = Object.freeze({
   SYNC_STATE: "sync_state",
   ACTION_REJECTED: "action_rejected",
   CASE_NOTE: "case_note",
+  CASE_STATE: "case_state",
+  CONTACT_NOTICE: "contact_notice",
 });
 
 export const CLIENT_ACTION = Object.freeze({
@@ -16,6 +18,22 @@ export const CLIENT_ACTION = Object.freeze({
   REVERSE: "reverse",
   CONFIRM: "confirm",
   REPORT_PAYMENT: "report_payment",
+  SEND_REPORT: "send_report",
+  CLOSE_CASE: "close_case",
+});
+
+export const CASE_STATUS = Object.freeze({
+  OPEN: "open",
+  REPORTED: "reported",
+  CLOSED: "closed",
+});
+
+export const CASE_EVENT = Object.freeze({
+  OPENED: "opened",
+  REPORT_SENT: "report_sent",
+  BANK_REPLIED: "bank_replied",
+  FOLLOWED_UP: "followed_up",
+  CLOSED: "closed",
 });
 
 export const PAYMENT_RAIL = Object.freeze({

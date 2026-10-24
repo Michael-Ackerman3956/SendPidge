@@ -6,12 +6,12 @@ The user comes from the connection row, never from the message body.
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
 
-from shared import channels, graph, payloads, rcs, schedules, verdict, whatsapp
-from shared.enums import ActionOutcome, Channel, ClientAction, PushMessageType, RequestState, UserRole, VerdictAnswer
+from shared import cases, channels, graph, payloads, rcs, schedules, verdict, whatsapp
+from shared.enums import ActionOutcome, CaseEvent, Channel, ClientAction, PushMessageType, RequestState, UserRole, VerdictAnswer
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -25,6 +25,12 @@ RCS_TOPIC_ARN = os.environ["RCS_TOPIC_ARN"]
 WHATSAPP_TOPIC_ARN = os.environ["WHATSAPP_TOPIC_ARN"]
 RELEASE_SCHEDULER_ENABLED = os.environ.get("RELEASE_SCHEDULER_ENABLED") == "true"
 RELEASE_FUNCTION_ARN = os.environ.get("RELEASE_FUNCTION_ARN", "")
+MOCK_BANK_MAILBOX = os.environ.get("MOCK_BANK_MAILBOX", "")  # the SIMULATED bank; empty → Send to my bank is refused
+CASES_ADDRESS = os.environ.get("CASES_ADDRESS", "")  # Reply-To on the report; Mail Manager stores replies under cases/
+BANK_FOLLOW_UP_ENABLED = os.environ.get("BANK_FOLLOW_UP_ENABLED") == "true"
+BANK_FOLLOW_UP_DELAY_SECONDS = int(os.environ.get("BANK_FOLLOW_UP_DELAY_SECONDS", "120"))
+CASE_FOLLOWUP_FUNCTION_ARN = os.environ.get("CASE_FOLLOWUP_FUNCTION_ARN", "")
+SYNC_CASE_LIMIT = 10
 SYNC_EMAIL_LIMIT = 20
 SYNC_REQUEST_LIMIT = 10
 SYNC_NOTE_LIMIT = 20
@@ -60,6 +66,10 @@ def handle(event, context):
         handle_answer(connection_id, user_id, body, request_context["messageId"], ANSWER_FOR_ACTION[action])
     elif action is ClientAction.REPORT_PAYMENT:
         handle_report_payment(connection_id, user_id, body)
+    elif action is ClientAction.SEND_REPORT:
+        handle_send_report(connection_id, user_id, body)
+    elif action is ClientAction.CLOSE_CASE:
+        handle_close_case(connection_id, user_id, body)
     else:
         handle_confirm(connection_id, user_id, body)
     return HANDLED
@@ -93,7 +103,9 @@ def handle_sync(connection_id: str, user_id: str) -> None:
             status = verdict.effective_status(request_row, now) if request_row else None
             emails.append(payloads.email_for_receiver(email_row, request_row, contact_name, status))
         notes = [payloads.note_for_receiver(note_row) for note_row in graph.list_recent_rows(user_id, graph.NOTE_ROW_KIND, SYNC_NOTE_LIMIT)]
-        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "emails": emails, "notes": notes}
+        case_rows = graph.list_recent_rows(user_id, graph.CASE_ROW_KIND, SYNC_CASE_LIMIT)
+        case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(case_row["PK"].removeprefix("CASE#"))) for case_row in case_rows]
+        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "emails": emails, "notes": notes, "cases": case_cards}
     else:
         cards = []
         for request_row in graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT):
@@ -215,3 +227,45 @@ def handle_report_payment(connection_id: str, user_id: str, body: dict) -> None:
     result = verdict.report_payment(report, user_id, RECEIVER_USER_ID, RECEIVER_ADDRESS)
     if result.outcome is not ActionOutcome.RECORDED:
         reject(connection_id, report.request_id, result.outcome)
+        return
+    channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.email_row, [], CaseEvent.OPENED))
+
+
+def case_id_from(body: dict) -> str | None:
+    case_id = body.get("caseId")
+    return case_id if isinstance(case_id, str) and case_id else None
+
+
+def handle_send_report(connection_id: str, user_id: str, body: dict) -> None:
+    """Send to my bank: code emails the SIMULATED bank mailbox and books the one reminder."""
+    case_id = case_id_from(body)
+    if case_id is None:
+        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
+        return
+    if not MOCK_BANK_MAILBOX or not CASES_ADDRESS:
+        logger.error("MOCK_BANK_MAILBOX / CASES_ADDRESS not configured; Send to my bank refused")
+        reject(connection_id, case_id, ActionOutcome.NOT_ALLOWED)
+        return
+    result = cases.send_report(case_id, user_id, RECEIVER_USER_ID, RECEIVER_NAME, ses_client, RECEIPT_SENDER, CASES_ADDRESS, MOCK_BANK_MAILBOX)
+    if result.outcome is not ActionOutcome.RECORDED:
+        reject(connection_id, case_id, result.outcome)
+        return
+    channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.REPORT_SENT))
+    if BANK_FOLLOW_UP_ENABLED:
+        try:
+            fire_at = datetime.now(timezone.utc) + timedelta(seconds=BANK_FOLLOW_UP_DELAY_SECONDS)
+            schedules.schedule_one_time_invocation(f"followup-{case_id}", fire_at, CASE_FOLLOWUP_FUNCTION_ARN, {"caseId": case_id})
+        except Exception:
+            logger.exception("follow-up schedule for %s failed; no reminder will be sent", case_id)
+
+
+def handle_close_case(connection_id: str, user_id: str, body: dict) -> None:
+    case_id = case_id_from(body)
+    if case_id is None:
+        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
+        return
+    result = cases.close_case(case_id, user_id, RECEIVER_USER_ID)
+    if result.outcome is not ActionOutcome.RECORDED:
+        reject(connection_id, case_id, result.outcome)
+        return
+    channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.CLOSED))

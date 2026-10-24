@@ -4,12 +4,12 @@ import asyncio
 import logging
 import os
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote_plus
 
 import boto3
 
-from shared import channels, graph, payloads
+from shared import channels, graph, payloads, schedules
 from shared.auth import authentication_reasons
 from shared.email_parse import ParsedEmail, parse_eml
 from shared.enums import PolicyDecision, ReaderModelChoice, RequestState, WarnReason
@@ -29,6 +29,9 @@ RECEIVER_ADDRESS = os.environ["RECEIVER_ADDRESS"]  # the one monitored address, 
 RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
 RECEIVER_NAME = os.environ["RECEIVER_NAME"]
 ESCALATION_ENABLED = os.environ.get("ESCALATION_ENABLED") == "true"
+RETRY_SCHEDULER_ENABLED = os.environ.get("RETRY_SCHEDULER_ENABLED") == "true"
+RE_ASK_DELAY_SECONDS = int(os.environ.get("RE_ASK_DELAY_SECONDS", "600"))
+RETRY_FUNCTION_ARN = os.environ.get("RETRY_FUNCTION_ARN", "")
 
 s3_client = boto3.client("s3")
 reader = build_reader(ReaderModelChoice(os.environ["READER_MODEL"]))
@@ -116,6 +119,18 @@ def hold_and_ask(
     if not channels_sent:
         unreachable = PolicyOutcome(PolicyDecision.WARN, WarnReason.UNREACHABLE, outcome.reasons)
         push_email_state(email_row, unreachable, request_row, contact.contact_name)  # still held, never a release
+    schedule_re_ask(request_id)
+
+
+def schedule_re_ask(request_id: str) -> None:
+    """Books the first re-ask timer; with the flag off nothing marks timeout and the PWA shows the shield on its own."""
+    if not RETRY_SCHEDULER_ENABLED:
+        return
+    try:
+        fire_at = datetime.now(timezone.utc) + timedelta(seconds=RE_ASK_DELAY_SECONDS)
+        schedules.schedule_one_time_invocation(f"retry-{request_id}-1", fire_at, RETRY_FUNCTION_ARN, {"requestId": request_id, "attempt": 1})
+    except Exception:
+        logger.exception("re-ask schedule for %s failed; the hold stays without a retry", request_id)
 
 
 def build_email_row(object_key: str, parsed_email: ParsedEmail) -> dict:

@@ -128,6 +128,8 @@ class PushMessageType(StrEnum):
     SYNC_STATE = "sync_state"                # reply to ClientAction.SYNC: the user's role and current rows
     ACTION_REJECTED = "action_rejected"      # reply when a client action is refused
     CASE_NOTE = "case_note"                  # to the receiver: the case agent wrote a note (and maybe a recovery pack)
+    CASE_STATE = "case_state"                # to the receiver: a case changed (sent, bank replied, reminded, closed)
+    CONTACT_NOTICE = "contact_notice"        # to the contact: one fixed sentence (the bank replied to the receiver's case)
 
 
 class ClientAction(StrEnum):
@@ -139,6 +141,8 @@ class ClientAction(StrEnum):
     REVERSE = "reverse"  # the contact: take back a No within the reverse window
     CONFIRM = "confirm"  # the receiver: quarantine an email the contact denied
     REPORT_PAYMENT = "report_payment"  # the receiver: "I already paid" → a CASE# row
+    SEND_REPORT = "send_report"        # the receiver: "Send to my bank" → code emails the SIMULATED bank
+    CLOSE_CASE = "close_case"          # the receiver: "Done" → the case is closed
 
 
 class UserRole(StrEnum):
@@ -203,8 +207,19 @@ class ProposedBy(StrEnum):
 class CaseTrigger(StrEnum):
     """What woke the case agent."""
 
-    VERDICT = "verdict"  # a REQUEST# reached a final state
-    CASE = "case"        # Grandma reported a payment (CASE# written)
+    VERDICT = "verdict"          # a REQUEST# reached a final state
+    CASE = "case"                # Grandma reported a payment (CASE# written)
+    CASE_CLOSED = "case_closed"  # Grandma tapped Done on the case
+
+
+class CaseEvent(StrEnum):
+    """What just happened to a case, as pushed with CASE_STATE."""
+
+    OPENED = "opened"
+    REPORT_SENT = "report_sent"
+    BANK_REPLIED = "bank_replied"
+    FOLLOWED_UP = "followed_up"
+    CLOSED = "closed"
 
 
 class CaseAgentRuntime(StrEnum):

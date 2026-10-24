@@ -24,6 +24,8 @@ import { Construct } from "constructs";
 
 // Raw emails land under this prefix (Mail Manager in slice 4, a hand-dropped .eml before that).
 const INBOX_PREFIX = "inbox/";
+// Replies from the SIMULATED bank to a case report land here (Mail Manager rule store-case-reply).
+const CASES_PREFIX = "cases/";
 const WEBSOCKET_STAGE_NAME = "live";
 const LAMBDA_SOURCE_DIRECTORY = "../lambda";
 // Stamped by Mail Manager at ingress; a sender-written copy is dropped before it can be trusted.
@@ -53,6 +55,17 @@ export class SendPidgeStack extends Stack {
     const escalationEnabled: boolean = this.node.getContext("escalationEnabled") === true;
     const releaseSchedulerEnabled: boolean = this.node.getContext("releaseSchedulerEnabled") === true;
     const caseAgentRuntimeMode: string = this.node.getContext("caseAgentRuntime") ?? "lambda";
+    const retrySchedulerEnabled: boolean = this.node.getContext("retrySchedulerEnabled") === true;
+    const reAskDelaySeconds: number = Number(this.node.getContext("reAskDelaySeconds") ?? 600);
+    const bankFollowUpEnabled: boolean = this.node.getContext("bankFollowUpEnabled") === true;
+    const bankFollowUpDelaySeconds: number = Number(this.node.getContext("bankFollowUpDelaySeconds") ?? 120);
+    // The SIMULATED bank: a founder-owned mailbox set in cdk.context.json (git-ignored), never an address on our own domain.
+    const mockBankMailbox: string = this.node.tryGetContext("mockBankMailbox") ?? "";
+    const receiverDomain = receiverAddress.split("@")[1];
+    if (mockBankMailbox.toLowerCase().endsWith(`@${receiverDomain}`) || mockBankMailbox.toLowerCase().endsWith(`@${sendingDomain}`)) {
+      throw new Error(`mockBankMailbox must not be on ${receiverDomain} or ${sendingDomain}: a reply would re-enter our own mail flow`);
+    }
+    const casesAddress = `cases@${receiverDomain}`;
     const caseAgentModel: string = this.node.getContext("caseAgentModel") ?? readerModel;
     const escalationModel: string = this.node.getContext("escalationModel") ?? "opus-4.5";
 
@@ -151,6 +164,7 @@ export class SendPidgeStack extends Stack {
       }),
     });
     emailBucket.grantPut(mailManagerWriteRole, `${INBOX_PREFIX}*`);
+    emailBucket.grantPut(mailManagerWriteRole, `${CASES_PREFIX}*`);
 
     const inboundRuleSet = new CfnMailManagerRuleSet(this, "InboundRuleSet", {
       ruleSetName: "sendpidge-inbound",
@@ -167,8 +181,20 @@ export class SendPidgeStack extends Stack {
         },
         // Exactly one of the next four matches, so the stored email carries exactly one header.
         ...buildAuthHeaderRules(),
+        // A bank's reply to a case report lands under cases/ and never wakes the Reader.
+        {
+          name: "store-case-reply",
+          conditions: [{ stringExpression: { evaluate: { attribute: "RECIPIENT" }, operator: "EQUALS", values: [casesAddress] } }],
+          actions: [{ writeToS3: {
+            roleArn: mailManagerWriteRole.roleArn,
+            s3Bucket: emailBucket.bucketName,
+            s3Prefix: CASES_PREFIX,
+            actionFailurePolicy: "DROP",
+          } }],
+        },
         {
           name: "store-raw-email",
+          conditions: [{ stringExpression: { evaluate: { attribute: "RECIPIENT" }, operator: "EQUALS", values: [receiverAddress] } }],
           actions: [{ writeToS3: {
             roleArn: mailManagerWriteRole.roleArn,
             s3Bucket: emailBucket.bucketName,
@@ -189,7 +215,7 @@ export class SendPidgeStack extends Stack {
         conditions: [{ stringExpression: {
           evaluate: { attribute: "RECIPIENT" },
           operator: "EQUALS",
-          values: [receiverAddress],
+          values: [receiverAddress, casesAddress],
         } }],
       }],
     });
@@ -238,6 +264,102 @@ export class SendPidgeStack extends Stack {
       autoDeploy: true,
     });
 
+    // One-time schedules (the release timer now; the re-ask and the bank follow-up later) live in this group.
+    // Lambdas create them at runtime; the scheduler assumes this role to invoke the target.
+    const scheduleGroup = new ScheduleGroup(this, "ScheduleGroup", { removalPolicy: RemovalPolicy.DESTROY });
+    const schedulerRole = new Role(this, "SchedulerRole", {
+      assumedBy: new ServicePrincipal("scheduler.amazonaws.com", {
+        conditions: { StringEquals: { "aws:SourceAccount": this.account } },
+      }),
+    });
+
+
+    // The re-ask timer: at +reAskDelay an unanswered ask is re-sent once; a second silence is marked timeout.
+    const retryFunction = new Function(this, "RetryFunction", {
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.X86_64,
+      code: lambdaCode,
+      handler: "pidge_retry.handler.handle",
+      memorySize: 512,
+      timeout: Duration.seconds(30),
+      environment: {
+        TABLE_NAME: table.tableName,
+        RECEIVER_USER_ID: receiverUserId,
+        RECEIVER_NAME: receiverName,
+        RE_ASK_DELAY_SECONDS: String(reAskDelaySeconds),
+        WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+        SCHEDULE_GROUP_NAME: scheduleGroup.scheduleGroupName,
+        SCHEDULER_ROLE_ARN: schedulerRole.roleArn,
+        RCS_ENABLED: rcsEnabled ? "true" : "false",
+        RCS_AGENT_ID: rcsAgentId,
+        WHATSAPP_ENABLED: whatsappEnabled ? "true" : "false",
+        WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId,
+        WHATSAPP_META_API_VERSION: whatsappMetaApiVersion,
+        WHATSAPP_TEMPLATE_NAME: whatsappTemplateName,
+        PIDGE_IMAGE_URL: `https://${pwaDomain}/assets/pidge-icon.png`,
+      },
+      logGroup: new LogGroup(this, "RetryLogs", { retention: RetentionDays.TWO_WEEKS, removalPolicy: RemovalPolicy.DESTROY }),
+    });
+    table.grantReadWriteData(retryFunction);
+    webSocketStage.grantManagementApiAccess(retryFunction);
+    scheduleGroup.grantWriteSchedules(retryFunction);
+    schedulerRole.grantPassRole(retryFunction.grantPrincipal);
+    retryFunction.grantInvoke(schedulerRole);
+    if (whatsappPhoneNumberArn) {
+      retryFunction.addToRolePolicy(
+        new PolicyStatement({ actions: ["social-messaging:SendWhatsAppMessage"], resources: [whatsappPhoneNumberArn] }),
+      );
+    }
+    if (rcsAgentArn) {
+      retryFunction.addToRolePolicy(new PolicyStatement({ actions: ["sms-voice:SendRcsMessage"], resources: [rcsAgentArn] }));
+    }
+
+    // The one reminder to the SIMULATED bank, fired by a schedule booked on Send to my bank.
+    const caseFollowUpFunction = new Function(this, "CaseFollowUpFunction", {
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.X86_64,
+      code: lambdaCode,
+      handler: "pidge_case_followup.handler.handle",
+      memorySize: 512,
+      timeout: Duration.seconds(15),
+      environment: {
+        TABLE_NAME: table.tableName,
+        RECEIVER_USER_ID: receiverUserId,
+        RECEIPT_SENDER: receiptSender,
+        CASES_ADDRESS: casesAddress,
+        WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+      },
+      logGroup: new LogGroup(this, "CaseFollowUpLogs", { retention: RetentionDays.TWO_WEEKS, removalPolicy: RemovalPolicy.DESTROY }),
+    });
+    table.grantReadWriteData(caseFollowUpFunction);
+    webSocketStage.grantManagementApiAccess(caseFollowUpFunction);
+    caseFollowUpFunction.addToRolePolicy(
+      new PolicyStatement({ actions: ["ses:SendEmail"], resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${sendingDomain}`] }),
+    );
+    caseFollowUpFunction.grantInvoke(schedulerRole);
+
+    // A bank reply under cases/: matched by token, stored verbatim, shown to Grandma, Jimin nudged. Never the Reader.
+    const caseInboundFunction = new Function(this, "CaseInboundFunction", {
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.X86_64,
+      code: lambdaCode,
+      handler: "pidge_case_inbound.handler.handle",
+      memorySize: 512,
+      timeout: Duration.seconds(30),
+      environment: {
+        TABLE_NAME: table.tableName,
+        RECEIVER_USER_ID: receiverUserId,
+        RECEIVER_NAME: receiverName,
+        RECEIVER_ADDRESS: receiverAddress,
+        WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+      },
+      logGroup: new LogGroup(this, "CaseInboundLogs", { retention: RetentionDays.TWO_WEEKS, removalPolicy: RemovalPolicy.DESTROY }),
+    });
+    table.grantReadWriteData(caseInboundFunction);
+    webSocketStage.grantManagementApiAccess(caseInboundFunction);
+    emailBucket.grantRead(caseInboundFunction, `${CASES_PREFIX}*`);
+    emailBucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(caseInboundFunction), { prefix: CASES_PREFIX });
+
     const readerDeadLetterQueue = new Queue(this, "ReaderDeadLetterQueue", {
       retentionPeriod: Duration.days(14),
       enforceSSL: true,
@@ -259,6 +381,11 @@ export class SendPidgeStack extends Stack {
         READER_MODEL: readerModel,
         ESCALATION_ENABLED: escalationEnabled ? "true" : "false",
         ESCALATION_MODEL: escalationModel,
+        RETRY_SCHEDULER_ENABLED: retrySchedulerEnabled ? "true" : "false",
+        RE_ASK_DELAY_SECONDS: String(reAskDelaySeconds),
+        RETRY_FUNCTION_ARN: retryFunction.functionArn,
+        SCHEDULE_GROUP_NAME: scheduleGroup.scheduleGroupName,
+        SCHEDULER_ROLE_ARN: schedulerRole.roleArn,
         RECEIVER_ADDRESS: receiverAddress,
         RECEIVER_USER_ID: receiverUserId,
         RECEIVER_NAME: receiverName,
@@ -337,15 +464,6 @@ export class SendPidgeStack extends Stack {
       }),
     );
 
-    // One-time schedules (the release timer now; the re-ask and the bank follow-up later) live in this group.
-    // Lambdas create them at runtime; the scheduler assumes this role to invoke the target.
-    const scheduleGroup = new ScheduleGroup(this, "ScheduleGroup", { removalPolicy: RemovalPolicy.DESTROY });
-    const schedulerRole = new Role(this, "SchedulerRole", {
-      assumedBy: new ServicePrincipal("scheduler.amazonaws.com", {
-        conditions: { StringEquals: { "aws:SourceAccount": this.account } },
-      }),
-    });
-
     // At releaseAt a Yes nobody undid becomes confirmed; with the scheduler off, the next read releases it instead.
     const releaseFunction = new Function(this, "ReleaseFunction", {
       runtime: Runtime.PYTHON_3_12,
@@ -397,6 +515,11 @@ export class SendPidgeStack extends Stack {
         RELEASE_FUNCTION_ARN: releaseFunction.functionArn,
         SCHEDULE_GROUP_NAME: scheduleGroup.scheduleGroupName,
         SCHEDULER_ROLE_ARN: schedulerRole.roleArn,
+        MOCK_BANK_MAILBOX: mockBankMailbox,
+        CASES_ADDRESS: casesAddress,
+        BANK_FOLLOW_UP_ENABLED: bankFollowUpEnabled ? "true" : "false",
+        BANK_FOLLOW_UP_DELAY_SECONDS: String(bankFollowUpDelaySeconds),
+        CASE_FOLLOWUP_FUNCTION_ARN: caseFollowUpFunction.functionArn,
       },
       logGroup: new LogGroup(this, "VerdictLogs", {
         retention: RetentionDays.TWO_WEEKS,

@@ -10,7 +10,7 @@ from boto3.dynamodb.types import TypeDeserializer
 from botocore.config import Config
 
 from shared import case_agent, channels, graph, payloads
-from shared.enums import FINAL_REQUEST_STATES, CaseAgentRuntime, CaseTrigger, ReaderModelChoice, RequestState
+from shared.enums import FINAL_REQUEST_STATES, CaseAgentRuntime, CaseState, CaseTrigger, ReaderModelChoice, RequestState
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -65,6 +65,8 @@ def scope_for_record(record: dict) -> case_agent.CaseScope | None:
         return case_agent.CaseScope(RECEIVER_USER_ID, keys["PK"].removeprefix("REQUEST#"), CaseTrigger.VERDICT)
     if keys["PK"].startswith("CASE#") and record["eventName"] == "INSERT":
         return case_agent.CaseScope(RECEIVER_USER_ID, new_image["requestId"], CaseTrigger.CASE, keys["PK"].removeprefix("CASE#"))
+    if keys["PK"].startswith("CASE#") and new_image.get("status") == CaseState.CLOSED and old_image.get("status") != CaseState.CLOSED:
+        return case_agent.CaseScope(RECEIVER_USER_ID, new_image["requestId"], CaseTrigger.CASE_CLOSED, keys["PK"].removeprefix("CASE#"))
     return None
 
 

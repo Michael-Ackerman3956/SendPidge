@@ -65,6 +65,8 @@ def case_metadata(scope: CaseScope) -> dict:
     case_row = graph.get_case(scope.case_id) if scope.case_id else None
     if case_row is not None:
         metadata["reportedPayment"] = {field: str(case_row.get(field)) for field in ("paymentRail", "jurisdiction", "bank", "amount", "currency", "paidAt", "status")}
+        metadata["reportedPayment"]["timeline"] = {field: case_row.get(field) for field in ("reportSentAt", "followUpSentAt", "bankRepliedAt", "closedAt")}
+        metadata["reportedPayment"]["bankReplyCount"] = int(case_row.get("replyCount", 0))  # the replies themselves are never shown to the agent
     return metadata
 
 
@@ -130,7 +132,19 @@ def build_case_agent(model_choice: ReaderModelChoice, scope: CaseScope, session_
 def run_prompt(scope: CaseScope) -> str:
     if scope.trigger is CaseTrigger.CASE:
         return "The receiver just reported that she already paid. Write the case note with the recovery steps."
+    if scope.trigger is CaseTrigger.CASE_CLOSED:
+        return ("The receiver just closed the case after hearing back from her bank. Write the closing note: what was done, "
+                "in order, and that the case is closed. Do not repeat the recovery steps.")
     return "A verdict just landed on this request. Write the case note."
+
+
+def note_for_label(scope: CaseScope) -> str:
+    """One label per thing worth a note: a final verdict, a reported payment, a closed case."""
+    if scope.trigger is CaseTrigger.CASE:
+        return f"{CaseTrigger.CASE}:{scope.case_id}"
+    if scope.trigger is CaseTrigger.CASE_CLOSED:
+        return f"{CaseTrigger.CASE_CLOSED}:{scope.case_id}"
+    return f"{CaseTrigger.VERDICT}:{note_status_for(scope)}"
 
 
 def run_case_agent(agent: Agent, scope: CaseScope) -> CaseNote:
@@ -140,9 +154,9 @@ def run_case_agent(agent: Agent, scope: CaseScope) -> CaseNote:
 
 
 def store_case_note(scope: CaseScope, note: CaseNote) -> dict:
-    """Code writes the NOTE# row; the pack inside it is code's, never the model's."""
-    note_for = f"{CaseTrigger.CASE}:{scope.case_id}" if scope.trigger is CaseTrigger.CASE else f"{CaseTrigger.VERDICT}:{note_status_for(scope)}"
-    return graph.write_case_note(scope.request_id, scope.receiver_user_id, note.note_text, recovery_pack_for_scope(scope), note_for)
+    """Code writes the NOTE# row; the pack inside it is code's, never the model's, and only the payment note carries it."""
+    recovery_pack = recovery_pack_for_scope(scope) if scope.trigger is CaseTrigger.CASE else None
+    return graph.write_case_note(scope.request_id, scope.receiver_user_id, note.note_text, recovery_pack, note_for_label(scope))
 
 
 def note_status_for(scope: CaseScope) -> str:
@@ -151,6 +165,6 @@ def note_status_for(scope: CaseScope) -> str:
 
 
 def has_note_for(scope: CaseScope) -> bool:
-    """A verdict or a case report is written up once, however many times the stream redelivers it."""
-    wanted = f"{CaseTrigger.CASE}:{scope.case_id}" if scope.trigger is CaseTrigger.CASE else f"{CaseTrigger.VERDICT}:{note_status_for(scope)}"
+    """A verdict, a case report or a closing is written up once, however many times the stream redelivers it."""
+    wanted = note_for_label(scope)
     return any(note.get("noteFor") == wanted for note in graph.list_case_notes(scope.request_id))
