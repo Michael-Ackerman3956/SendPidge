@@ -147,7 +147,7 @@ Source: `scope.md > The Unique Kernel`.
 - **Real SMS/messenger inbound** — only email via SES is real. Other inbound channels are mocked.
 - **Automatic fallback across channels** — POC sends via WhatsApp; fallback cascade (WhatsApp → SMS → call) is later.
 - **Full onboarding consent flow as product surface** — POC onboarding works but isn't polished as a standalone feature.
-- **Pidge calling Jimin** — voice verification would be compelling but may not be technically achievable in the timeline.
+- **Pidge calling Jimin** — voice verification is a post-deadline stretch on Amazon Connect (`scope.md > Stretch`, re-ruled 2026-10-25): scripted keypad / spoken yes/no is feasible; a free-form AI conversation is feasible with caveats.
 
 ## Possible Later Enhancements
 

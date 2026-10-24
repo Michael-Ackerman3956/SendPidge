@@ -1,0 +1,112 @@
+AWS Partner Central — SendPidge solution (soln-izq42shx2r4ye)
+Partner ID: partner-pujjifql46p2m · AWS account 358148451054 · ACE opportunity O30241633 (created 2026-10-24, Pending approval)
+
+=== External title ===
+SendPidge: the safest trust layer for how people and organizations communicate
+
+=== Value proposition (2–3 sentences) ===
+SendPidge is the trust layer for the safest communication: it verifies who is really behind a message before a person or organization acts on it. A threat-intelligence engine of relationship graphs and threat lists holds the impersonation and asks the real sender. When fraud gets through, agentic flows run the recovery autonomously.
+
+=== Description (max 5000 characters) ===
+Most fraud begins with a message that looks like it comes from someone you trust: a grandchild who needs money today, a CEO asking for an urgent transfer, a vendor with new bank details, a regulator with a fine. Content filters can only guess from the words; only the real sender knows whether they sent it. The safest communication layer asks them, and treats every answer as intelligence for the next message.
+
+Relationship graph. Each person or organization keeps a graph of who they know and the verified channels each contact controls: email, WhatsApp, RCS, in-app, and more as channels are added. A message that claims to come from someone in the graph but arrives from an address or number that person never used is the core signal, found in code before any model reads the text.
+
+Threat intelligence. Threat lists of known-bad senders, lookalike identities (confusable names and domains checked against the receiver's own contacts), risky links and suspect payees, fed by every attack confirmed on the network and by curated commercial-licensed feeds. A match is a reason shown to the user, never a verdict on its own; the verdict comes from the real sender.
+
+Preventive defense. Inbound mail arrives through Amazon SES Mail Manager with SPF and DKIM results stamped at the door. An Amazon Bedrock model reads the message with no tools and returns a structured verdict; code-based policy decides to pass, warn or hold, with a second-opinion escalation for borderline cases. A held message triggers "Was this you?" to the real sender on a channel they control (WhatsApp and RCS through AWS End User Messaging, or in-app), with a two-tap confirmation when money is involved. The AI can flag a message but never release one, and the user never sees the attacker's content until the sender has answered.
+
+Reactive agentic flows. When fraud lands or money has already moved, an Amazon Bedrock AgentCore agent opens the case, drafts the bank report from the receiver's own records, follows up, and answers the user's questions, behind Amazon Bedrock Guardrails and with every tool scoped to the caller. The agent runs the recovery autonomously; the person stays in control of every outbound action.
+
+Every organization that joins strengthens the whole: a confirmed attack against one member becomes a reason for every other, and verified channels become a shared way for banks, companies and platforms to reach the real person on the other side.
+
+=== Step 2 · Product 1 (Not available on AWS Marketplace) ===
+Product name: SendPidge
+Product type: Software
+Product URL: https://sendpidge.com
+Product description:
+SendPidge is a hosted inbox and messenger with a built-in trust layer. It holds a message that claims to come from a known contact but arrives from an unknown address, asks the real contact "Was this you?" on a channel they control, and opens an agent-run recovery case when fraud is confirmed. Deployed into the customer's own AWS account with AWS CDK.
+
+=== Step 2 · Integration details ===
+SendPidge is open core: the engine is public code deployed with AWS CDK into the customer's own AWS account, where Amazon SES Mail Manager receives inbound email and stamps authentication results, Amazon Bedrock reads each message, Amazon Bedrock AgentCore runs the recovery agent behind Bedrock Guardrails, and AWS End User Messaging (WhatsApp and RCS) carries the "Was this you?" question to the real sender; state lives in Amazon DynamoDB and Amazon S3. The commercial layer is a hosted threat-intelligence API (threat lists and lookalike checks the deployed engine calls at verdict time) plus enterprise features for banks, insurers and carriers, who integrate through the same webhook and channel adapters to verify their own customers and vendors.
+
+=== Step 3 · Use case details (max 500 each) ===
+Use case 1: Identity Authentication
+Impersonation works because a message cannot prove who sent it. SendPidge authenticates the sender, not the content: when a message claims a known contact but arrives from an unverified address, the real contact is asked on a channel they control via AWS End User Messaging, and only their answer releases it. Banks, insurers and carriers get a yes or no from the real person before any instruction is acted on.
+
+Use case 2: Fraud Prevention
+Authorised push payment and business email compromise losses keep rising because filters guess from content and the victim acts before anyone checks. SendPidge holds the message at the point of trust, before money moves, combining a relationship graph, threat lists and an Amazon Bedrock read with code-based policy. Every confirmed attack strengthens the threat lists for every other customer.
+
+Use case 3: Incident Response
+When fraud lands, the first hours decide whether money is recovered and most victims never report. An Amazon Bedrock AgentCore agent opens the case the moment an attack is confirmed, drafts the bank report from the customer's own records, follows up and answers the customer's questions, behind Bedrock Guardrails. The customer gets a case file instead of a hotline queue; the bank gets a complete report on day one.
+
+=== ACE opportunity (Partner Central > Sell > Opportunities > Create opportunity) ===
+Must be net-new, created today or later; do not clone an older record.
+
+
+
+########## Step 1 · Customer details
+Customer company name: Erickson Senior Living, LLC
+Industry vertical: Healthcare (Hospitality if Healthcare is not offered)
+Customer website: www.ericksonseniorliving.com
+Country: United States · Address: 701 Maiden Choice Lane · City: Catonsville · State: Maryland · ZIP: 21228 · DUNS: blank
+Status to state: target account, not yet contacted (best-estimate record per hackathon FAQ).
+
+
+
+########## Step 2 · Project details
+--- field: Partner project title ---
+ SendPidge sender-verification pilot for Erickson Senior Living
+
+--- field: Customer business problem (one field, 20–2,000 chars; paste everything down to the next marker) ---
+Best-estimate record (hackathon FAQ): Erickson Senior Living is a target account, not yet contacted; details below are public facts and our estimate.
+Erickson Senior Living operates 20+ campus-style retirement communities serving 24,000+ residents across 11 US states, and already builds resident-facing applications on AWS. Its residents, their families and its staff receive impersonation messages that look like they come from a grandchild, a family member, the residence or a known supplier and ask for money, a code or a change of payment details. Content filters cannot tell a real request from a copied one, so the resident acts before anyone checks, and the operator carries the loss, the family complaint and the support cost. The need is a check that holds a suspect message before money moves and confirms with the real sender on a channel they control, plus a recovery flow that opens the case and drafts the bank report when fraud still lands.
+Proposed pilot: SendPidge deployed into Erickson's AWS account or run as a hosted service, for one community, using Amazon SES Mail Manager, Amazon Bedrock and AgentCore, and AWS End User Messaging (WhatsApp, RCS) to reach the real sender.
+First contact sent via Erickson's website contact form on 2026-10-24; no reply yet.
+--- field: Partner solution description (only if the form asks) ---
+ SendPidge, the trust layer that verifies who is really behind a message before anyone acts on it; preventive hold-and-ask plus agentic recovery, deployed in the customer's AWS account.
+--- field: Opportunity type ---
+Net New Business
+--- field: Delivery model ---
+BYOL or AMI (deployed in the customer's AWS environment) + SaaS or PaaS (the hosted version)
+--- field: Sales activities (required by the form) ---
+ "Initialized discussions with customer" — only after the message below has actually been sent.
+
+Outreach message (Erickson website contact form, send before ticking the box):
+Subject: 20 minutes on message-safety checks for residents and families
+
+Hello,
+
+I'm Michael Joo, founder of Nestuary Wellness Inc., building SendPidge, an open-source service that runs in an organization's own AWS account. It checks incoming email and messages for impersonation before anyone acts: when a message claims to be a family member, the residence or a supplier and asks for money or a code, it asks the real person on WhatsApp or RCS, and "Not me" holds the message.
+
+It is early, with no customers yet. I'd like to learn whether this fits how Erickson handles fraud attempts against residents, families and staff. Could someone on your security or resident-experience team spare 20 minutes in the next few weeks?
+
+Thank you,
+Michael Joo
+https://sendpidge.com
+--- field: Use case ---
+ Security & Compliance
+--- field: Co-sell needs ---
+ Technical Consultation, Architectural Validation (Partner primary need: Co-sell with AWS)
+--- field: Target close date ---
+ 2027-01-22 (about 90 days out)
+--- field: Association type / Select solutions ---
+ Solutions → SendPidge (Limited); ARN box empty unless it is missing from the list: arn:aws:aws-marketplace:us-east-1:358148451054:AWSMarketplace/Solution/soln-izq42shx2r4ye
+--- field: Opportunity marketing details ---
+ Sourced from marketing activity = Yes; Marketing campaign = "AWS CDS Agentic AI Hackathon -Sept. 2026" (exact string); Marketing development funds = No
+
+
+
+########## Step 3 · APN program details: none / not applicable.
+
+
+
+########## Step 4 · Deal size
+Method: Forecast MRR from TCV; TCV 1200 USD; duration 12 months (≈ $100 MRR pilot).
+Product selection: AWS End User Messaging, AWS End User Messaging Social, Amazon Simple Email Service (SES); optionally Amazon Bedrock, Amazon DynamoDB.
+
+
+
+########## Step 5 / 6: leave customer contacts blank unless the prospect agreed to be named. Partner contact: you.
+
+Review → Submit (not Save). Record the O-ID (OXXXXXXXX) for the Devpost form.
