@@ -1,6 +1,10 @@
 """The fan-out: one failing channel never stops the others; every channel failing returns nothing (the WARN follows)."""
 
 import asyncio
+import json
+from decimal import Decimal
+
+import pytest
 
 from shared import channels, graph
 from shared.enums import Channel
@@ -50,3 +54,14 @@ def test_a_channel_without_a_contact_address_is_skipped(monkeypatch):
     monkeypatch.setattr(channels, "ask_on_whatsapp", sender_returning(Channel.WHATSAPP))
     whatsapp_only = graph.Contact("CONTACT#jimin", "Jimin", "jimin", contact_whatsapp="+821012345678")
     assert asyncio.run(channels.ask_on_every_channel(REQUEST_ROW, whatsapp_only, "Grandma")) == [Channel.INAPP, Channel.WHATSAPP]
+
+
+def test_push_encoding_turns_dynamodb_decimals_into_json_numbers():
+    message = {"recoveryPack": {"steps": [{"order": Decimal("1"), "deadlineDays": Decimal("60")}]}, "confidence": Decimal("0.85")}
+    assert json.loads(channels.encode_push_message(message)) == {
+        "recoveryPack": {"steps": [{"order": 1, "deadlineDays": 60}]}, "confidence": 0.85}
+
+
+def test_push_encoding_still_rejects_other_unknown_types():
+    with pytest.raises(TypeError):
+        channels.encode_push_message({"when": object()})

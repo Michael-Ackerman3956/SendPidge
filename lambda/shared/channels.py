@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+from decimal import Decimal
 
 import boto3
 from botocore.exceptions import ClientError
@@ -29,10 +30,21 @@ def get_management_client():
     return _management_client
 
 
+def json_value_for_push(value):
+    """DynamoDB hands numbers back as Decimal; the PWA gets plain JSON numbers."""
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def encode_push_message(message: dict) -> bytes:
+    return json.dumps(message, default=json_value_for_push).encode()
+
+
 def push_to_user(user_id: str, message: dict) -> int:
     """Pushes to every open connection of the user; returns how many received it. Stale connections are removed."""
     client = get_management_client()
-    message_bytes = json.dumps(message).encode()
+    message_bytes = encode_push_message(message)
     delivered_count = 0
     for connection_id in graph.list_connection_ids(user_id):
         try:
@@ -102,7 +114,7 @@ def ask_on_whatsapp(request_row: dict, contact: graph.Contact, receiver_name: st
 
 def push_to_connection(connection_id: str, message: dict) -> None:
     """Reply to the one socket that sent a client action."""
-    get_management_client().post_to_connection(ConnectionId=connection_id, Data=json.dumps(message).encode())
+    get_management_client().post_to_connection(ConnectionId=connection_id, Data=encode_push_message(message))
 
 
 async def ask_on_every_channel(request_row: dict, contact: graph.Contact, receiver_name: str) -> list[Channel]:
