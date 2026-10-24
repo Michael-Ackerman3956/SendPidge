@@ -647,6 +647,9 @@ export class SendPidgeStack extends Stack {
         TABLE_NAME: table.tableName,
         CASE_AGENT_MODEL: caseAgentModel,
         CASE_AGENT_MEMORY_ID: caseAgentMemory.memoryId,
+        // Spans to the shared aws/spans group (X-Ray already may write there); the per-agent default needs
+        // logs:PutResourcePolicy on the execution role, and without it every span was dropped.
+        UNIFIED_TRACES_DESTINATION_ENABLED: "false",
       },
     });
     caseAgentRuntime.grant(
