@@ -1,0 +1,59 @@
+:root {
+  --background: #0e0e0e;
+  --teal: #3AA68E;
+  --text-primary: #f2f2f2;
+  --text-secondary: #a3a3a3;
+  --text-tertiary: #8a8a8a;
+  --font: "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: var(--background); min-height: 100%; }
+body {
+  font-family: var(--font);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+.hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 14px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+.pidge { width: 120px; height: 120px; }
+h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+.tagline { font-size: 22px; font-weight: 600; color: var(--teal); }
+.lede { font-size: 17px; line-height: 1.5; color: var(--text-secondary); }
+.open-app {
+  margin-top: 10px;
+  display: inline-block;
+  padding: 14px 28px;
+  border-radius: 999px;
+  background: var(--teal);
+  color: #0e0e0e;
+  font-size: 17px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.open-app:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 3px; }
+.note { font-size: 14px; color: var(--text-tertiary); }
+.footer {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  padding: 18px 0 8px;
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+.footer a { color: var(--text-secondary); text-decoration: none; }
+.footer a:hover, .footer a:focus-visible { text-decoration: underline; }
+@media (prefers-reduced-motion: no-preference) { .open-app { transition: transform 120ms ease; } .open-app:active { transform: scale(0.98); } }
