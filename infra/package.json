@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "build-layer": "scripts/build_layer.sh",
+    "build-agent": "scripts/build_case_agent.sh",
     "synth": "cdk synth",
     "deploy": "cdk deploy --require-approval never"
   },

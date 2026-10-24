@@ -1,6 +1,7 @@
 import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from "aws-cdk-lib";
 import { WebSocketApi, WebSocketStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import * as agentcore from "aws-cdk-lib/aws-bedrockagentcore";
 import { Alarm, ComparisonOperator, TreatMissingData } from "aws-cdk-lib/aws-cloudwatch";
 import { Certificate, CertificateValidation } from "aws-cdk-lib/aws-certificatemanager";
 import { Distribution, ResponseHeadersPolicy, ViewerProtocolPolicy } from "aws-cdk-lib/aws-cloudfront";
@@ -51,7 +52,7 @@ export class SendPidgeStack extends Stack {
     const whatsappTemplateName: string = this.node.getContext("whatsappTemplateName") ?? "";
     const escalationEnabled: boolean = this.node.getContext("escalationEnabled") === true;
     const releaseSchedulerEnabled: boolean = this.node.getContext("releaseSchedulerEnabled") === true;
-    const caseAgentRuntime: string = this.node.getContext("caseAgentRuntime") ?? "lambda";
+    const caseAgentRuntimeMode: string = this.node.getContext("caseAgentRuntime") ?? "lambda";
     const caseAgentModel: string = this.node.getContext("caseAgentModel") ?? readerModel;
     const escalationModel: string = this.node.getContext("escalationModel") ?? "opus-4.5";
 
@@ -424,7 +425,50 @@ export class SendPidgeStack extends Stack {
     rcsInboundTopic.addSubscription(new LambdaSubscription(verdictFunction));
     whatsappInboundTopic.addSubscription(new LambdaSubscription(verdictFunction));
 
-    // The case agent (lambda mode): wakes on the table stream, writes the NOTE# row, pushes it to Grandma.
+    // The Pidge case agent on Amazon Bedrock AgentCore: Runtime (direct code deploy, arm64 zip built by
+    // infra/scripts/build_case_agent.sh) plus Memory (actor = the receiver, one family's facts). The runtime role
+    // reads the table (never Scan, never S3) and calls Haiku; code in pidge-dispatch still writes every row.
+    const caseAgentMemory = new agentcore.Memory(this, "CaseAgentMemory", {
+      memoryName: "sendpidge_case_agent",
+      description: "What Pidge remembers about one family's cases",
+      expirationDuration: Duration.days(30),
+      memoryStrategies: [
+        agentcore.MemoryStrategy.usingSemantic({ strategyName: "family_facts", namespaces: ["/pidge/families/{actorId}/facts"] }),
+      ],
+    });
+    const caseAgentRuntime = new agentcore.Runtime(this, "CaseAgentRuntime", {
+      runtimeName: "sendpidge_case_agent",
+      description: "Pidge case agent: reads one family's case rows, writes the case note, drafts the recovery pack",
+      agentRuntimeArtifact: agentcore.AgentRuntimeArtifact.fromCodeAsset({
+        path: "build/case_agent",
+        runtime: agentcore.AgentCoreRuntime.PYTHON_3_12,
+        entrypoint: ["opentelemetry-instrument", "main.py"],
+        exclude: ["**/__pycache__"],
+      }),
+      environmentVariables: {
+        TABLE_NAME: table.tableName,
+        CASE_AGENT_MODEL: caseAgentModel,
+        CASE_AGENT_MEMORY_ID: caseAgentMemory.memoryId,
+      },
+    });
+    caseAgentRuntime.grant(
+      ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:BatchGetItem"],
+      [table.tableArn, `${table.tableArn}/index/UserIndex`],
+    );
+    caseAgentRuntime.grant(
+      ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+      [
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5*",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-5-5*",
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/us.anthropic.claude-haiku-4-5*`,
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-haiku-5-5*`,
+      ],
+    );
+    caseAgentMemory.grantWrite(caseAgentRuntime);
+    caseAgentMemory.grantRead(caseAgentRuntime);
+
+    // pidge-dispatch wakes on the table stream and asks the case agent (on AgentCore, or in-process in lambda mode)
+    // for the note, then writes the NOTE# row and pushes it to Grandma.
     const dispatchFunction = new Function(this, "DispatchFunction", {
       runtime: Runtime.PYTHON_3_12,
       architecture: Architecture.X86_64,
@@ -436,8 +480,9 @@ export class SendPidgeStack extends Stack {
       environment: {
         TABLE_NAME: table.tableName,
         RECEIVER_USER_ID: receiverUserId,
-        CASE_AGENT_RUNTIME: caseAgentRuntime,
+        CASE_AGENT_RUNTIME: caseAgentRuntimeMode,
         CASE_AGENT_MODEL: caseAgentModel,
+        CASE_AGENT_RUNTIME_ARN: caseAgentRuntime.agentRuntimeArn,
         WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
       },
       logGroup: new LogGroup(this, "DispatchLogs", {
@@ -458,6 +503,7 @@ export class SendPidgeStack extends Stack {
         ],
       }),
     );
+    caseAgentRuntime.grantInvoke(dispatchFunction);
     // Two filters: a REQUEST# META whose new status is final, or a CASE# META insert. Everything else never wakes it.
     dispatchFunction.addEventSource(new DynamoEventSource(table, {
       startingPosition: StartingPosition.LATEST,
@@ -496,6 +542,8 @@ export class SendPidgeStack extends Stack {
       description: `Create an MX record for the receiver's domain pointing at this host`,
     });
     new CfnOutput(this, "RcsInboundTopicArn", { value: rcsInboundTopic.topicArn });
+    new CfnOutput(this, "CaseAgentRuntimeArn", { value: caseAgentRuntime.agentRuntimeArn });
+    new CfnOutput(this, "CaseAgentMemoryId", { value: caseAgentMemory.memoryId });
     new CfnOutput(this, "RcsTwoWayRoleArn", { value: rcsTwoWayRole.roleArn });
     new CfnOutput(this, "WhatsAppInboundTopicArn", {
       value: whatsappInboundTopic.topicArn,

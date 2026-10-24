@@ -1,0 +1,6 @@
+# The case agent's zip for AgentCore Runtime (arm64). shared/ is copied in from lambda/shared by infra/scripts/build_case_agent.sh.
+boto3==1.43.117
+strands-agents==1.62.0
+pydantic==2.14.1
+bedrock-agentcore==1.25.0
+aws-opentelemetry-distro
