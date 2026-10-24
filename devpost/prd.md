@@ -7,7 +7,11 @@ round: 2 (2026-10-21; scope approved 2026-10-20)
 # SendPidge — Product Requirements
 
 One line: a PWA omni-inbox with an AI agent (Pidge) that holds suspicious messages and asks the real person "was this you?" before the receiver acts.
+
+What it will not do: The model that reads the email has no tools and only classifies it; code places the hold and sends the question; Jimin answers and Grandma taps. Nothing in Pidge sends money or reaches a real bank.
 Source: `scope.md > The Core Loop`, `scope.md > The Unique Kernel`.
+
+Who installs what: only the protected person is inside SendPidge. The person being impersonated installs nothing — the question reaches the Messages or WhatsApp app they already have, and they tap one chip. The trust graph is the phone numbers the receiver already holds. In production the same SES Mail Manager rule set sits as a relay in front of the existing mailbox (ingress endpoint → rules → deliver on); the PWA is the demo's view, not a requirement.
 
 ## The Core Journey
 
@@ -150,6 +154,8 @@ Source: `scope.md > The Unique Kernel`.
 - B2B version: supplier PO fraud, CEO wire requests, fake insurance claims — same relationship graph, different personas.
 - Institution impersonation ("fake police", "fake bank") as the known party.
 - Consolidated omni-inbox with real integrations across all channels.
+- Mail Manager as a relay in front of an existing mailbox (MX or forwarding → ingress endpoint → deliver on to Gmail/O365), so no inbox switch is needed.
+- Stretch, platform level: the "was this you?" check offered by the carrier or OS (Apple/Google/telco), the way TheCheat syncs with Korean carriers — requires platform partnership, out of our hands.
 - Onboarding the trust circle as a product surface with invite flows.
 - AI-generated memoir/scrapbook features (extending the baby Jimin celebration).
 - Homoglyph and typosquatting detection as a detailed feature (IDN homograph attacks, Cyrillic/Greek lookalikes).
@@ -162,6 +168,10 @@ Source: `scope.md > The Unique Kernel`.
 - **Link preview or URL safety** — a different problem (link uncertainty), not this root. (`scope.md > Explicitly Cut`)
 - **Full email client features** — SendPidge is not replacing Gmail. It's a security layer with an inbox view.
 - **Production-grade multi-channel integration** — demo mocks non-email channels.
+- **No model releases a gate-1 hold** (known name, unknown address); only Jimin's answer or Grandma's tap moves it. (`spec.md > Policy in code`)
+- **The Reader never holds a tool; the agent that holds tools never reads the email.** (`spec.md > Rule of Two`)
+- **Pidge never contacts a real bank, police or court** — the demo bank mailbox is SIMULATED and labelled so. (`spec.md > Decisions > mock-bank loop`)
+- **Copy never says "safe"** — it quotes the person: "Jimin says he sent this." (`spec.md > Build-time hardening`)
 
 ## Open Questions
 
