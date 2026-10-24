@@ -20,6 +20,7 @@ export const CLIENT_ACTION = Object.freeze({
   REPORT_PAYMENT: "report_payment",
   SEND_REPORT: "send_report",
   CLOSE_CASE: "close_case",
+  SAVE_PUSH_SUBSCRIPTION: "save_push_subscription",
 });
 
 export const CASE_STATUS = Object.freeze({

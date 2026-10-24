@@ -1,4 +1,5 @@
-"""WebSocket $default: sync, the contact's Yes / No / Undo / Reverse, the receiver's Confirm; SNS: phone-channel taps.
+"""WebSocket $default: sync, the contact's Yes / No / Undo / Reverse, the receiver's Confirm and case actions,
+a browser's Web Push subscription; SNS: phone-channel taps.
 
 The user comes from the connection row, never from the message body.
 """
@@ -10,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import boto3
 
-from shared import cases, channels, graph, payloads, rcs, schedules, verdict, whatsapp
+from shared import cases, channels, graph, payloads, push_subscriptions, rcs, schedules, verdict, whatsapp
 from shared.enums import ActionOutcome, CaseEvent, Channel, ClientAction, PushMessageType, RequestState, UserRole, VerdictAnswer
 
 logger = logging.getLogger()
@@ -70,6 +71,8 @@ def handle(event, context):
         handle_send_report(connection_id, user_id, body)
     elif action is ClientAction.CLOSE_CASE:
         handle_close_case(connection_id, user_id, body)
+    elif action is ClientAction.SAVE_PUSH_SUBSCRIPTION:
+        handle_save_push_subscription(connection_id, user_id, body)
     else:
         handle_confirm(connection_id, user_id, body)
     return HANDLED
@@ -269,3 +272,10 @@ def handle_close_case(connection_id: str, user_id: str, body: dict) -> None:
         reject(connection_id, case_id, result.outcome)
         return
     channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.CLOSED))
+
+
+def handle_save_push_subscription(connection_id: str, user_id: str, body: dict) -> None:
+    """Stores this browser's Web Push subscription under the caller's own USER# row; only a refusal is answered."""
+    outcome = push_subscriptions.save_subscription(user_id, body)
+    if outcome is not ActionOutcome.RECORDED:
+        reject(connection_id, None, outcome)

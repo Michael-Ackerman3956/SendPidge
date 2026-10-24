@@ -1,4 +1,4 @@
-"""S3 cases/ → a bank reply. Matched by the subject token, stored verbatim, shown to Grandma, Jimin nudged. Never the Reader."""
+"""S3 cases/ → a bank reply. Matched by the subject token, stored verbatim, shown to Grandma (in-app + Web Push), Jimin nudged. Never the Reader."""
 
 import json
 import logging
@@ -7,10 +7,10 @@ from urllib.parse import unquote_plus
 
 import boto3
 
-from shared import cases, channels, graph, payloads
+from shared import cases, channels, graph, payloads, web_push
 from shared.auth import authentication_reasons
 from shared.email_parse import parse_eml
-from shared.enums import ActionOutcome, CaseEvent
+from shared.enums import ActionOutcome, CaseEvent, PushNotice
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -52,6 +52,8 @@ def handle_case_reply_object(bucket_name: str, object_key: str) -> None:
         return
     case_id = result.case_row["PK"].removeprefix("CASE#")
     channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.BANK_REPLIED))
+    notified_count = web_push.send_notice(RECEIVER_USER_ID, PushNotice.BANK_REPLIED)  # lock-screen notice; fixed text
+    logger.info("bank reply on %s: web push accepted by %d browser(s)", case_id, notified_count)
     request_row = graph.get_request(result.case_row["requestId"])
     contact_row = graph.get_contact_row(RECEIVER_ADDRESS, request_row["contactSK"]) if request_row else None
     if contact_row:

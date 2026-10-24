@@ -155,7 +155,14 @@ class ClientAction(StrEnum):
     REPORT_PAYMENT = "report_payment"  # the receiver: "I already paid" → a CASE# row
     SEND_REPORT = "send_report"        # the receiver: "Send to my bank" → code emails the SIMULATED bank
     CLOSE_CASE = "close_case"          # the receiver: "Done" → the case is closed
+    SAVE_PUSH_SUBSCRIPTION = "save_push_subscription"  # either user: this browser may get Web Push notifications
 
+
+
+class PushNotice(StrEnum):
+    """Which Web Push notification is sent; each maps to one fixed sentence in shared/web_push.py, never email text."""
+
+    BANK_REPLIED = "bank_replied"
 
 class UserRole(StrEnum):
     """Which screen a PWA shows. Mirrored in pwa/js/constants.js."""

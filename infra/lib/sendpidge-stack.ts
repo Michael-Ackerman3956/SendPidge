@@ -15,6 +15,7 @@ import { SqsDestination } from "aws-cdk-lib/aws-lambda-destinations";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { BlockPublicAccess, Bucket, BucketEncryption, EventType } from "aws-cdk-lib/aws-s3";
 import { ScheduleGroup } from "aws-cdk-lib/aws-scheduler";
+import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { Topic } from "aws-cdk-lib/aws-sns";
 import { LambdaSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
 import { CfnMailManagerIngressPoint, CfnMailManagerRuleSet, CfnMailManagerTrafficPolicy, EmailIdentity, Identity } from "aws-cdk-lib/aws-ses";
@@ -247,7 +248,7 @@ export class SendPidgeStack extends Stack {
       code: Code.fromAsset("build/layer"),
       compatibleRuntimes: [Runtime.PYTHON_3_12],
       compatibleArchitectures: [Architecture.X86_64],
-      description: "strands-agents 1.62.0 + pydantic 2.14.1 (infra/scripts/build_layer.sh)",
+      description: "strands-agents 1.62.0 + pydantic 2.14.1 + pywebpush 2.5.0 (infra/scripts/build_layer.sh)",
     });
 
     const lambdaCode = Code.fromAsset(LAMBDA_SOURCE_DIRECTORY, {
@@ -354,7 +355,10 @@ export class SendPidgeStack extends Stack {
     );
     caseFollowUpFunction.grantInvoke(schedulerRole);
 
-    // A bank reply under cases/: matched by token, stored verbatim, shown to Grandma, Jimin nudged. Never the Reader.
+    // The Web Push signing key (raw P-256, base64url), created once by scripts/create_vapid_key.py; never in context or code.
+    const vapidSecret = Secret.fromSecretNameV2(this, "VapidPrivateKey", this.node.tryGetContext("vapidSecretName") ?? "sendpidge/vapid-private-key");
+
+    // A bank reply under cases/: matched by token, stored verbatim, shown to Grandma (in-app + Web Push), Jimin nudged. Never the Reader.
     const caseInboundFunction = new Function(this, "CaseInboundFunction", {
       runtime: Runtime.PYTHON_3_12,
       architecture: Architecture.X86_64,
@@ -362,16 +366,19 @@ export class SendPidgeStack extends Stack {
       handler: "pidge_case_inbound.handler.handle",
       memorySize: 512,
       timeout: Duration.seconds(30),
+      layers: [dependencyLayer],  // pywebpush for the lock-screen notice
       environment: {
         TABLE_NAME: table.tableName,
         RECEIVER_USER_ID: receiverUserId,
         RECEIVER_NAME: receiverName,
         RECEIVER_ADDRESS: receiverAddress,
         WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+        VAPID_SECRET_NAME: vapidSecret.secretName,
       },
       logGroup: new LogGroup(this, "CaseInboundLogs", { retention: RetentionDays.TWO_WEEKS, removalPolicy: RemovalPolicy.DESTROY }),
     });
     table.grantReadWriteData(caseInboundFunction);
+    vapidSecret.grantRead(caseInboundFunction);
     webSocketStage.grantManagementApiAccess(caseInboundFunction);
     emailBucket.grantRead(caseInboundFunction, `${CASES_PREFIX}*`);
     emailBucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(caseInboundFunction), { prefix: CASES_PREFIX });

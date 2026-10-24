@@ -2,6 +2,7 @@
 // The role is never stored: every sync_state names it again.
 import { ACTION_REJECTED_REASON, CONNECTION_STATUS, PUSH_MESSAGE_TYPE, USER_ROLE } from "./constants.js";
 import { connectToPushChannel } from "./websocket.js";
+import { refreshPushSubscriptionAfterSync, startPushNotifications } from "./push-notifications.js";
 import { ACTION_STATUS_MESSAGE, showActionStatusMessage } from "./action-status.js";
 import {
   applyReceiverSyncState, handleEmailStatePush, handleReceiverActionRejected, handleReceiverRequestStatePush,
@@ -88,6 +89,7 @@ function handleSyncStatePush(pushMessage) {
       if (activeReceiverTab === RECEIVER_TAB.INBOX) showReceiverView();
       applyReceiverSyncState(pushMessage.emails);
       applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);
+      refreshPushSubscriptionAfterSync();
       break;
     case USER_ROLE.CONTACT:
       if (activeUserRole === USER_ROLE.RECEIVER) { hideReceiverView(); hidePidgeView(); pageElements.receiverTabs.hidden = true; }
@@ -194,6 +196,7 @@ function startApp() {
     return;
   }
   pageElements.loadingState.hidden = false;
+  startPushNotifications();
   connectToPushChannel({ accessToken, onPushMessage: handlePushMessage, onConnectionStatusChange: updateConnectionDot });
 }
 

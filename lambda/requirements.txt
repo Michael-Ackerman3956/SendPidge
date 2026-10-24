@@ -2,3 +2,4 @@
 boto3==1.43.117
 strands-agents==1.62.0
 pydantic==2.14.1
+pywebpush==2.5.0

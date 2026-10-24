@@ -283,6 +283,7 @@ button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
   background: var(--surface-2); color: var(--text-primary); font-size: 16px; font-weight: 600;
 }
 .contact-secondary-button:disabled { opacity: 0.6; cursor: default; }
+.enable-notifications-button { margin-bottom: 12px; }
 .contact-release-countdown { display: inline; font-variant-numeric: tabular-nums; }
 .contact-countdown { font-size: 28px; font-weight: 700; color: var(--orange); font-variant-numeric: tabular-nums; }
 .contact-card-late { font-size: 16px; color: var(--text-secondary); }
