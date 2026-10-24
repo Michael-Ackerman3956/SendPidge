@@ -1,4 +1,7 @@
-"""WebSocket $default: sync, the contact's Yes / No, and the receiver's Confirm. The user comes from the connection row."""
+"""WebSocket $default: sync, the contact's Yes / No / Undo / Reverse, the receiver's Confirm; SNS: phone-channel taps.
+
+The user comes from the connection row, never from the message body.
+"""
 
 import json
 import logging
@@ -7,8 +10,8 @@ from datetime import datetime, timezone
 
 import boto3
 
-from shared import channels, graph, payloads, rcs, verdict, whatsapp
-from shared.enums import ActionOutcome, Channel, ClientAction, PushMessageType, UserRole, VerdictAnswer
+from shared import channels, graph, payloads, rcs, schedules, verdict, whatsapp
+from shared.enums import ActionOutcome, Channel, ClientAction, PushMessageType, RequestState, UserRole, VerdictAnswer
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -20,10 +23,13 @@ EMAIL_BUCKET = os.environ["EMAIL_BUCKET"]
 RECEIPT_SENDER = os.environ["RECEIPT_SENDER"]
 RCS_TOPIC_ARN = os.environ["RCS_TOPIC_ARN"]
 WHATSAPP_TOPIC_ARN = os.environ["WHATSAPP_TOPIC_ARN"]
+RELEASE_SCHEDULER_ENABLED = os.environ.get("RELEASE_SCHEDULER_ENABLED") == "true"
+RELEASE_FUNCTION_ARN = os.environ.get("RELEASE_FUNCTION_ARN", "")
 SYNC_EMAIL_LIMIT = 20
 SYNC_REQUEST_LIMIT = 10
 HANDLED = {"statusCode": 200}
 FORBIDDEN = {"statusCode": 403}
+ANSWER_FOR_ACTION = {ClientAction.UNDO: VerdictAnswer.UNDO, ClientAction.REVERSE: VerdictAnswer.REVERSE}
 
 s3_client = boto3.client("s3")
 ses_client = boto3.client("sesv2")
@@ -48,10 +54,16 @@ def handle(event, context):
     if action is ClientAction.SYNC:
         handle_sync(connection_id, user_id)
     elif action is ClientAction.ANSWER:
-        handle_answer(connection_id, user_id, body, request_context["messageId"])
+        handle_answer(connection_id, user_id, body, request_context["messageId"], parse_answer(body))
+    elif action in ANSWER_FOR_ACTION:
+        handle_answer(connection_id, user_id, body, request_context["messageId"], ANSWER_FOR_ACTION[action])
     else:
         handle_confirm(connection_id, user_id, body)
     return HANDLED
+
+
+def now_timestamp() -> str:
+    return graph.iso_timestamp(datetime.now(timezone.utc))
 
 
 def reject(connection_id: str, request_id: str | None, outcome: ActionOutcome) -> None:
@@ -66,7 +78,8 @@ def contact_name_for(request_row: dict) -> str:
 
 
 def handle_sync(connection_id: str, user_id: str) -> None:
-    """Reconnect or reload: the role and the rows this user should see right now."""
+    """Reconnect or reload: the role and the rows this user should see right now (a past releaseAt reads as confirmed)."""
+    now = now_timestamp()
     if user_id == RECEIVER_USER_ID:
         emails = []
         for email_row in graph.list_recent_rows(user_id, graph.EMAIL_ROW_KIND, SYNC_EMAIL_LIMIT):
@@ -74,28 +87,34 @@ def handle_sync(connection_id: str, user_id: str) -> None:
                 continue  # the Reader is still on it; its push will follow
             request_row = graph.get_request(email_row["requestId"]) if email_row.get("requestId") else None
             contact_name = contact_name_for(request_row) if request_row else None
-            emails.append(payloads.email_for_receiver(email_row, request_row, contact_name))
+            status = verdict.effective_status(request_row, now) if request_row else None
+            emails.append(payloads.email_for_receiver(email_row, request_row, contact_name, status))
         message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "emails": emails}
     else:
-        request_rows = graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT)
-        cards = [payloads.card_for_contact(request_row, RECEIVER_NAME) for request_row in request_rows]
+        cards = []
+        for request_row in graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT):
+            email_row = graph.get_email(request_row["emailId"])
+            cards.append(payloads.card_for_contact(request_row, email_row, RECEIVER_NAME, verdict.effective_status(request_row, now)))
         message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.CONTACT, "requests": cards}
     channels.push_to_connection(connection_id, message)
 
 
-def handle_answer(connection_id: str, user_id: str, body: dict, websocket_message_id: str) -> None:
-    request_id = body.get("requestId")
+def parse_answer(body: dict) -> VerdictAnswer | None:
+    """The in-app Yes / No; undo and reverse have their own actions."""
     try:
         answer = VerdictAnswer(body.get("answer"))
     except ValueError:
-        reject(connection_id, request_id, ActionOutcome.BAD_MESSAGE)
+        return None
+    return answer if answer in (VerdictAnswer.YES, VerdictAnswer.NO) else None
+
+
+def handle_answer(connection_id: str, user_id: str, body: dict, websocket_message_id: str, answer: VerdictAnswer | None) -> None:
+    request_id = body.get("requestId")
+    if answer is None or not isinstance(request_id, str):
+        reject(connection_id, request_id if isinstance(request_id, str) else None, ActionOutcome.BAD_MESSAGE)
         return
-    if not isinstance(request_id, str):
-        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
-        return
-    now = graph.iso_timestamp(datetime.now(timezone.utc))
     sender = verdict.SenderIdentity(Channel.INAPP, user_id)
-    result = verdict.record_answer(request_id, answer, sender, f"inapp:{websocket_message_id}", now)
+    result = verdict.record_answer(request_id, answer, sender, f"inapp:{websocket_message_id}", now_timestamp())
     if result.outcome is not ActionOutcome.RECORDED:
         reject(connection_id, request_id, result.outcome)
         return
@@ -103,14 +122,28 @@ def handle_answer(connection_id: str, user_id: str, body: dict, websocket_messag
 
 
 def announce_recorded_answer(request_id: str, result: verdict.ActionResult) -> None:
-    """Both PWAs learn the new status; Jimin gets the receipt. Shared by the in-app and the phone channels."""
+    """Both PWAs learn the new status; a Yes starts the release timer; a final state emails Jimin the receipt."""
     message = payloads.request_state_message(result.request_row, result.status, result.contact_row["contactName"], False)
     channels.push_to_user(RECEIVER_USER_ID, message)
     channels.push_to_user(result.contact_row["contactPwaUserId"], message)
+    if result.status is RequestState.CONFIRMED_PENDING:
+        schedule_release(request_id, result.request_row["releaseAt"])
     try:  # the verdict already reached the receiver; a failed receipt is logged, never blocking
         verdict.send_receipt(ses_client, RECEIPT_SENDER, result.contact_row, result.status, RECEIVER_NAME)
     except Exception:
         logger.exception("receipt for %s failed", request_id)
+
+
+def schedule_release(request_id: str, release_at: str) -> None:
+    """Flag off: nothing is scheduled and the release happens on the next read (verdict.effective_status)."""
+    if not RELEASE_SCHEDULER_ENABLED:
+        return
+    try:
+        schedules.schedule_one_time_invocation(
+            f"release-{request_id}", verdict.parse_timestamp(release_at), RELEASE_FUNCTION_ARN, {"requestId": request_id}
+        )
+    except Exception:
+        logger.exception("release schedule for %s failed; the next read releases it", request_id)
 
 
 def parse_phone_reply(record: dict) -> tuple[Channel, verdict.SenderIdentity, str, VerdictAnswer, str] | None:
@@ -144,8 +177,7 @@ def handle_sns_records(records: list) -> None:
         if parsed is None:
             continue
         channel, sender, request_id, answer, inbound_message_id = parsed
-        now = graph.iso_timestamp(datetime.now(timezone.utc))
-        result = verdict.record_answer(request_id, answer, sender, inbound_message_id, now)
+        result = verdict.record_answer(request_id, answer, sender, inbound_message_id, now_timestamp())
         if result.outcome is not ActionOutcome.RECORDED:
             logger.info("%s answer on %s not recorded: %s", channel, request_id, result.outcome)
             continue

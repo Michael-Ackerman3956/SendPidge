@@ -69,15 +69,23 @@ class RequestState(StrEnum):
 
     PENDING = "pending"
     DENIED = "denied"
+    CONFIRMED_PENDING = "confirmed_pending"  # a Yes, waiting RELEASE_DELAY_SECONDS for an Undo
     CONFIRMED = "confirmed"
     TIMEOUT = "timeout"
+    REVERSED_NO = "reversed_no"  # a No the contact took back within the reverse window
 
 
 class VerdictAnswer(StrEnum):
-    """The only two things a contact can answer."""
+    """What a contact can answer. Phone channels carry only YES and NO; UNDO and REVERSE come from the PWA."""
 
     YES = "yes"
     NO = "no"
+    UNDO = "undo"        # take back a Yes while it is still confirmed_pending
+    REVERSE = "reverse"  # take back a No within the reverse window ("I made a mistake")
+
+
+PHONE_CHANNEL_ANSWERS = (VerdictAnswer.YES, VerdictAnswer.NO)
+FINAL_REQUEST_STATES = (RequestState.DENIED, RequestState.CONFIRMED, RequestState.REVERSED_NO)
 
 
 class Channel(StrEnum):
@@ -126,6 +134,8 @@ class ClientAction(StrEnum):
 
     SYNC = "sync"        # either user, right after connecting
     ANSWER = "answer"    # the contact: yes / no on a request
+    UNDO = "undo"        # the contact: take back a Yes within the release delay
+    REVERSE = "reverse"  # the contact: take back a No within the reverse window
     CONFIRM = "confirm"  # the receiver: quarantine an email the contact denied
 
 

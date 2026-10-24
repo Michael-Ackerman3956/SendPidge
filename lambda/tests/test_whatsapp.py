@@ -54,3 +54,5 @@ def test_statuses_text_and_odd_payloads_are_ignored():
     wrong_answer = {"from": "821012345678", "id": "wamid.W", "type": "button", "button": {"payload": "req-1:maybe", "text": "No"}}
     assert whatsapp.parse_inbound_reply(sns_message(inbound_message(wrong_answer))) is None
     assert whatsapp.parse_inbound_reply({"whatsAppWebhookEntry": "not json"}) is None
+    undo_payload = {"from": "821012345678", "id": "wamid.U", "type": "button", "button": {"payload": "req-1:undo", "text": "No"}}
+    assert whatsapp.parse_inbound_reply(sns_message(inbound_message(undo_payload))) is None  # undo only exists in the PWA

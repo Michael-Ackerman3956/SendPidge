@@ -12,7 +12,7 @@ import boto3
 from shared import channels, graph, payloads
 from shared.auth import authentication_reasons
 from shared.email_parse import ParsedEmail, parse_eml
-from shared.enums import PolicyDecision, ReaderModelChoice, WarnReason
+from shared.enums import PolicyDecision, ReaderModelChoice, RequestState, WarnReason
 from shared.escalation import EscalationFacts, EscalationVerdict, build_escalation_reader, escalate, escalation_fields
 from shared.policy import (
     EscalationAnswer, EscalationFailure, PolicyOutcome, ReaderFailure, apply_escalation, decide, needs_escalation,
@@ -143,6 +143,7 @@ def push_email_state(
         "warnReason": outcome.warn_reason,
         "reasons": list(outcome.reasons),
     }
-    message = payloads.email_state_message(decided_row, request_row, contact_name)
+    status = RequestState(request_row["status"]) if request_row else None
+    message = payloads.email_state_message(decided_row, request_row, contact_name, status)
     delivered_count = channels.push_to_user(RECEIVER_USER_ID, message)
     logger.info("pushed %s state to %d receiver connection(s)", outcome.decision, delivered_count)

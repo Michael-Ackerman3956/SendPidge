@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 
-from shared.enums import VerdictAnswer, WhatsAppInboundMessageType
+from shared.enums import PHONE_CHANNEL_ANSWERS, VerdictAnswer, WhatsAppInboundMessageType
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,8 @@ def parse_inbound_reply(sns_message: dict) -> WhatsAppReply | None:
             return None
         request_id, answer_value = message["button"]["payload"].rsplit(PAYLOAD_SEPARATOR, 1)
         answer = VerdictAnswer(answer_value)
+        if answer not in PHONE_CHANNEL_ANSWERS:
+            return None  # undo and reverse exist only in the PWA
         return WhatsAppReply(request_id, answer, f"+{message['from']}", message["id"])
     except (KeyError, IndexError, TypeError, ValueError):
         logger.info("inbound WhatsApp message is not a button tap; ignored")

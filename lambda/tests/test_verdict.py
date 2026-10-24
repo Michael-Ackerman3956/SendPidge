@@ -74,16 +74,72 @@ def test_no_while_pending_denies(aws):
     assert (result.outcome, result.status, status_of(request_id)) == (ActionOutcome.RECORDED, RequestState.DENIED, "denied")
 
 
-def test_yes_inside_the_hold_confirms(aws):
+def test_yes_inside_the_hold_waits_for_release(aws):
     request_id = new_request()
     result = verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
-    assert (result.outcome, status_of(request_id)) == (ActionOutcome.RECORDED, "confirmed")
+    request_row = graph.get_request(request_id)
+    assert (result.outcome, result.status, request_row["status"]) == (ActionOutcome.RECORDED, RequestState.CONFIRMED_PENDING, "confirmed_pending")
+    assert request_row["releaseAt"] == verdict.release_time_for(request_row["resolvedAt"])
+    assert verdict.effective_status(request_row, at(0)) is RequestState.CONFIRMED_PENDING
+    assert verdict.effective_status(request_row, at(verdict.RELEASE_DELAY_SECONDS + 1)) is RequestState.CONFIRMED
+
+
+def test_undo_within_the_release_delay_denies(aws):
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
+    result = verdict.record_answer(request_id, VerdictAnswer.UNDO, JIMIN, "m2", at(5))
+    assert (result.outcome, result.status, status_of(request_id)) == (ActionOutcome.RECORDED, RequestState.DENIED, "denied")
+
+
+def test_undo_after_the_release_delay_is_ignored(aws):
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
+    result = verdict.record_answer(request_id, VerdictAnswer.UNDO, JIMIN, "m2", at(verdict.RELEASE_DELAY_SECONDS + 1))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.NOT_APPLIED, "confirmed_pending")
+
+
+def test_release_confirms_only_while_still_pending(aws):
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
+    released = verdict.release_if_still_pending(request_id)
+    assert (released.outcome, released.status, status_of(request_id)) == (ActionOutcome.RECORDED, RequestState.CONFIRMED, "confirmed")
+    assert verdict.release_if_still_pending(request_id).outcome is ActionOutcome.NOT_APPLIED
+    undone_id = new_request()
+    verdict.record_answer(undone_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
+    verdict.record_answer(undone_id, VerdictAnswer.UNDO, JIMIN, "m2", at(1))
+    assert (verdict.release_if_still_pending(undone_id).outcome, status_of(undone_id)) == (ActionOutcome.NOT_APPLIED, "denied")
+
+
+def test_reverse_within_five_minutes_takes_the_no_back_and_drops_the_list_row(aws):
+    request_id = new_request()
+    graph.write_listed_address("Scammer@Lookalike.example", "reported")
+    verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    result = verdict.record_answer(request_id, VerdictAnswer.REVERSE, JIMIN, "m2", at(verdict.REVERSE_WINDOW_SECONDS - 1))
+    assert (result.outcome, result.status, status_of(request_id)) == (ActionOutcome.RECORDED, RequestState.REVERSED_NO, "reversed_no")
+    assert "Item" not in graph.get_table().get_item(Key={"PK": "LIST#address", "SK": "scammer@lookalike.example"})
+
+
+def test_reverse_after_five_minutes_or_without_a_no_is_ignored(aws):
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    late = verdict.record_answer(request_id, VerdictAnswer.REVERSE, JIMIN, "m2", at(verdict.REVERSE_WINDOW_SECONDS + 1))
+    assert (late.outcome, status_of(request_id)) == (ActionOutcome.NOT_APPLIED, "denied")
+    pending_id = new_request()
+    assert verdict.record_answer(pending_id, VerdictAnswer.REVERSE, JIMIN, "m1", at(0)).outcome is ActionOutcome.NOT_APPLIED
 
 
 def test_late_yes_is_ignored(aws):
     request_id = new_request()
     result = verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(61))
     assert (result.outcome, status_of(request_id)) == (ActionOutcome.NOT_APPLIED, "pending")
+
+
+def test_no_after_a_reversal_lands_again(aws):
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    verdict.record_answer(request_id, VerdictAnswer.REVERSE, JIMIN, "m2", at(1))
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m3", at(2))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.RECORDED, "denied")
 
 
 def test_late_no_still_lands_and_overrides_an_earlier_yes(aws):
@@ -104,7 +160,7 @@ def test_redelivered_message_id_is_ignored(aws):
     request_id = new_request()
     verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
     result = verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(1))
-    assert (result.outcome, status_of(request_id)) == (ActionOutcome.NOT_APPLIED, "confirmed")
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.NOT_APPLIED, "confirmed_pending")
 
 
 def test_answer_from_another_user_is_rejected(aws):
@@ -170,6 +226,13 @@ def test_receipt_goes_only_to_the_contact_email():
         contact_row = {"SK": "CONTACT#jimin", "contactEmail": CONTACT_EMAIL}
         assert verdict.send_receipt(ses_client, "pidge@example.com", contact_row, RequestState.DENIED, "Grandma")
         stubber.assert_no_pending_responses()
+
+
+def test_no_receipt_while_a_yes_is_still_waiting_to_release():
+    ses_client = boto3.client("sesv2", region_name="us-east-1")
+    with Stubber(ses_client):  # any call would raise: no responses queued
+        contact_row = {"SK": "CONTACT#jimin", "contactEmail": CONTACT_EMAIL}
+        assert not verdict.send_receipt(ses_client, "pidge@example.com", contact_row, RequestState.CONFIRMED_PENDING, "Grandma")
 
 
 def test_no_receipt_without_a_contact_email():

@@ -11,6 +11,7 @@ import { Architecture, Code, Function, LayerVersion, Runtime } from "aws-cdk-lib
 import { SqsDestination } from "aws-cdk-lib/aws-lambda-destinations";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { BlockPublicAccess, Bucket, BucketEncryption, EventType } from "aws-cdk-lib/aws-s3";
+import { ScheduleGroup } from "aws-cdk-lib/aws-scheduler";
 import { Topic } from "aws-cdk-lib/aws-sns";
 import { LambdaSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
 import { CfnMailManagerIngressPoint, CfnMailManagerRuleSet, CfnMailManagerTrafficPolicy, EmailIdentity, Identity } from "aws-cdk-lib/aws-ses";
@@ -48,6 +49,7 @@ export class SendPidgeStack extends Stack {
     const whatsappMetaApiVersion: string = this.node.getContext("whatsappMetaApiVersion") ?? "v20.0";
     const whatsappTemplateName: string = this.node.getContext("whatsappTemplateName") ?? "";
     const escalationEnabled: boolean = this.node.getContext("escalationEnabled") === true;
+    const releaseSchedulerEnabled: boolean = this.node.getContext("releaseSchedulerEnabled") === true;
     const escalationModel: string = this.node.getContext("escalationModel") ?? "opus-4.5";
 
     // Sending identity for pidge@<domain> (receipts, later chat replies); Easy DKIM, three CNAMEs at the DNS host.
@@ -329,6 +331,45 @@ export class SendPidgeStack extends Stack {
       }),
     );
 
+    // One-time schedules (the release timer now; the re-ask and the bank follow-up later) live in this group.
+    // Lambdas create them at runtime; the scheduler assumes this role to invoke the target.
+    const scheduleGroup = new ScheduleGroup(this, "ScheduleGroup", { removalPolicy: RemovalPolicy.DESTROY });
+    const schedulerRole = new Role(this, "SchedulerRole", {
+      assumedBy: new ServicePrincipal("scheduler.amazonaws.com", {
+        conditions: { StringEquals: { "aws:SourceAccount": this.account } },
+      }),
+    });
+
+    // At releaseAt a Yes nobody undid becomes confirmed; with the scheduler off, the next read releases it instead.
+    const releaseFunction = new Function(this, "ReleaseFunction", {
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.X86_64,
+      code: lambdaCode,
+      handler: "pidge_release.handler.handle",
+      memorySize: 512,
+      timeout: Duration.seconds(15),
+      environment: {
+        TABLE_NAME: table.tableName,
+        RECEIVER_USER_ID: receiverUserId,
+        RECEIVER_NAME: receiverName,
+        RECEIPT_SENDER: receiptSender,
+        WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+      },
+      logGroup: new LogGroup(this, "ReleaseLogs", {
+        retention: RetentionDays.TWO_WEEKS,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    table.grantReadWriteData(releaseFunction);
+    webSocketStage.grantManagementApiAccess(releaseFunction);
+    releaseFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["ses:SendEmail"],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${sendingDomain}`],
+      }),
+    );
+    releaseFunction.grantInvoke(schedulerRole);
+
     const verdictFunction = new Function(this, "VerdictFunction", {
       runtime: Runtime.PYTHON_3_12,
       architecture: Architecture.X86_64,
@@ -346,6 +387,10 @@ export class SendPidgeStack extends Stack {
         WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
         RCS_TOPIC_ARN: rcsInboundTopic.topicArn,
         WHATSAPP_TOPIC_ARN: whatsappInboundTopic.topicArn,
+        RELEASE_SCHEDULER_ENABLED: releaseSchedulerEnabled ? "true" : "false",
+        RELEASE_FUNCTION_ARN: releaseFunction.functionArn,
+        SCHEDULE_GROUP_NAME: scheduleGroup.scheduleGroupName,
+        SCHEDULER_ROLE_ARN: schedulerRole.roleArn,
       },
       logGroup: new LogGroup(this, "VerdictLogs", {
         retention: RetentionDays.TWO_WEEKS,
@@ -366,6 +411,8 @@ export class SendPidgeStack extends Stack {
         resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${sendingDomain}`],
       }),
     );
+    scheduleGroup.grantWriteSchedules(verdictFunction);
+    schedulerRole.grantPassRole(verdictFunction.grantPrincipal);
     webSocketApi.addRoute("$default", {
       integration: new WebSocketLambdaIntegration("DefaultIntegration", verdictFunction),
     });

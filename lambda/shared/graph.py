@@ -288,3 +288,8 @@ def write_listed_address(sender_address: str, reason: str) -> None:
         "category": "scam", "strength": "listed", "source": "pidge-confirmed", "tier": 0,
         "reason": reason, "addedAt": iso_timestamp(datetime.now(timezone.utc)),
     })
+
+
+def delete_listed_address(sender_address: str) -> None:
+    """Removes the Confirm row for an address; a reversed No means the report no longer stands."""
+    get_table().delete_item(Key={"PK": "LIST#address", "SK": sender_address.lower()})

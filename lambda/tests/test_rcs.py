@@ -45,3 +45,4 @@ def test_typed_text_and_odd_payloads_are_ignored():
     assert rcs.parse_inbound_reply(sns_message({"type": "SUGGESTION", "postbackData": "req-1:maybe"})) is None
     assert rcs.parse_inbound_reply(sns_message({"type": "LOCATION", "postbackData": "req-1:no"})) is None
     assert rcs.parse_inbound_reply({"originationNumber": "+1"}) is None
+    assert rcs.parse_inbound_reply(sns_message({"type": "SUGGESTION", "postbackData": "req-1:undo"})) is None  # PWA only

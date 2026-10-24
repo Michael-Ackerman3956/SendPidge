@@ -260,6 +260,16 @@ button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .contact-card-title { font-size: 22px; font-weight: 700; }
 .contact-card-summary { font-size: 17px; line-height: 1.45; overflow-wrap: anywhere; }
 .contact-card-receiver { font-size: 15px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.contact-card-meta { font-size: 15px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.contact-card-address { color: var(--orange); font-weight: 600; }
+.contact-card-subject { font-size: 15px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.contact-card-confirm-step { font-size: 17px; font-weight: 600; color: var(--orange); overflow-wrap: anywhere; }
+.contact-secondary-button {
+  width: 100%; min-height: 48px; border: 1px solid var(--border); border-radius: 24px; cursor: pointer;
+  background: var(--surface-2); color: var(--text-primary); font-size: 16px; font-weight: 600;
+}
+.contact-secondary-button:disabled { opacity: 0.6; cursor: default; }
+.contact-release-countdown { display: inline; font-variant-numeric: tabular-nums; }
 .contact-countdown { font-size: 28px; font-weight: 700; color: var(--orange); font-variant-numeric: tabular-nums; }
 .contact-card-late { font-size: 16px; color: var(--text-secondary); }
 .contact-answer-row { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }

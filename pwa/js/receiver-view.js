@@ -3,7 +3,7 @@
 import { CLIENT_ACTION, EMAIL_DISPLAY_STATE, REQUEST_STATUS } from "./constants.js";
 import { createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { closeHoldOverlay, showHoldOverlay } from "./pidge-overlay.js";
-import { buildDetailBannerElement, buildRowStatusElement, deriveEmailDisplayState, showDeniedVerdictOverlay } from "./verdict-view.js";
+import { buildDetailBannerElement, buildRowStatusElement, deriveEmailDisplayState, hasReleaseTimePassed, showDeniedVerdictOverlay } from "./verdict-view.js";
 import { buildMockFamilyEmails, isValidRequestStateUpdate, normalizeEmailPayloadOrReportError } from "./receiver-payloads.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
@@ -18,6 +18,7 @@ const releasedByUserEmailIds = new Set();
 const reportingRequestIds = new Set();
 let openEmailId = null;
 let isReceiverViewInitialized = false;
+let releaseTimerId = null;
 
 const pageElements = {
   backButton: document.getElementById("back-button"),
@@ -93,9 +94,23 @@ function buildDetailHeaderElement(email) {
   return headerElement;
 }
 
+// A releasing email re-renders itself as confirmed (with the celebration) when its releaseAt passes.
+function scheduleReleaseRender(email) {
+  clearTimeout(releaseTimerId);
+  if (getEmailDisplayState(email) !== EMAIL_DISPLAY_STATE.RELEASING) return;
+  const delayMilliseconds = Math.max(0, parseTimestampMilliseconds(email.request.releaseAt) - Date.now());
+  releaseTimerId = setTimeout(() => {
+    const currentEmail = emailsById.get(email.emailId);
+    if (currentEmail === undefined || !hasReleaseTimePassed(currentEmail.request)) return;
+    renderInbox();
+    if (openEmailId === currentEmail.emailId) renderEmailDetail(currentEmail, true);
+  }, delayMilliseconds);
+}
+
 // shouldCelebrate is true only on the live transition to CONFIRMED, never on a sync rebuild.
 function renderEmailDetail(email, shouldCelebrate = false) {
   closeHoldOverlay();
+  scheduleReleaseRender(email);
   const emailDisplayState = getEmailDisplayState(email);
   const detailChildren = [buildDetailHeaderElement(email)];
   const bannerElement = buildDetailBannerElement(email, emailDisplayState, shouldCelebrate);
@@ -213,14 +228,18 @@ export function handleReceiverRequestStatePush(requestUpdate) {
     return;
   }
   const wasConfirmed = getEmailDisplayState(email) === EMAIL_DISPLAY_STATE.CONFIRMED;
-  const updatedEmail = { ...email, quarantined: requestUpdate.quarantined, request: { ...email.request, status: requestUpdate.status } };
+  const updatedEmail = { ...email, quarantined: requestUpdate.quarantined, request: {
+    ...email.request, status: requestUpdate.status, resolvedAt: requestUpdate.resolvedAt ?? null, releaseAt: requestUpdate.releaseAt ?? null,
+  } };
   emailsById.set(updatedEmail.emailId, updatedEmail);
   if (requestUpdate.status !== REQUEST_STATUS.DENIED || requestUpdate.quarantined) {
     reportingRequestIds.delete(requestUpdate.requestId);
   }
   renderInbox();
   if (openEmailId === updatedEmail.emailId) {
-    const shouldCelebrate = !wasConfirmed && getEmailDisplayState(updatedEmail) === EMAIL_DISPLAY_STATE.CONFIRMED;
+    const updatedDisplayState = getEmailDisplayState(updatedEmail);
+    const shouldCelebrate = !wasConfirmed
+      && (updatedDisplayState === EMAIL_DISPLAY_STATE.CONFIRMED || updatedDisplayState === EMAIL_DISPLAY_STATE.REVERSED);
     renderEmailDetail(updatedEmail, shouldCelebrate);
   }
 }

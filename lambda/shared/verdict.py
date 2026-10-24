@@ -1,19 +1,28 @@
-"""A contact's Yes / No and the receiver's Confirm. No beats Yes; the first valid tap wins. Never reads the email."""
+"""A contact's Yes / No / Undo / Reverse and the receiver's Confirm. No beats Yes; the first valid tap wins. Never reads the email."""
 
 import hmac
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from shared import graph
-from shared.enums import ActionOutcome, Channel, RequestState, VerdictAnswer
+from shared.enums import FINAL_REQUEST_STATES, ActionOutcome, Channel, RequestState, VerdictAnswer
 
 logger = logging.getLogger(__name__)
 
+RELEASE_DELAY_SECONDS = 10  # a Yes waits this long for an Undo before the email is released
+REVERSE_WINDOW_SECONDS = 5 * 60  # a No can be taken back for this long
 QUARANTINE_TAG = {"Key": "quarantine", "Value": "true"}
 CONTACT_FIELD_FOR_CHANNEL = {
     Channel.INAPP: "contactPwaUserId",
     Channel.WHATSAPP: "contactWhatsApp",
     Channel.RCS: "contactRcs",
+}
+STATUS_FOR_ANSWER = {
+    VerdictAnswer.YES: RequestState.CONFIRMED_PENDING,
+    VerdictAnswer.NO: RequestState.DENIED,
+    VerdictAnswer.UNDO: RequestState.DENIED,
+    VerdictAnswer.REVERSE: RequestState.REVERSED_NO,
 }
 
 
@@ -34,9 +43,40 @@ class ActionResult:
     status: RequestState | None = None
 
 
+def parse_timestamp(iso_text: str) -> datetime:
+    return datetime.strptime(iso_text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def release_time_for(now: str) -> str:
+    return graph.iso_timestamp(parse_timestamp(now) + timedelta(seconds=RELEASE_DELAY_SECONDS))
+
+
+def effective_status(request_row: dict, now: str) -> RequestState:
+    """A confirmed_pending past its releaseAt reads as confirmed, so a missed release never leaves a hold stuck."""
+    status = RequestState(request_row["status"])
+    if status is RequestState.CONFIRMED_PENDING and request_row.get("releaseAt", "") <= now:
+        return RequestState.CONFIRMED
+    return status
+
+
+def answer_condition(answer: VerdictAnswer, now: str, values: dict) -> str:
+    """Yes: pending and not expired. No: anything but denied. Undo: still waiting to release. Reverse: a recent No."""
+    if answer is VerdictAnswer.YES:
+        values[":pending"] = str(RequestState.PENDING)
+        return "#status = :pending AND expiresAt > :now"
+    if answer is VerdictAnswer.NO:
+        return "#status <> :newStatus"
+    if answer is VerdictAnswer.UNDO:
+        values[":confirmedPending"] = str(RequestState.CONFIRMED_PENDING)
+        return "#status = :confirmedPending AND releaseAt > :now"
+    values[":denied"] = str(RequestState.DENIED)
+    values[":reverseDeadline"] = graph.iso_timestamp(parse_timestamp(now) - timedelta(seconds=REVERSE_WINDOW_SECONDS))
+    return "#status = :denied AND resolvedAt >= :reverseDeadline"
+
+
 def build_answer_update(answer: VerdictAnswer, sender: SenderIdentity, inbound_message_id: str, now: str) -> dict:
-    """A No lands at any time unless already denied; a Yes needs pending and not expired. Same id twice never lands."""
-    new_status = RequestState.DENIED if answer is VerdictAnswer.NO else RequestState.CONFIRMED
+    """One conditional update per answer; the same message id twice never lands."""
+    new_status = STATUS_FOR_ANSWER[answer]
     values = {
         ":newStatus": str(new_status),
         ":answer": str(answer),
@@ -45,15 +85,15 @@ def build_answer_update(answer: VerdictAnswer, sender: SenderIdentity, inbound_m
         ":messageId": inbound_message_id,
         ":messageIdList": [inbound_message_id],
     }
-    if answer is VerdictAnswer.NO:
-        condition = "#status <> :newStatus"
-    else:
-        condition = "#status = :pending AND expiresAt > :now"
-        values[":pending"] = str(RequestState.PENDING)
+    condition = answer_condition(answer, now, values)
+    release_clause = ""
+    if answer is VerdictAnswer.YES:
+        values[":releaseAt"] = release_time_for(now)
+        release_clause = ", releaseAt = :releaseAt"
     return {
         "UpdateExpression": (
             "SET #status = :newStatus, #response = :answer, repliedVia = :channel, resolvedAt = :now, "
-            "inboundMessageIds = list_append(inboundMessageIds, :messageIdList)"
+            f"inboundMessageIds = list_append(inboundMessageIds, :messageIdList){release_clause}"
         ),
         "ConditionExpression": f"attribute_exists(PK) AND {condition} AND NOT contains(inboundMessageIds, :messageId)",
         "ExpressionAttributeNames": {"#status": "status", "#response": "response"},
@@ -69,7 +109,7 @@ def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool
 def record_answer(
     request_id: str, answer: VerdictAnswer, sender: SenderIdentity, inbound_message_id: str, now: str
 ) -> ActionResult:
-    """now must come from graph.iso_timestamp so it compares with expiresAt as a string."""
+    """now must come from graph.iso_timestamp so it compares with expiresAt / releaseAt / resolvedAt as a string."""
     request_row = graph.get_request(request_id)
     if request_row is None:
         return ActionResult(ActionOutcome.UNKNOWN_REQUEST)
@@ -78,20 +118,44 @@ def record_answer(
         logger.warning("answer on %s from an unexpected %s sender", request_id, sender.channel)
         return ActionResult(ActionOutcome.WRONG_SENDER, request_row)
     if not graph.write_answer(request_id, build_answer_update(answer, sender, inbound_message_id, now)):
-        logger.info("answer %s on %s not applied (duplicate, late Yes, or already denied)", answer, request_id)
+        logger.info("answer %s on %s not applied (duplicate, late, or wrong state)", answer, request_id)
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row, contact_row)
-    status = RequestState.DENIED if answer is VerdictAnswer.NO else RequestState.CONFIRMED
-    return ActionResult(ActionOutcome.RECORDED, request_row, contact_row, status=status)
+    if answer is VerdictAnswer.REVERSE:
+        email_row = graph.get_email(request_row["emailId"])
+        graph.delete_listed_address(email_row["senderAddress"])  # the Confirm row, if Grandma had already reported it
+    return ActionResult(ActionOutcome.RECORDED, graph.get_request(request_id), contact_row, status=STATUS_FOR_ANSWER[answer])
+
+
+def release_if_still_pending(request_id: str) -> ActionResult:
+    """The release timer fired: confirmed only if nobody tapped Undo (or No) meanwhile."""
+    request_row = graph.get_request(request_id)
+    if request_row is None:
+        return ActionResult(ActionOutcome.UNKNOWN_REQUEST)
+    applied = graph.write_answer(request_id, {
+        "UpdateExpression": "SET #status = :confirmed",
+        "ConditionExpression": "#status = :confirmedPending",
+        "ExpressionAttributeNames": {"#status": "status"},
+        "ExpressionAttributeValues": {":confirmed": str(RequestState.CONFIRMED), ":confirmedPending": str(RequestState.CONFIRMED_PENDING)},
+    })
+    if not applied:
+        return ActionResult(ActionOutcome.NOT_APPLIED, request_row)
+    contact_row = graph.get_contact_row(request_row["receiverEmail"], request_row["contactSK"])
+    return ActionResult(ActionOutcome.RECORDED, graph.get_request(request_id), contact_row, status=RequestState.CONFIRMED)
 
 
 def receipt_text(status: RequestState, receiver_name: str) -> tuple[str, str]:
+    subject = "Pidge: your answer was recorded"
     if status is RequestState.DENIED:
-        return "Pidge: your answer was recorded", f"You told Pidge you did not send the email to {receiver_name}. It stays held."
-    return "Pidge: your answer was recorded", f"You told Pidge you sent the email to {receiver_name}. It was released."
+        return subject, f"You told Pidge you did not send the email to {receiver_name}. It stays held."
+    if status is RequestState.REVERSED_NO:
+        return subject, f"You changed your answer: you did send the email to {receiver_name}. The hold was lifted."
+    return subject, f"You told Pidge you sent the email to {receiver_name}. It was released."
 
 
 def send_receipt(ses_client, sender_address: str, contact_row: dict, status: RequestState, receiver_name: str) -> bool:
-    """Emails the contact's own address, never the monitored one. False (logged) when there is no address."""
+    """Emails the contact's own address, never the monitored one, for a final state only. False (logged) when there is no address."""
+    if status not in FINAL_REQUEST_STATES:
+        return False  # confirmed_pending: the receipt follows the release
     contact_email = contact_row.get("contactEmail")
     if not contact_email:
         logger.warning("no contactEmail for %s; receipt not sent", contact_row["SK"])

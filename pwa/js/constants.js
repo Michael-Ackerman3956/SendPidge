@@ -11,6 +11,8 @@ export const PUSH_MESSAGE_TYPE = Object.freeze({
 export const CLIENT_ACTION = Object.freeze({
   SYNC: "sync",
   ANSWER: "answer",
+  UNDO: "undo",
+  REVERSE: "reverse",
   CONFIRM: "confirm",
 });
 
@@ -22,13 +24,17 @@ export const USER_ROLE = Object.freeze({
 export const REQUEST_STATUS = Object.freeze({
   PENDING: "pending",
   DENIED: "denied",
+  CONFIRMED_PENDING: "confirmed_pending",
   CONFIRMED: "confirmed",
   TIMEOUT: "timeout",
+  REVERSED_NO: "reversed_no",
 });
 
 export const VERDICT_ANSWER = Object.freeze({
   YES: "yes",
   NO: "no",
+  UNDO: "undo",
+  REVERSE: "reverse",
 });
 
 export const ACTION_REJECTED_REASON = Object.freeze({
@@ -86,7 +92,9 @@ export const CONNECTION_STATUS = Object.freeze({
 export const EMAIL_DISPLAY_STATE = Object.freeze({
   QUARANTINED: "quarantined",
   DENIED: "denied",
+  RELEASING: "releasing",
   CONFIRMED: "confirmed",
+  REVERSED: "reversed",
   RELEASED_BY_USER: "released_by_user",
   AWAITING_VERDICT: "awaiting_verdict",
   FLAGGED: "flagged",

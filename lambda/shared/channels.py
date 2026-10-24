@@ -9,7 +9,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from shared import graph, payloads, rcs, whatsapp
-from shared.enums import Channel
+from shared.enums import Channel, RequestState
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,8 @@ def push_to_user(user_id: str, message: dict) -> int:
 
 def ask_in_app(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
     """The request row is already stored, so the contact's PWA shows it on sync; the live push is a bonus."""
-    card = payloads.verification_card_message(request_row, receiver_name)
+    email_row = graph.get_email(request_row["emailId"])
+    card = payloads.verification_card_message(request_row, email_row, receiver_name, RequestState(request_row["status"]))
     delivered_count = push_to_user(contact.contact_pwa_user_id, card)
     logger.info("in-app ask %s pushed to %d open connection(s)", graph.request_id_of(request_row), delivered_count)
     return Channel.INAPP
