@@ -89,15 +89,15 @@ def write_message(user_id: str, role: ChatRole, via: ChatVia, text: str, extra_f
     return message_row
 
 
-def accept_question(user_id: str, question: object, via: ChatVia) -> AcceptedQuestion:
-    """The flag, the length, the hourly cap, then the grandma row. Any refusal writes no row."""
+def accept_question(user_id: str, question: object, via: ChatVia, extra_fields: dict | None = None) -> AcceptedQuestion:
+    """The flag, the length, the hourly cap, then the grandma row (plus extra_fields). Any refusal writes no row."""
     if not is_chat_enabled():
         return AcceptedQuestion(None, CHAT_OFF_REFUSAL)
     if not isinstance(question, str) or not question.strip() or len(question) > QUESTION_MAX_CHARACTERS:
         return AcceptedQuestion(None, EMPTY_QUESTION_REFUSAL)
     if not take_question_slot(user_id):
         return AcceptedQuestion(None, RATE_LIMIT_REFUSAL)
-    return AcceptedQuestion(write_message(user_id, ChatRole.GRANDMA, via, question.strip()), None)
+    return AcceptedQuestion(write_message(user_id, ChatRole.GRANDMA, via, question.strip(), extra_fields), None)
 
 
 def question_key_from_stream_keys(keys: dict) -> tuple[str, str] | None:

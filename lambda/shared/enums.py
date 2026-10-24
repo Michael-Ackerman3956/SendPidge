@@ -193,6 +193,16 @@ class GuardrailOutcome(StrEnum):
     INTERVENED = "intervened"
 
 
+class EmailedQuestionOutcome(StrEnum):
+    """What happened to one email sent to pidge@: only ACCEPTED writes a CHAT# row; every other value drops the email."""
+
+    ACCEPTED = "accepted"
+    NOT_FROM_RECEIVER = "not_from_receiver"
+    DKIM_NOT_PASSED = "dkim_not_passed"
+    DKIM_NOT_ALIGNED = "dkim_not_aligned"
+    REFUSED = "refused"
+
+
 class AgentInvocationKind(StrEnum):
     """What pidge-dispatch asks the AgentCore runtime for; a payload without a kind is a case note."""
 

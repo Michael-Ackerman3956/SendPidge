@@ -1,5 +1,6 @@
 """DynamoDB Streams → the case agent. A final REQUEST# status or a new CASE# row becomes one case note pushed to Grandma;
-a new question row under CHAT# becomes one Pidge reply (guardrail first) pushed to her."""
+a new question row under CHAT# becomes one Pidge reply (guardrail first), pushed to her or, for a question she
+emailed to pidge@, mailed back to her real mailbox."""
 
 import hashlib
 import json
@@ -10,9 +11,10 @@ import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.config import Config
 
-from shared import case_agent, channels, chat, chat_agent, graph, payloads
+from shared import case_agent, channels, chat, chat_agent, chat_email, graph, payloads
 from shared.enums import (
-    FINAL_REQUEST_STATES, AgentInvocationKind, CaseAgentRuntime, CaseState, CaseTrigger, GuardrailOutcome, ReaderModelChoice,
+    FINAL_REQUEST_STATES, AgentInvocationKind, CaseAgentRuntime, CaseState, CaseTrigger, ChatVia, GuardrailOutcome,
+    ReaderModelChoice,
     RequestState,
 )
 
@@ -27,9 +29,12 @@ AGENTCORE_QUALIFIER = "DEFAULT"
 AGENTCORE_READ_TIMEOUT_SECONDS = 80  # under the Lambda's 90 s; no retries, a retry would run the agent twice
 NOTE_WORTHY_STATES = (*FINAL_REQUEST_STATES, RequestState.TIMEOUT)
 CHAT_GUARDRAIL_ENABLED = os.environ.get("CHAT_GUARDRAIL_ENABLED") == "true"
+RECEIVER_MAILBOX = os.environ.get("RECEIVER_MAILBOX", "")  # her real mailbox; emailed questions are answered there only
+RECEIPT_SENDER = os.environ.get("RECEIPT_SENDER", "")
 
 deserializer = TypeDeserializer()
 _agentcore_client = None
+_ses_client = None
 
 
 def get_agentcore_client():
@@ -129,11 +134,26 @@ def ask_chat_agent(user_id: str, question: str) -> str:
     return invoke_chat_agent_on_agentcore(user_id, question)
 
 
+def get_ses_client():
+    global _ses_client
+    if _ses_client is None:
+        _ses_client = boto3.client("sesv2")
+    return _ses_client
+
+
 def answer_and_push_question(user_id: str, sort_key: str) -> None:
-    """One question → one stored reply → pushed to the asker's open sockets. A redelivered question is skipped."""
+    """One question → one stored reply → mailed back (emailed question) or pushed to the asker's open sockets.
+
+    A redelivered question is skipped.
+    """
     reply_row = chat.answer_question(user_id, sort_key, check_question_with_guardrail, ask_chat_agent)
     if reply_row is None:
         logger.info("question %s for %s already answered", sort_key, user_id)
+        return
+    if ChatVia(reply_row["via"]) is ChatVia.EMAIL:
+        question_row = chat.get_message(user_id, sort_key)
+        chat_email.send_reply_email(get_ses_client(), RECEIPT_SENDER, RECEIVER_MAILBOX, question_row, reply_row)
+        logger.info("reply to emailed %s for %s stored and mailed", sort_key, user_id)
         return
     delivered_count = channels.push_to_user(user_id, chat.pidge_reply_message_for_row(reply_row))
     logger.info("reply to %s for %s stored; pushed to %d connection(s)", sort_key, user_id, delivered_count)

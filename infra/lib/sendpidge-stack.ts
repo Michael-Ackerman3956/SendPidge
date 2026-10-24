@@ -29,6 +29,8 @@ import { Construct } from "constructs";
 const INBOX_PREFIX = "inbox/";
 // Replies from the SIMULATED bank to a case report land here (Mail Manager rule store-case-reply).
 const CASES_PREFIX = "cases/";
+// Grandma's questions mailed to pidge@ land here (Mail Manager rule store-pidge-question); never the Reader.
+const PIDGE_QUESTION_PREFIX = "pidge/";
 const WEBSOCKET_STAGE_NAME = "live";
 const LAMBDA_SOURCE_DIRECTORY = "../lambda";
 // Stamped by Mail Manager at ingress; a sender-written copy is dropped before it can be trusted.
@@ -77,17 +79,25 @@ export class SendPidgeStack extends Stack {
     const reAskDelaySeconds: number = Number(this.node.getContext("reAskDelaySeconds") ?? 600);
     const bankFollowUpEnabled: boolean = this.node.getContext("bankFollowUpEnabled") === true;
     const bankFollowUpDelaySeconds: number = Number(this.node.getContext("bankFollowUpDelaySeconds") ?? 120);
-    // The SIMULATED bank: a founder-owned mailbox set in cdk.context.json (git-ignored), never an address on our own domain.
+    // Personal mailboxes come from the git-ignored ../.env (bin/sendpidge.ts), never from an address on our own domain.
+    // The SIMULATED bank; empty → Send to my bank is refused.
     const mockBankMailbox: string = this.node.tryGetContext("mockBankMailbox") ?? "";
+    // Grandma's real mailbox: the only sender whose mail to pidge@ becomes a question, and where the answer goes.
+    const receiverMailbox: string = this.node.tryGetContext("receiverMailbox") ?? "";
     const receiverDomain = receiverAddress.split("@")[1];
-    if (mockBankMailbox.toLowerCase().endsWith(`@${receiverDomain}`) || mockBankMailbox.toLowerCase().endsWith(`@${sendingDomain}`)) {
-      throw new Error(`mockBankMailbox must not be on ${receiverDomain} or ${sendingDomain}: a reply would re-enter our own mail flow`);
+    for (const [contextKey, mailbox] of [["mockBankMailbox", mockBankMailbox], ["receiverMailbox", receiverMailbox]]) {
+      if (mailbox.toLowerCase().endsWith(`@${receiverDomain}`) || mailbox.toLowerCase().endsWith(`@${sendingDomain}`)) {
+        throw new Error(`${contextKey} must not be on ${receiverDomain} or ${sendingDomain}: a reply would re-enter our own mail flow`);
+      }
     }
     const casesAddress = `cases@${receiverDomain}`;
     const caseAgentModel: string = this.node.getContext("caseAgentModel") ?? readerModel;
     const escalationModel: string = this.node.getContext("escalationModel") ?? "opus-4.5";
     const chatEnabled: boolean = this.node.tryGetContext("chatEnabled") === true;
     const chatGuardrailEnabled: boolean = this.node.tryGetContext("chatGuardrailEnabled") === true;
+    if (chatEnabled && !receiverMailbox.includes("@")) {
+      throw new Error("chatEnabled needs RECEIVER_MAILBOX in ../.env (Grandma's real mailbox for pidge@)");
+    }
 
     // Sending identity for pidge@<domain> (receipts, later chat replies); Easy DKIM, three CNAMEs at the DNS host.
     const sendingIdentity = new EmailIdentity(this, "SendingIdentity", { identity: Identity.domain(sendingDomain) });
@@ -185,6 +195,7 @@ export class SendPidgeStack extends Stack {
     });
     emailBucket.grantPut(mailManagerWriteRole, `${INBOX_PREFIX}*`);
     emailBucket.grantPut(mailManagerWriteRole, `${CASES_PREFIX}*`);
+    emailBucket.grantPut(mailManagerWriteRole, `${PIDGE_QUESTION_PREFIX}*`);
 
     const inboundRuleSet = new CfnMailManagerRuleSet(this, "InboundRuleSet", {
       ruleSetName: "sendpidge-inbound",
@@ -212,6 +223,21 @@ export class SendPidgeStack extends Stack {
             actionFailurePolicy: "DROP",
           } }],
         },
+        // A question to pidge@ that names her mailbox in From (the header may carry a display name, hence CONTAINS);
+        // pidge-question-inbound still checks the exact address and DKIM alignment before anything is stored.
+        {
+          name: "store-pidge-question",
+          conditions: [
+            { stringExpression: { evaluate: { attribute: "RECIPIENT" }, operator: "EQUALS", values: [receiptSender] } },
+            { stringExpression: { evaluate: { attribute: "FROM" }, operator: "CONTAINS", values: [receiverMailbox] } },
+          ],
+          actions: [{ writeToS3: {
+            roleArn: mailManagerWriteRole.roleArn,
+            s3Bucket: emailBucket.bucketName,
+            s3Prefix: PIDGE_QUESTION_PREFIX,
+            actionFailurePolicy: "DROP",
+          } }],
+        },
         {
           name: "store-raw-email",
           conditions: [{ stringExpression: { evaluate: { attribute: "RECIPIENT" }, operator: "EQUALS", values: [receiverAddress] } }],
@@ -235,7 +261,7 @@ export class SendPidgeStack extends Stack {
         conditions: [{ stringExpression: {
           evaluate: { attribute: "RECIPIENT" },
           operator: "EQUALS",
-          values: [receiverAddress, casesAddress],
+          values: [receiverAddress, casesAddress, receiptSender],
         } }],
       }],
     });
@@ -385,6 +411,26 @@ export class SendPidgeStack extends Stack {
     webSocketStage.grantManagementApiAccess(caseInboundFunction);
     emailBucket.grantRead(caseInboundFunction, `${CASES_PREFIX}*`);
     emailBucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(caseInboundFunction), { prefix: CASES_PREFIX });
+
+    // A question mailed to pidge@ under pidge/: exact sender + aligned DKIM → the CHAT# row; no Bedrock, no layer.
+    const questionInboundFunction = new Function(this, "QuestionInboundFunction", {
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.X86_64,
+      code: lambdaCode,
+      handler: "pidge_question_inbound.handler.handle",
+      memorySize: 256,
+      timeout: Duration.seconds(15),
+      environment: {
+        TABLE_NAME: table.tableName,
+        RECEIVER_USER_ID: receiverUserId,
+        RECEIVER_MAILBOX: receiverMailbox,
+        CHAT_ENABLED: chatEnabled ? "true" : "false",
+      },
+      logGroup: new LogGroup(this, "QuestionInboundLogs", { retention: RetentionDays.TWO_WEEKS, removalPolicy: RemovalPolicy.DESTROY }),
+    });
+    table.grantReadWriteData(questionInboundFunction);
+    emailBucket.grantRead(questionInboundFunction, `${PIDGE_QUESTION_PREFIX}*`);
+    emailBucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(questionInboundFunction), { prefix: PIDGE_QUESTION_PREFIX });
 
     const readerDeadLetterQueue = new Queue(this, "ReaderDeadLetterQueue", {
       retentionPeriod: Duration.days(14),
@@ -656,6 +702,8 @@ export class SendPidgeStack extends Stack {
         CHAT_GUARDRAIL_ENABLED: chatGuardrailEnabled ? "true" : "false",
         CHAT_GUARDRAIL_ID: chatGuardrail.attrGuardrailId,
         CHAT_GUARDRAIL_VERSION: chatGuardrailVersion.attrVersion,
+        RECEIVER_MAILBOX: receiverMailbox,
+        RECEIPT_SENDER: receiptSender,
       },
       logGroup: new LogGroup(this, "DispatchLogs", {
         retention: RetentionDays.TWO_WEEKS,
@@ -682,6 +730,14 @@ export class SendPidgeStack extends Stack {
     caseAgentRuntime.grantInvoke(dispatchFunction);
     dispatchFunction.addToRolePolicy(
       new PolicyStatement({ actions: ["bedrock:ApplyGuardrail"], resources: [chatGuardrail.attrGuardrailArn] }),
+    );
+    // Answers to emailed questions go to her real mailbox only.
+    dispatchFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["ses:SendEmail"],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${sendingDomain}`],
+        conditions: { "ForAllValues:StringEquals": { "ses:Recipients": [receiverMailbox] } },
+      }),
     );
     // Four filters: a REQUEST# META whose new status is final, a CASE# META insert, a CASE# META closed, or a new
     // question row (CHAT# MSG# with role grandma; replies, guardrailHit updates and RATE# counters never match).
