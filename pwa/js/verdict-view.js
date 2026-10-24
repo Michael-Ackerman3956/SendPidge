@@ -76,21 +76,21 @@ export function buildDetailBannerElement(email, emailDisplayState, shouldCelebra
 }
 
 function buildConfirmReportButton(isReporting, onConfirmTapped) {
-  const confirmButton = createElementWithText("button", "confirm-report-button", isReporting ? "Reporting…" : "Confirm");
+  const confirmButton = createElementWithText("button", "confirm-report-button", isReporting ? "Reporting…" : "Report and block");
   confirmButton.type = "button";
   confirmButton.disabled = isReporting;
   confirmButton.addEventListener("click", onConfirmTapped);
   return confirmButton;
 }
 
-// Red verdict over the detail after the real contact said No. Confirm runs onConfirmTapped; while isReporting it is disabled.
+// Red verdict over the detail after the real contact said No. Report and block runs onConfirmTapped; while isReporting it is disabled.
 export function showDeniedVerdictOverlay({ overlayHostElement, email, isReporting, onConfirmTapped }) {
   const overlayElement = createElementWithText("div", "hold-overlay is-denied");
   overlayElement.setAttribute("role", "alertdialog");
   overlayElement.setAttribute("aria-modal", "true");
   overlayElement.setAttribute("aria-labelledby", "denied-verdict-message");
   const messageElement = createElementWithText("p", "hold-overlay-message denied-verdict-message",
-    `Real ${email.request.contactName} replied: they did not send this. Do not make a transaction.`);
+    `Real ${email.request.contactName} replied: they did not send this. Do not send money.`);
   messageElement.id = "denied-verdict-message";
   const confirmButton = buildConfirmReportButton(isReporting, () => onConfirmTapped(email));
   overlayElement.append(buildPidgeIconElement("hold-overlay-pidge", "Pidge"), messageElement, confirmButton);

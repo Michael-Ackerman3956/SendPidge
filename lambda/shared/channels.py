@@ -8,12 +8,17 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 
-from shared import graph, payloads
+from shared import graph, payloads, rcs, whatsapp
 from shared.enums import Channel
 
 logger = logging.getLogger(__name__)
 
 _management_client = None
+_rcs_client = None
+_whatsapp_client = None
+
+RCS_ENABLED = os.environ.get("RCS_ENABLED") == "true"
+WHATSAPP_ENABLED = os.environ.get("WHATSAPP_ENABLED") == "true"
 
 
 def get_management_client():
@@ -48,6 +53,52 @@ def ask_in_app(request_row: dict, contact: graph.Contact, receiver_name: str) ->
     return Channel.INAPP
 
 
+def get_rcs_client():
+    global _rcs_client
+    if _rcs_client is None:
+        _rcs_client = boto3.client("pinpoint-sms-voice-v2")
+    return _rcs_client
+
+
+def ask_on_rcs(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
+    """Rich card with Yes / No chips from the RCS agent; the tap comes back on the two-way SNS topic."""
+    request_id = graph.request_id_of(request_row)
+    email_row = graph.get_email(request_row["emailId"]) or {}
+    card = rcs.build_rich_card(request_id, email_row, contact.contact_name, receiver_name, os.environ["PIDGE_IMAGE_URL"])
+    response = get_rcs_client().send_rcs_message(
+        DestinationPhoneNumber=contact.contact_rcs,
+        OriginationIdentity=os.environ["RCS_AGENT_ID"],
+        RcsMessageContent=card,
+        TimeToLive=rcs.RICH_CARD_TIME_TO_LIVE_SECONDS,
+    )
+    graph.record_rcs_message_id(request_id, response["MessageId"])
+    logger.info("rcs ask %s sent as %s", request_id, response["MessageId"])
+    return Channel.RCS
+
+
+def get_whatsapp_client():
+    global _whatsapp_client
+    if _whatsapp_client is None:
+        _whatsapp_client = boto3.client("socialmessaging")
+    return _whatsapp_client
+
+
+def ask_on_whatsapp(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
+    """The approved template with Yes / No quick replies; the tap comes back on the WABA event topic."""
+    request_id = graph.request_id_of(request_row)
+    message = whatsapp.build_template_message(
+        request_id, request_row["verdict"]["summary"], contact.contact_whatsapp, os.environ["WHATSAPP_TEMPLATE_NAME"]
+    )
+    response = get_whatsapp_client().send_whatsapp_message(
+        originationPhoneNumberId=os.environ["WHATSAPP_PHONE_NUMBER_ID"],
+        metaApiVersion=os.environ["WHATSAPP_META_API_VERSION"],
+        message=json.dumps(message).encode(),
+    )
+    graph.record_whatsapp_message_id(request_id, response["messageId"])
+    logger.info("whatsapp ask %s sent as %s", request_id, response["messageId"])
+    return Channel.WHATSAPP
+
+
 def push_to_connection(connection_id: str, message: dict) -> None:
     """Reply to the one socket that sent a client action."""
     get_management_client().post_to_connection(ConnectionId=connection_id, Data=json.dumps(message).encode())
@@ -55,7 +106,11 @@ def push_to_connection(connection_id: str, message: dict) -> None:
 
 async def ask_on_every_channel(request_row: dict, contact: graph.Contact, receiver_name: str) -> list[Channel]:
     """Asks in parallel; returns the channels that sent. One failure never cancels the others."""
-    channel_senders = [ask_in_app]  # RCS joins in slice 5, WhatsApp in slice 6
+    channel_senders = [ask_in_app]
+    if RCS_ENABLED and contact.contact_rcs:
+        channel_senders.append(ask_on_rcs)
+    if WHATSAPP_ENABLED and contact.contact_whatsapp:
+        channel_senders.append(ask_on_whatsapp)
     outcomes = await asyncio.gather(
         *(asyncio.to_thread(send, request_row, contact, receiver_name) for send in channel_senders),
         return_exceptions=True,

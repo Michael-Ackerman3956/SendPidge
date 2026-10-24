@@ -6,11 +6,13 @@ import { Certificate, CertificateValidation } from "aws-cdk-lib/aws-certificatem
 import { Distribution, ResponseHeadersPolicy, ViewerProtocolPolicy } from "aws-cdk-lib/aws-cloudfront";
 import { S3BucketOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
 import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
-import { PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import { Effect, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Architecture, Code, Function, LayerVersion, Runtime } from "aws-cdk-lib/aws-lambda";
 import { SqsDestination } from "aws-cdk-lib/aws-lambda-destinations";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { BlockPublicAccess, Bucket, BucketEncryption, EventType } from "aws-cdk-lib/aws-s3";
+import { Topic } from "aws-cdk-lib/aws-sns";
+import { LambdaSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
 import { CfnMailManagerIngressPoint, CfnMailManagerRuleSet, CfnMailManagerTrafficPolicy, EmailIdentity, Identity } from "aws-cdk-lib/aws-ses";
 import { BucketDeployment, Source } from "aws-cdk-lib/aws-s3-deployment";
 import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
@@ -36,6 +38,15 @@ export class SendPidgeStack extends Stack {
     const receiptSender: string = this.node.getContext("receiptSender");
     const sendingDomain = receiptSender.split("@")[1];
     const pwaDomain: string = this.node.getContext("pwaDomain");
+    const landingDomain: string = this.node.getContext("landingDomain");
+    const rcsEnabled: boolean = this.node.getContext("rcsEnabled") === true;
+    const rcsAgentId: string = this.node.getContext("rcsAgentId") ?? "";
+    const rcsAgentArn: string = this.node.getContext("rcsAgentArn") ?? "";
+    const whatsappEnabled: boolean = this.node.getContext("whatsappEnabled") === true;
+    const whatsappPhoneNumberId: string = this.node.getContext("whatsappPhoneNumberId") ?? "";
+    const whatsappPhoneNumberArn: string = this.node.getContext("whatsappPhoneNumberArn") ?? "";
+    const whatsappMetaApiVersion: string = this.node.getContext("whatsappMetaApiVersion") ?? "v20.0";
+    const whatsappTemplateName: string = this.node.getContext("whatsappTemplateName") ?? "";
 
     // Sending identity for pidge@<domain> (receipts, later chat replies); Easy DKIM, three CNAMEs at the DNS host.
     const sendingIdentity = new EmailIdentity(this, "SendingIdentity", { identity: Identity.domain(sendingDomain) });
@@ -69,6 +80,35 @@ export class SendPidgeStack extends Stack {
       sources: [Source.asset("../pwa"), Source.asset("../edge/public")],
       destinationBucket: pwaBucket,
       distribution: pwaDistribution,
+      distributionPaths: ["/*"],
+    });
+
+    // The landing page at https://<landingDomain>: same private-bucket + CloudFront pattern, static files only.
+    const landingBucket = new Bucket(this, "LandingBucket", {
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      encryption: BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+    const landingCertificate = new Certificate(this, "LandingCertificate", {
+      domainName: landingDomain,
+      validation: CertificateValidation.fromDns(),
+    });
+    const landingDistribution = new Distribution(this, "LandingDistribution", {
+      defaultBehavior: {
+        origin: S3BucketOrigin.withOriginAccessControl(landingBucket),
+        viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        responseHeadersPolicy: ResponseHeadersPolicy.SECURITY_HEADERS,
+      },
+      defaultRootObject: "index.html",
+      domainNames: [landingDomain],
+      certificate: landingCertificate,
+    });
+    new BucketDeployment(this, "LandingFiles", {
+      sources: [Source.asset("../landing")],
+      destinationBucket: landingBucket,
+      distribution: landingDistribution,
       distributionPaths: ["/*"],
     });
 
@@ -211,6 +251,13 @@ export class SendPidgeStack extends Stack {
         RECEIVER_USER_ID: receiverUserId,
         RECEIVER_NAME: receiverName,
         WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+        RCS_ENABLED: rcsEnabled ? "true" : "false",
+        RCS_AGENT_ID: rcsAgentId,
+        WHATSAPP_ENABLED: whatsappEnabled ? "true" : "false",
+        WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId,
+        WHATSAPP_META_API_VERSION: whatsappMetaApiVersion,
+        WHATSAPP_TEMPLATE_NAME: whatsappTemplateName,
+        PIDGE_IMAGE_URL: `https://${pwaDomain}/assets/pidge-icon.png`,
       },
       logGroup: new LogGroup(this, "ReaderLogs", {
         retention: RetentionDays.TWO_WEEKS,
@@ -234,6 +281,44 @@ export class SendPidgeStack extends Stack {
     emailBucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(readerFunction), {
       prefix: INBOX_PREFIX,
     });
+    if (rcsAgentArn) {
+      readerFunction.addToRolePolicy(
+        new PolicyStatement({ actions: ["sms-voice:SendRcsMessage"], resources: [rcsAgentArn] }),
+      );
+    }
+    if (whatsappPhoneNumberArn) {
+      readerFunction.addToRolePolicy(
+        new PolicyStatement({ actions: ["social-messaging:SendWhatsAppMessage"], resources: [whatsappPhoneNumberArn] }),
+      );
+    }
+
+    // WhatsApp: the WABA's one event destination (button taps and delivery statuses) is this topic;
+    // End User Messaging Social publishes directly, so the topic policy, not a role, grants it.
+    const whatsappInboundTopic = new Topic(this, "WhatsAppInboundTopic");
+    whatsappInboundTopic.addToResourcePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        principals: [new ServicePrincipal("social-messaging.amazonaws.com")],
+        actions: ["sns:Publish"],
+        resources: [whatsappInboundTopic.topicArn],
+        conditions: { StringEquals: { "aws:SourceAccount": this.account } },
+      }),
+    );
+
+    // Two-way RCS: chip taps land on this topic; End User Messaging assumes the role to publish.
+    const rcsInboundTopic = new Topic(this, "RcsInboundTopic");
+    const rcsTwoWayRole = new Role(this, "RcsTwoWayRole", {
+      assumedBy: new ServicePrincipal("sms-voice.amazonaws.com", {
+        conditions: { StringEquals: { "aws:SourceAccount": this.account } },
+      }),
+    });
+    rcsTwoWayRole.addToPolicy(
+      new PolicyStatement({
+        actions: ["sns:Publish"],
+        resources: [rcsInboundTopic.topicArn],
+        conditions: { StringEquals: { "aws:ResourceAccount": this.account } },
+      }),
+    );
 
     const verdictFunction = new Function(this, "VerdictFunction", {
       runtime: Runtime.PYTHON_3_12,
@@ -250,6 +335,8 @@ export class SendPidgeStack extends Stack {
         EMAIL_BUCKET: emailBucket.bucketName,
         RECEIPT_SENDER: receiptSender,
         WEBSOCKET_ENDPOINT: webSocketStage.callbackUrl,
+        RCS_TOPIC_ARN: rcsInboundTopic.topicArn,
+        WHATSAPP_TOPIC_ARN: whatsappInboundTopic.topicArn,
       },
       logGroup: new LogGroup(this, "VerdictLogs", {
         retention: RetentionDays.TWO_WEEKS,
@@ -273,6 +360,8 @@ export class SendPidgeStack extends Stack {
     webSocketApi.addRoute("$default", {
       integration: new WebSocketLambdaIntegration("DefaultIntegration", verdictFunction),
     });
+    rcsInboundTopic.addSubscription(new LambdaSubscription(verdictFunction));
+    whatsappInboundTopic.addSubscription(new LambdaSubscription(verdictFunction));
 
     new Alarm(this, "ReaderDeadLetterAlarm", {
       alarmDescription: "pidge-reader gave up on an email after retries",
@@ -289,6 +378,16 @@ export class SendPidgeStack extends Stack {
     new CfnOutput(this, "MailManagerARecord", {
       value: ingressPoint.attrARecord,
       description: `Create an MX record for the receiver's domain pointing at this host`,
+    });
+    new CfnOutput(this, "RcsInboundTopicArn", { value: rcsInboundTopic.topicArn });
+    new CfnOutput(this, "RcsTwoWayRoleArn", { value: rcsTwoWayRole.roleArn });
+    new CfnOutput(this, "WhatsAppInboundTopicArn", {
+      value: whatsappInboundTopic.topicArn,
+      description: "Set as the WABA event destination: put-whatsapp-business-account-event-destinations",
+    });
+    new CfnOutput(this, "LandingDistributionDomain", {
+      value: landingDistribution.distributionDomainName,
+      description: `Create a CNAME for ${landingDomain} (the apex; Cloudflare flattens it) pointing at this host, DNS only`,
     });
     new CfnOutput(this, "PwaUrl", { value: `https://${pwaDomain}/` });
     new CfnOutput(this, "PwaDistributionDomain", {

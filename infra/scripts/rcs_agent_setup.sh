@@ -2,11 +2,13 @@
 # Creates the SendPidge RCS testing agent, submits the testing registration, invites testers.
 # Run once from a shell with AWS credentials; every value comes from the environment, nothing is hard-coded.
 # Required: RCS_BRAND_NAME RCS_CONTACT_EMAIL RCS_CONTACT_PHONE RCS_PRIVACY_URL RCS_TERMS_URL RCS_LOGO_PATH RCS_BANNER_PATH RCS_TESTER_NUMBERS (space-separated E.164)
-# Optional: AWS_REGION (default us-east-1) RCS_ACCENT_COLOR (default #3AA68E) RCS_AGENT_ID (reuse an existing agent)
+# Optional: AWS_REGION (default us-east-1) RCS_ACCENT_COLOR (default #257A66) RCS_AGENT_ID (reuse an existing agent)
+#           RCS_REGISTRATION_ID (reuse an unsubmitted registration already associated with that agent)
+#           RCS_TWO_WAY_TOPIC_ARN + RCS_TWO_WAY_ROLE_ARN (stack outputs RcsInboundTopicArn / RcsTwoWayRoleArn): enables two-way on the agent
 set -euo pipefail
 
 region="${AWS_REGION:-us-east-1}"
-accent_color="${RCS_ACCENT_COLOR:-#3AA68E}"
+accent_color="${RCS_ACCENT_COLOR:-#257A66}"  # darker than the PWA teal: Google requires 4.5:1 on white, #3AA68E was denied at 2.99
 required_settings=(RCS_BRAND_NAME RCS_CONTACT_EMAIL RCS_CONTACT_PHONE RCS_PRIVACY_URL RCS_TERMS_URL RCS_LOGO_PATH RCS_BANNER_PATH RCS_TESTER_NUMBERS)
 for setting in "${required_settings[@]}"; do
   [[ -n "${!setting:-}" ]] || { echo "missing $setting" >&2; exit 1; }
@@ -23,8 +25,16 @@ if [[ -z "${RCS_AGENT_ID:-}" ]]; then
 fi
 agent_arn=$(sms describe-rcs-agents --rcs-agent-ids "$RCS_AGENT_ID" | jq -r '.RcsAgents[0].RcsAgentArn')
 
-registration_id=$(sms create-registration --registration-type TEST_RCS_LAUNCH_REGISTRATION | jq -r '.RegistrationId')
-sms create-registration-association --registration-id "$registration_id" --resource-id "$RCS_AGENT_ID" >/dev/null
+if [[ -z "${RCS_REGISTRATION_ID:-}" ]]; then
+  RCS_REGISTRATION_ID=$(sms create-registration --registration-type TEST_RCS_LAUNCH_REGISTRATION | jq -r '.RegistrationId')
+  sms create-registration-association --registration-id "$RCS_REGISTRATION_ID" --resource-id "$RCS_AGENT_ID" >/dev/null
+fi
+registration_id="$RCS_REGISTRATION_ID"
+registration_status=$(sms describe-registrations --registration-ids "$registration_id" | jq -r '.Registrations[0].RegistrationStatus')
+if [[ "$registration_status" == "REQUIRES_UPDATES" ]]; then
+  sms create-registration-version --registration-id "$registration_id" >/dev/null
+  echo "denied version reopened as a new draft: every field is re-entered below"
+fi
 logo_attachment_id=$(sms create-registration-attachment --attachment-body "fileb://$RCS_LOGO_PATH" | jq -r '.RegistrationAttachmentId')
 banner_attachment_id=$(sms create-registration-attachment --attachment-body "fileb://$RCS_BANNER_PATH" | jq -r '.RegistrationAttachmentId')
 
@@ -41,16 +51,14 @@ put_attachment agentDetails.logoImage "$logo_attachment_id"
 put_attachment agentDetails.bannerImage "$banner_attachment_id"
 put_text agentDetails.accentColor "$accent_color"
 put_text agentDetails.contactPhoneNumber "$RCS_CONTACT_PHONE"
-put_text agentDetails.contactPhoneNumberLabel "Support"
+put_text agentDetails.contactPhoneLabel "Support"
 put_text agentDetails.contactEmailAddress "$RCS_CONTACT_EMAIL"
-put_text agentDetails.contactEmailAddressLabel "Support"
+put_text agentDetails.contactEmailLabel "Support"
 put_text agentDetails.privacyPolicyUrl "$RCS_PRIVACY_URL"
 put_text agentDetails.termsAndConditionsUrl "$RCS_TERMS_URL"
 put_choice agentDetails.billingCategory CONVERSATIONAL
 put_choice agentDetails.averageMonthlyRcsFrequency "10"
 put_text agentDetails.monthlyRcsVolume "100"
-put_text complianceKeywords.helpResponse "SendPidge checks emails for your family. Reply STOP to opt out."
-put_text complianceKeywords.stopResponse "You will no longer receive SendPidge messages."
 
 sms submit-registration-version --registration-id "$registration_id" >/dev/null
 echo "registration submitted: $registration_id"
@@ -75,6 +83,12 @@ for tester_number in $RCS_TESTER_NUMBERS; do
   echo "tester invited: $tester_number (invite from 'RBM Tester Management' arrives in 2-20 min; on iPhone check Unknown Senders)"
 done
 
+if [[ -n "${RCS_TWO_WAY_TOPIC_ARN:-}" && -n "${RCS_TWO_WAY_ROLE_ARN:-}" ]]; then
+  sms update-rcs-agent --rcs-agent-id "$RCS_AGENT_ID" --two-way-enabled \
+    --two-way-channel-arn "$RCS_TWO_WAY_TOPIC_ARN" --two-way-channel-role "$RCS_TWO_WAY_ROLE_ARN" >/dev/null
+  echo "two-way enabled → $RCS_TWO_WAY_TOPIC_ARN"
+fi
+
 echo "RCS_AGENT_ID=$RCS_AGENT_ID"
 echo "RCS_AGENT_ARN=$agent_arn"
-echo "next: store RCS_AGENT_ARN in SSM; two-way SNS topic + role are created by the CDK stack in slice 5"
+echo "next: put both into infra/cdk.json (rcsAgentId, rcsAgentArn), set rcsEnabled true, redeploy"

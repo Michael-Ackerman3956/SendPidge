@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import boto3
 
-from shared import channels, graph, payloads, verdict
+from shared import channels, graph, payloads, rcs, verdict, whatsapp
 from shared.enums import ActionOutcome, Channel, ClientAction, PushMessageType, UserRole, VerdictAnswer
 
 logger = logging.getLogger()
@@ -18,6 +18,8 @@ RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
 RECEIVER_NAME = os.environ["RECEIVER_NAME"]
 EMAIL_BUCKET = os.environ["EMAIL_BUCKET"]
 RECEIPT_SENDER = os.environ["RECEIPT_SENDER"]
+RCS_TOPIC_ARN = os.environ["RCS_TOPIC_ARN"]
+WHATSAPP_TOPIC_ARN = os.environ["WHATSAPP_TOPIC_ARN"]
 SYNC_EMAIL_LIMIT = 20
 SYNC_REQUEST_LIMIT = 10
 HANDLED = {"statusCode": 200}
@@ -28,6 +30,9 @@ ses_client = boto3.client("sesv2")
 
 
 def handle(event, context):
+    if "Records" in event:
+        handle_sns_records(event["Records"])
+        return HANDLED
     request_context = event["requestContext"]
     connection_id = request_context["connectionId"]
     user_id = graph.get_connection_user_id(connection_id)
@@ -94,13 +99,57 @@ def handle_answer(connection_id: str, user_id: str, body: dict, websocket_messag
     if result.outcome is not ActionOutcome.RECORDED:
         reject(connection_id, request_id, result.outcome)
         return
+    announce_recorded_answer(request_id, result)
+
+
+def announce_recorded_answer(request_id: str, result: verdict.ActionResult) -> None:
+    """Both PWAs learn the new status; Jimin gets the receipt. Shared by the in-app and the phone channels."""
     message = payloads.request_state_message(result.request_row, result.status, result.contact_row["contactName"], False)
     channels.push_to_user(RECEIVER_USER_ID, message)
-    channels.push_to_user(user_id, message)
+    channels.push_to_user(result.contact_row["contactPwaUserId"], message)
     try:  # the verdict already reached the receiver; a failed receipt is logged, never blocking
         verdict.send_receipt(ses_client, RECEIPT_SENDER, result.contact_row, result.status, RECEIVER_NAME)
     except Exception:
         logger.exception("receipt for %s failed", request_id)
+
+
+def parse_phone_reply(record: dict) -> tuple[Channel, verdict.SenderIdentity, str, VerdictAnswer, str] | None:
+    """Routes one SNS record by its topic: the RCS two-way topic or the WhatsApp event topic. Never by content."""
+    topic_arn = record["Sns"]["TopicArn"]
+    sns_message = json.loads(record["Sns"]["Message"])
+    if topic_arn == RCS_TOPIC_ARN:
+        reply = rcs.parse_inbound_reply(sns_message)
+        if reply is None:
+            return None
+        sender = verdict.SenderIdentity(Channel.RCS, reply.origination_number)
+        return Channel.RCS, sender, reply.request_id, reply.answer, f"rcs:{reply.inbound_message_id}"
+    if topic_arn == WHATSAPP_TOPIC_ARN:
+        reply = whatsapp.parse_inbound_reply(sns_message)
+        if reply is None:
+            return None
+        sender = verdict.SenderIdentity(Channel.WHATSAPP, reply.sender_number)
+        return Channel.WHATSAPP, sender, reply.request_id, reply.answer, f"whatsapp:{reply.message_id}"
+    logger.warning("SNS record from unexpected topic %s ignored", topic_arn)
+    return None
+
+
+def handle_sns_records(records: list) -> None:
+    """Taps from the phone channels. Nothing here raises: SNS would only redeliver the same tap."""
+    for record in records:
+        try:
+            parsed = parse_phone_reply(record)
+        except (KeyError, TypeError, ValueError):
+            logger.warning("unreadable SNS record ignored")
+            continue
+        if parsed is None:
+            continue
+        channel, sender, request_id, answer, inbound_message_id = parsed
+        now = graph.iso_timestamp(datetime.now(timezone.utc))
+        result = verdict.record_answer(request_id, answer, sender, inbound_message_id, now)
+        if result.outcome is not ActionOutcome.RECORDED:
+            logger.info("%s answer on %s not recorded: %s", channel, request_id, result.outcome)
+            continue
+        announce_recorded_answer(request_id, result)
 
 
 def handle_confirm(connection_id: str, user_id: str, body: dict) -> None:

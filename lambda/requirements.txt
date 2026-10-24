@@ -1,3 +1,4 @@
-# Runtime dependencies for the Lambda layer (the Lambda runtime already ships boto3).
+# Runtime dependencies for the Lambda layer. boto3 is pinned because the runtime's bundled copy lags and SendRcsMessage is recent.
+boto3==1.43.117
 strands-agents==1.62.0
 pydantic==2.14.1

@@ -52,6 +52,12 @@ def write_contact(table) -> None:
     contact_email = os.environ.get("JIMIN_CONTACT_EMAIL")
     if contact_email:
         contact_row["contactEmail"] = contact_email
+    contact_rcs = os.environ.get("JIMIN_RCS_NUMBER")
+    if contact_rcs:
+        contact_row["contactRcs"] = contact_rcs  # E.164 (+8210…), exactly as RCS reports originationNumber
+    contact_whatsapp = os.environ.get("JIMIN_WHATSAPP_NUMBER")
+    if contact_whatsapp:
+        contact_row["contactWhatsApp"] = contact_whatsapp  # E.164 (+8210…); the parser adds the "+" Meta omits
     table.put_item(Item=contact_row)
 
 

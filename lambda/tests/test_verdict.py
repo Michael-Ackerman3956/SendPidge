@@ -36,9 +36,13 @@ def aws(monkeypatch):
         graph._table = None
 
 
+JIMIN_RCS_NUMBER = "+821012345678"
+JIMIN_WHATSAPP_NUMBER = "+821012345678"
+
+
 def seed_contact(contact_email: str | None = CONTACT_EMAIL) -> graph.Contact:
     row = {"PK": f"RECEIVER#{RECEIVER_ADDRESS}", "SK": "CONTACT#jimin", "contactName": "Jimin",
-           "contactPwaUserId": "jimin"}
+           "contactPwaUserId": "jimin", "contactRcs": JIMIN_RCS_NUMBER, "contactWhatsApp": JIMIN_WHATSAPP_NUMBER}
     if contact_email:
         row["contactEmail"] = contact_email
     graph.get_table().put_item(Item=row)
@@ -110,11 +114,40 @@ def test_answer_from_another_user_is_rejected(aws):
     assert (result.outcome, status_of(request_id)) == (ActionOutcome.WRONG_SENDER, "pending")
 
 
-def test_channel_without_a_registered_number_is_rejected(aws):
+def test_whatsapp_no_from_the_registered_number_lands(aws):
     request_id = new_request()
-    whatsapp_sender = verdict.SenderIdentity(Channel.WHATSAPP, "jimin")
-    result = verdict.record_answer(request_id, VerdictAnswer.NO, whatsapp_sender, "m1", at(0))
+    whatsapp_sender = verdict.SenderIdentity(Channel.WHATSAPP, JIMIN_WHATSAPP_NUMBER)
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, whatsapp_sender, "whatsapp:wamid.1", at(0))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.RECORDED, "denied")
+
+
+def test_whatsapp_from_a_number_without_the_plus_is_rejected(aws):
+    request_id = new_request()
+    digits_only = verdict.SenderIdentity(Channel.WHATSAPP, JIMIN_WHATSAPP_NUMBER.removeprefix("+"))
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, digits_only, "whatsapp:wamid.1", at(0))
     assert (result.outcome, status_of(request_id)) == (ActionOutcome.WRONG_SENDER, "pending")
+
+
+def test_rcs_no_from_the_registered_number_lands(aws):
+    request_id = new_request()
+    rcs_sender = verdict.SenderIdentity(Channel.RCS, JIMIN_RCS_NUMBER)
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, rcs_sender, "rcs:m1", at(0))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.RECORDED, "denied")
+
+
+def test_rcs_from_another_number_is_rejected(aws):
+    request_id = new_request()
+    stranger = verdict.SenderIdentity(Channel.RCS, "+821099999999")
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, stranger, "rcs:m1", at(0))
+    assert (result.outcome, status_of(request_id)) == (ActionOutcome.WRONG_SENDER, "pending")
+
+
+def test_redelivered_rcs_tap_is_ignored(aws):
+    request_id = new_request()
+    rcs_sender = verdict.SenderIdentity(Channel.RCS, JIMIN_RCS_NUMBER)
+    verdict.record_answer(request_id, VerdictAnswer.NO, rcs_sender, "rcs:m1", at(0))
+    result = verdict.record_answer(request_id, VerdictAnswer.NO, rcs_sender, "rcs:m1", at(1))
+    assert result.outcome is ActionOutcome.NOT_APPLIED
 
 
 def test_unknown_request_is_rejected(aws):

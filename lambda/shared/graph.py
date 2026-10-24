@@ -61,6 +61,8 @@ class Contact:
     contact_key: str
     contact_name: str
     contact_pwa_user_id: str
+    contact_rcs: str | None = None  # E.164, exactly as RCS reports originationNumber
+    contact_whatsapp: str | None = None  # E.164 with "+"; whatsapp.parse_inbound_reply adds the "+" Meta omits
 
 
 def find_user_id_for_access_token(access_token: str) -> str | None:
@@ -104,7 +106,9 @@ def find_contact(receiver_address: str, claimed_person: str | None) -> Contact |
     )
     for item in response["Items"]:
         if " ".join(item["contactName"].split()).casefold() == wanted_name:
-            return Contact(item["SK"], item["contactName"], item["contactPwaUserId"])
+            return Contact(
+                item["SK"], item["contactName"], item["contactPwaUserId"], item.get("contactRcs"), item.get("contactWhatsApp")
+            )
     return None
 
 
@@ -171,6 +175,22 @@ def record_channels_sent(request_id: str, channels_sent: list[Channel]) -> None:
         Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY},
         UpdateExpression="SET channelsSent = :channels",
         ExpressionAttributeValues={":channels": [str(channel) for channel in channels_sent]},
+    )
+
+
+def record_rcs_message_id(request_id: str, rcs_message_id: str) -> None:
+    get_table().update_item(
+        Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY},
+        UpdateExpression="SET rcsMessageId = :messageId",
+        ExpressionAttributeValues={":messageId": rcs_message_id},
+    )
+
+
+def record_whatsapp_message_id(request_id: str, whatsapp_message_id: str) -> None:
+    get_table().update_item(
+        Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY},
+        UpdateExpression="SET whatsappMessageId = :messageId",
+        ExpressionAttributeValues={":messageId": whatsapp_message_id},
     )
 
 

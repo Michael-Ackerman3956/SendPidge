@@ -62,6 +62,18 @@ class Channel(StrEnum):
     INAPP = "inapp"
 
 
+class RcsInboundMessageType(StrEnum):
+    """The `type` inside an inbound RCS messageBody JSON. Only a suggestion tap carries postbackData."""
+
+    SUGGESTION = "SUGGESTION"
+
+
+class WhatsAppInboundMessageType(StrEnum):
+    """The `type` of an inbound WhatsApp message. Only a quick-reply tap on our template carries a payload."""
+
+    BUTTON = "button"
+
+
 class ReaderModelChoice(StrEnum):
     """Allowed values of the READER_MODEL setting."""
 

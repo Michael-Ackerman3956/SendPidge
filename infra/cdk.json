@@ -6,6 +6,15 @@
     "receiverUserId": "grandma",
     "receiverName": "Grandma",
     "receiptSender": "pidge@sendpidge.com",
-    "pwaDomain": "app.sendpidge.com"
+    "pwaDomain": "app.sendpidge.com",
+    "landingDomain": "sendpidge.com",
+    "rcsEnabled": false,
+    "rcsAgentId": "",
+    "rcsAgentArn": "",
+    "whatsappEnabled": true,
+    "whatsappPhoneNumberId": "phone-number-id-8881930ce2b94d3299f402da53e01e86",
+    "whatsappPhoneNumberArn": "arn:aws:social-messaging:us-east-1:358148451054:phone-number-id/8881930ce2b94d3299f402da53e01e86",
+    "whatsappMetaApiVersion": "v22.0",
+    "whatsappTemplateName": "pidge_was_this_you"
   }
 }
