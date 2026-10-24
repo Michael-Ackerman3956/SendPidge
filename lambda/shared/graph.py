@@ -14,7 +14,8 @@ from botocore.exceptions import ClientError
 
 from shared.enums import CaseState, Channel, Friction, PolicyDecision, ReasonCode, RequestState, WarnReason
 
-HOLD_DURATION_SECONDS = 60
+# An answer is accepted for one re-ask interval; pidge-retry extends it by another and marks timeout on attempt 2.
+HOLD_DURATION_SECONDS = int(os.environ.get("RE_ASK_DELAY_SECONDS", "600"))
 REQUEST_RETENTION_SECONDS = 30 * 24 * 3600
 EMAIL_RETENTION_SECONDS = 90 * 24 * 3600
 CONNECTION_RETENTION_SECONDS = 24 * 3600

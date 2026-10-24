@@ -138,7 +138,7 @@ def test_reverse_after_five_minutes_or_without_a_no_is_ignored(aws):
 
 def test_late_yes_is_ignored(aws):
     request_id = new_request()
-    result = verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(61))
+    result = verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(graph.HOLD_DURATION_SECONDS + 1))
     assert (result.outcome, status_of(request_id)) == (ActionOutcome.NOT_APPLIED, "pending")
 
 
