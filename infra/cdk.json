@@ -20,7 +20,7 @@
     "escalationModel": "opus-4.5",
     "releaseSchedulerEnabled": true,
     "caseAgentRuntime": "agentcore",
-    "caseAgentModel": "haiku-4.5",
+    "caseAgentModel": "opus-4.5",
     "retrySchedulerEnabled": true,
     "reAskDelaySeconds": 600,
     "bankFollowUpEnabled": true,

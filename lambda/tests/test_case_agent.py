@@ -31,6 +31,7 @@ def test_get_case_carries_metadata_but_never_the_body_or_subject(aws):
     scope = case_agent.CaseScope(RECEIVER_USER_ID, request_id, CaseTrigger.VERDICT)
     metadata = case_agent.case_metadata(scope)
     assert (metadata["status"], metadata["contactName"], metadata["senderAddress"]) == ("denied", "Jimin", "Scammer@Lookalike.example")
+    assert metadata["whatHappened"].startswith("Jimin answered No: the email did not come from Jimin")
     flattened = str(metadata)
     assert "3333-01" not in flattened and "evil.example" not in flattened and "subject" not in metadata and "textBody" not in metadata
 
@@ -100,3 +101,12 @@ def test_payment_report_parsing_rejects_odd_input():
                 {**good, "paidAt": "yesterday"}, {**good, "bank": ""}, {**good, "currency": "dollars"}):
         with pytest.raises((ValueError, KeyError, ArithmeticError)):
             verdict.PaymentReport.from_client_body(bad)
+
+
+def test_a_confirmed_request_tells_the_agent_the_email_was_real(aws):
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.YES, JIMIN, "m1", at(0))
+    verdict.release_if_still_pending(request_id)
+    metadata = case_agent.case_metadata(case_agent.CaseScope(RECEIVER_USER_ID, request_id, CaseTrigger.VERDICT))
+    assert metadata["status"] == "confirmed"
+    assert metadata["whatHappened"].startswith("Jimin answered Yes: the email really came from Jimin")

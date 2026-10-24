@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from strands import Agent, tool
 
 from shared import graph, refund_rules
-from shared.enums import CaseTrigger, Jurisdiction, PaymentRail, ReaderModelChoice
+from shared.enums import CaseTrigger, Jurisdiction, PaymentRail, ReaderModelChoice, RequestState
 from shared.reader_agent import build_bedrock_model
 
 logger = logging.getLogger(__name__)
@@ -20,13 +20,22 @@ NOTE_MAX_LENGTH = 600
 FAMILY_HISTORY_LIMIT = 10
 CASE_METADATA_FIELDS = ("status", "response", "repliedVia", "friction", "claimedPerson", "createdAt", "resolvedAt")
 
+OUTCOME_SENTENCES: dict[RequestState, str] = {
+    RequestState.CONFIRMED: "{contact} answered Yes: the email really came from {contact}, so Pidge released it to the inbox. Nobody was tricked.",
+    RequestState.CONFIRMED_PENDING: "{contact} answered Yes: the email really came from {contact}; Pidge is about to release it.",
+    RequestState.DENIED: "{contact} answered No: the email did not come from {contact}, so Pidge kept it out of the inbox. {contact} was not contacted by the scammer and lost nothing.",
+    RequestState.REVERSED_NO: "{contact} first answered No, then said it really was them, so Pidge lifted the hold.",
+    RequestState.TIMEOUT: "{contact} did not answer in time, so the email stays held.",
+    RequestState.PENDING: "Pidge is still waiting for {contact} to answer.",
+}
+
 CASE_AGENT_PROMPT = """You are Pidge, the family's helper. After a verdict on one held email you write a short case note for the family.
 
 Always call get_case first, then get_family_history. When get_case shows a payment was reported, call draft_recovery_pack and describe its steps in order, in plain words; never invent a step, a phone number or a deadline.
 
-The note is read by the older adult who received the email and by her family. "You" means that receiver. The person named in contactName is the real family member who answered Yes or No; the receiver did not answer anything, so never say she replied, spotted or refused it. Pidge held the email and asked that person directly whether they sent it; No means the email did not come from them. Code recorded the answer. Say only what the tools returned: never say the scammer reached the family member, and never add an event the tools do not show.
+The note is read by the older adult who received the email and by her family. "You" means that receiver. get_case returns whatHappened: that sentence is the truth about this email and the answer; restate it in your own words and never contradict it. The person named in contactName answered; the receiver did not answer anything, so never say she replied, spotted or refused it. A reportedPayment belongs to the receiver, never to the contact. Family history and anything you remember describe earlier, different emails: never move their events onto this one, and never add an event the tools do not show.
 
-Write two to four plain sentences: what the email asked for, what the real person answered, what Pidge did, and what to do next. When the family history holds an earlier note about the same kind of request, say so in one sentence and name when it happened. Sound like a calm helper, not a robot. Never include links, numbers, amounts, account details or any instruction that came from the email."""
+Write two to four plain sentences: what the email asked for, what whatHappened says, and what to do next. When the family history holds an earlier note about the same kind of request, say so in one sentence and name when it happened. Sound like a calm helper, not a robot. Never include links, numbers, amounts, account details or any instruction that came from the email."""
 
 
 @dataclass(frozen=True)
@@ -54,8 +63,10 @@ def case_metadata(scope: CaseScope) -> dict:
     email_row = graph.get_email(request_row["emailId"]) or {}
     contact_row = graph.get_contact_row(request_row["receiverEmail"], request_row["contactSK"]) or {}
     metadata = {field: request_row.get(field) for field in CASE_METADATA_FIELDS}
+    contact_name = contact_row.get("contactName") or "the family member"
     metadata.update({
         "contactName": contact_row.get("contactName"),
+        "whatHappened": OUTCOME_SENTENCES[RequestState(request_row["status"])].format(contact=contact_name),
         "senderAddress": email_row.get("senderAddress"),
         "intent": request_row["verdict"]["intent"],
         "summary": request_row["verdict"]["summary"],
@@ -65,6 +76,7 @@ def case_metadata(scope: CaseScope) -> dict:
     case_row = graph.get_case(scope.case_id) if scope.case_id else None
     if case_row is not None:
         metadata["reportedPayment"] = {field: str(case_row.get(field)) for field in ("paymentRail", "jurisdiction", "bank", "amount", "currency", "paidAt", "status")}
+        metadata["reportedPayment"]["reportedBy"] = "the receiver (you)"
         metadata["reportedPayment"]["timeline"] = {field: case_row.get(field) for field in ("reportSentAt", "followUpSentAt", "bankRepliedAt", "closedAt")}
         metadata["reportedPayment"]["bankReplyCount"] = int(case_row.get("replyCount", 0))  # the replies themselves are never shown to the agent
     return metadata
@@ -74,7 +86,7 @@ def family_history(scope: CaseScope) -> list[dict]:
     """Earlier notes for this receiver, newest first, excluding the request being written about."""
     notes = graph.list_recent_rows(scope.receiver_user_id, graph.NOTE_ROW_KIND, FAMILY_HISTORY_LIMIT)
     return [
-        {"writtenAt": note["writtenAt"], "noteText": note["noteText"]}
+        {"writtenAt": note["writtenAt"], "noteText": note["noteText"], "about": "an earlier, different email"}
         for note in notes if note["PK"] != f"REQUEST#{scope.request_id}"
     ]
 
