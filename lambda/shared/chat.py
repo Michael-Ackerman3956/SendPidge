@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import boto3
-from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Key
 
 from shared import graph
 from shared.enums import ChatCardKind, ChatRole, ChatVia, GuardrailOutcome, PushMessageType
@@ -23,11 +23,9 @@ logger = logging.getLogger(__name__)
 
 CHAT_PARTITION_PREFIX = "CHAT#"
 MESSAGE_SORT_KEY_PREFIX = "MSG#"
-RATE_SORT_KEY_PREFIX = "RATE#"
 QUESTIONS_PER_HOUR_LIMIT = 20
 QUESTION_MAX_CHARACTERS = 1000
 CHAT_RETENTION_SECONDS = 30 * 24 * 3600
-RATE_ROW_RETENTION_SECONDS = 2 * 3600
 PROMPT_ATTACK_METRIC_NAME = "PromptAttack"
 GUARDRAIL_INTERVENED_ACTION = "GUARDRAIL_INTERVENED"
 
@@ -56,25 +54,9 @@ def chat_partition(user_id: str) -> str:
     return f"{CHAT_PARTITION_PREFIX}{user_id}"
 
 
-def current_hour_label() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
-
-
 def take_question_slot(user_id: str) -> bool:
     """One conditional increment of this hour's counter. False when the cap is reached or the write fails (fail closed)."""
-    try:
-        graph.get_table().update_item(
-            Key={"PK": chat_partition(user_id), "SK": f"{RATE_SORT_KEY_PREFIX}{current_hour_label()}"},
-            UpdateExpression="ADD questionCount :one SET ttlEpochSeconds = :expiry",
-            ConditionExpression="attribute_not_exists(questionCount) OR questionCount < :limit",
-            ExpressionAttributeValues={":one": 1, ":limit": QUESTIONS_PER_HOUR_LIMIT,
-                                       ":expiry": graph.retention_epoch(RATE_ROW_RETENTION_SECONDS)},
-        )
-        return True
-    except ClientError as error:
-        if error.response["Error"]["Code"] != graph.CONDITIONAL_CHECK_FAILED:
-            logger.error("chat rate counter write failed for %s; refusing: %s", user_id, error)
-        return False
+    return graph.take_hourly_slot(chat_partition(user_id), QUESTIONS_PER_HOUR_LIMIT)
 
 
 def write_message(user_id: str, role: ChatRole, via: ChatVia, text: str, extra_fields: dict | None = None) -> dict:
@@ -110,6 +92,28 @@ def question_key_from_stream_keys(keys: dict) -> tuple[str, str] | None:
 
 def get_message(user_id: str, sort_key: str) -> dict | None:
     return graph.get_table().get_item(Key={"PK": chat_partition(user_id), "SK": sort_key}).get("Item")
+
+
+def list_recent_messages(user_id: str, limit: int) -> list[dict]:
+    """The caller's last `limit` MSG# rows, oldest first (the HOUR# counter rows in the same partition are skipped)."""
+    response = graph.get_table().query(
+        KeyConditionExpression=Key("PK").eq(chat_partition(user_id)) & Key("SK").begins_with(MESSAGE_SORT_KEY_PREFIX),
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return list(reversed(response["Items"]))
+
+
+def chat_message_for_sync(message_row: dict) -> dict:
+    """One thread bubble in SYNC_STATE.chat: a question row has no card; a reply row's card is null or {kind}."""
+    card = message_row.get("card")
+    return {
+        "messageId": message_row["SK"],
+        "role": str(ChatRole(message_row["role"])),
+        "text": message_row["text"],
+        "sentAt": message_row["sentAt"],
+        "card": {"kind": ChatCardKind(card["kind"])} if card else None,
+    }
 
 
 def mark_question(user_id: str, sort_key: str, field_name: str, value: object) -> None:

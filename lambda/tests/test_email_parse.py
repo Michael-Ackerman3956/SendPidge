@@ -49,3 +49,9 @@ def test_registrable_domain_handles_two_part_suffixes_and_odd_hrefs():
     assert registrable_domain_of_href("HTTP://WWW.Zelle.com") == "zelle.com"
     assert registrable_domain_of_href("javascript:alert(1)") == ""
     assert registrable_domain_of_href("https://[::1") == ""
+
+
+def test_plain_text_keeps_paragraph_breaks_and_joins_wrapped_lines():
+    raw = (b"From: Jimin <jimin@example.com>\r\nTo: grandma@sendpidge.example\r\nSubject: Hi\r\n"
+           b"Content-Type: text/plain\r\n\r\nGrandma, it's me.\r\nMy phone broke.\r\n\r\n  \r\nCall me back.\r\n")
+    assert parse_eml(raw).text_body == "Grandma, it's me. My phone broke.\n\nCall me back."

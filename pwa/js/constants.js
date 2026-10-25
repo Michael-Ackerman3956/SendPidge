@@ -23,10 +23,21 @@ export const CLIENT_ACTION = Object.freeze({
   CLOSE_CASE: "close_case",
   SAVE_PUSH_SUBSCRIPTION: "save_push_subscription",
   ASK_PIDGE: "ask_pidge",
+  VERIFY_CONTACT: "verify_contact",
 });
 
 export const CHAT_CARD_KIND = Object.freeze({
   REFUSAL: "refusal",
+});
+
+export const CHAT_ROLE = Object.freeze({
+  GRANDMA: "grandma",
+  PIDGE: "pidge",
+});
+
+export const VERIFIED_VIA = Object.freeze({
+  SEED: "seed",
+  MOCK: "mock",
 });
 
 export const CASE_STATUS = Object.freeze({
@@ -99,6 +110,7 @@ export const WARN_REASON = Object.freeze({
   UNREACHABLE: "unreachable",
   ESCALATION_CLEARED: "escalation_cleared",
   LINK_REASONS: "link_reasons",
+  ASK_CAPPED: "ask_capped",
 });
 
 export const REASON_CODE = Object.freeze({
@@ -114,6 +126,17 @@ export const REASON_CODE = Object.freeze({
   KNOWN_SHORTENER: "known_shortener",
   LOOKALIKE_LINK_DOMAIN: "lookalike_link_domain",
   LINKS_UNREADABLE: "links_unreadable",
+  LISTED_SENDER_ADDRESS: "listed_sender_address",
+  LISTED_SENDER_DOMAIN: "listed_sender_domain",
+  LOOKALIKE_SENDER_NAME: "lookalike_sender_name",
+  LOOKALIKE_SENDER_DOMAIN: "lookalike_sender_domain",
+  REPORTED_SENDER: "reported_sender",
+  LIST_LOOKUP_FAILED: "list_lookup_failed",
+});
+
+export const CALL_PROMISE = Object.freeze({
+  TODAY: "today",
+  TOMORROW: "tomorrow",
 });
 
 export const FRICTION = Object.freeze({
@@ -145,4 +168,18 @@ export const EMAIL_DISPLAY_STATE = Object.freeze({
   AWAITING_VERDICT: "awaiting_verdict",
   FLAGGED: "flagged",
   PLAIN: "plain",
+});
+
+// PWA-only: which channel a mock inbox row came from (live rows are always email until slice 15).
+export const ROW_KIND = Object.freeze({
+  EMAIL: "email",
+  SMS: "sms",
+  APP: "app",
+});
+
+// PWA-only: Gmail's reading-pane choices on a wide screen; phones always read with no split.
+export const READING_PANE_LAYOUT = Object.freeze({
+  NO_SPLIT: "no_split",
+  VERTICAL_SPLIT: "vertical_split",
+  HORIZONTAL_SPLIT: "horizontal_split",
 });

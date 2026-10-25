@@ -1,23 +1,29 @@
-// Grandma's incoming data: the three static mock rows and validation of every EMAIL / request_state payload from the server.
-import { POLICY_DECISION, REQUEST_STATUS } from "./constants.js";
+// Grandma's incoming data: the five static mock rows (email, SMS, app notice) and validation of every EMAIL / request_state payload.
+// Mock rows carry rowKind; a live row is always ROW_KIND.EMAIL (other channels come in at slice 15).
+import { CALL_PROMISE, POLICY_DECISION, REQUEST_STATUS, ROW_KIND } from "./constants.js";
 
 const MILLISECONDS_PER_HOUR = 3600000;
 const KNOWN_POLICY_DECISIONS = new Set(Object.values(POLICY_DECISION));
 const KNOWN_REQUEST_STATUSES = new Set(Object.values(REQUEST_STATUS));
+const KNOWN_CALL_PROMISES = new Set(Object.values(CALL_PROMISE));
 
 export function buildMockFamilyEmails() {
   const now = Date.now();
   const receivedHoursAgo = (hours) => new Date(now - hours * MILLISECONDS_PER_HOUR).toISOString();
-  const mockEmail = (emailId, senderName, senderAddress, subject, hoursAgo, textBody) => ({
-    emailId, senderName, senderAddress, subject, receivedAt: receivedHoursAgo(hoursAgo), textBody,
+  const mockRow = (rowKind, emailId, senderName, senderAddress, subject, hoursAgo, textBody) => ({
+    emailId, rowKind, senderName, senderAddress, subject, receivedAt: receivedHoursAgo(hoursAgo), textBody,
     state: POLICY_DECISION.PASS, warnReason: null, reasons: [], links: [], request: null, quarantined: false,
   });
   return [
-    mockEmail("mock-sunday-lunch", "Minsoo", "minsoo@example.com", "Sunday lunch", 2,
+    mockRow(ROW_KIND.EMAIL, "mock-sunday-lunch", "Minsoo", "minsoo@example.com", "Sunday lunch", 2,
       "Hi Mom, we'll come by around noon on Sunday. I'll bring the kimchi jjigae you like. See you then!"),
-    mockEmail("mock-garden-photos", "Young-hee", "younghee@example.com", "Your tomatoes!", 27,
+    mockRow(ROW_KIND.SMS, "mock-pharmacy", "Haneul Pharmacy", "+82 2-734-··12", "Prescription ready", 3,
+      "Your prescription is ready for pickup until 7 pm today."),
+    mockRow(ROW_KIND.EMAIL, "mock-garden-photos", "Young-hee", "younghee@example.com", "Your tomatoes!", 27,
       "The tomatoes from your garden were so sweet. Can you show me how you grow them next time?"),
-    mockEmail("mock-church-picnic", "Pastor Kim", "pastor.kim@example.com", "Picnic next Saturday", 75,
+    mockRow(ROW_KIND.APP, "mock-bank-statement", "Kakao Bank", "App notification", "October statement is ready", 51,
+      "Your October statement is ready to view in the app."),
+    mockRow(ROW_KIND.EMAIL, "mock-church-picnic", "Pastor Kim", "pastor.kim@example.com", "Picnic next Saturday", 75,
       "Just a reminder that the church picnic is next Saturday at the park. Hope to see you there."),
   ];
 }
@@ -66,10 +72,23 @@ function normalizeEmailLinks(email) {
   });
 }
 
+// Jimin's call promise, or null when absent; an unknown value is logged and shown as no promise.
+export function normalizeCallPromise(value) {
+  if (value === null || value === undefined) return null;
+  if (KNOWN_CALL_PROMISES.has(value)) return value;
+  console.error("SendPidge: request has an unknown callPromise", value);
+  return null;
+}
+
+function normalizeEmailRequest(request) {
+  if (request === null || request === undefined) return null;
+  return { ...request, callPromise: normalizeCallPromise(request.callPromise) };
+}
+
 // Returns the email with request, quarantined and links made explicit, or null (after logging) when the payload is invalid.
 export function normalizeEmailPayloadOrReportError(email) {
   if (!isValidEmailPayload(email)) return null;
-  return { ...email, request: email.request ?? null, quarantined: email.quarantined === true, links: normalizeEmailLinks(email) };
+  return { ...email, rowKind: ROW_KIND.EMAIL, request: normalizeEmailRequest(email.request), quarantined: email.quarantined === true, links: normalizeEmailLinks(email) };
 }
 
 export function isValidRequestStateUpdate(requestUpdate) {

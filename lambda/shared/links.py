@@ -5,14 +5,13 @@ from dataclasses import dataclass
 
 from shared.email_parse import EmailLink, registrable_domain_of_host
 from shared.enums import ReasonCode
+from shared.lists import confusable_skeleton, is_lookalike_of  # noqa: F401  (re-exported for the link tests)
 
 KNOWN_SHORTENER_HOSTS = frozenset({
     "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rb.gy", "tiny.cc", "t.ly", "shorturl.at",
 })
 # A visible text that reads like an address: one token, at least one dot, letters and digits only around it.
 HOST_LIKE_TEXT = re.compile(r"^(?:https?://)?(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?:/\S*)?$", re.IGNORECASE)
-CONFUSABLE_CHARACTERS = str.maketrans({"0": "o", "1": "l", "3": "e", "5": "s", "7": "t", "8": "b", "9": "g", "|": "l"})
-CONFUSABLE_PAIRS = (("rn", "m"), ("vv", "w"), ("cl", "d"))
 
 
 @dataclass(frozen=True)
@@ -29,28 +28,9 @@ class LinkAssessment:
         return {"text": self.link.visible_text, "domain": self.link.registrable_domain, "href": self.link.href, "flagged": self.is_flagged}
 
 
-def confusable_skeleton(text: str) -> str:
-    """'PayPa1.com' and 'paypal.com' share a skeleton; lists.py (lookalike senders) uses the same one later."""
-    skeleton = text.casefold().translate(CONFUSABLE_CHARACTERS)
-    for pair, replacement in CONFUSABLE_PAIRS:
-        skeleton = skeleton.replace(pair, replacement)
-    return re.sub(r"[^a-z0-9.]", "", skeleton)
-
-
 def domain_named_in_text(visible_text: str) -> str:
     match = HOST_LIKE_TEXT.match(visible_text.strip())
     return registrable_domain_of_host(match.group(1)) if match else ""
-
-
-def is_lookalike_of(link_domain: str, family_domain: str) -> bool:
-    """Same skeleton but a different domain, or the family label hyphenated into a different domain (zelle-pay-help)."""
-    if not link_domain or link_domain == family_domain:
-        return False
-    if confusable_skeleton(link_domain) == confusable_skeleton(family_domain):
-        return True
-    family_label = family_domain.split(".")[0]
-    link_label = link_domain.split(".")[0]
-    return len(family_label) >= 4 and family_label in link_label.split("-") and link_label != family_label
 
 
 def assess_link(link: EmailLink, family_domains: frozenset[str]) -> LinkAssessment:

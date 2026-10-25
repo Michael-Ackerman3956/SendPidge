@@ -1,6 +1,7 @@
 """DynamoDB access: contacts, access tokens, WebSocket connections, emails and verification requests."""
 
 import hashlib
+import logging
 import os
 import time
 import uuid
@@ -12,14 +13,21 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared.enums import CaseState, Channel, Friction, PolicyDecision, ReasonCode, RequestState, WarnReason
+from shared.enums import (
+    CaseState, Channel, Friction, ListCategory, ListSource, ListStrength, PolicyDecision, ReasonCode, RequestState, VerifiedVia,
+    WarnReason,
+)
 
 # An answer is accepted for one re-ask interval; pidge-retry extends it by another and marks timeout on attempt 2.
 HOLD_DURATION_SECONDS = int(os.environ.get("RE_ASK_DELAY_SECONDS", "600"))
 REQUEST_RETENTION_SECONDS = 30 * 24 * 3600
 EMAIL_RETENTION_SECONDS = 90 * 24 * 3600
 CONNECTION_RETENTION_SECONDS = 24 * 3600
+HOURLY_COUNTER_RETENTION_SECONDS = 2 * 3600
+ASK_COUNTER_PARTITION_PREFIX = "ASKRATE#"
+HOUR_SORT_KEY_PREFIX = "HOUR#"
 CONDITIONAL_CHECK_FAILED = "ConditionalCheckFailedException"
+logger = logging.getLogger(__name__)
 METADATA_SORT_KEY = "META"
 # UserIndex (GSI): "<userId>#EMAIL" or "<userId>#REQUEST" → rows newest first, for the PWA's sync.
 USER_INDEX_NAME = "UserIndex"
@@ -118,25 +126,90 @@ def find_contact(receiver_address: str, person_name: str | None) -> Contact | No
 
     Called with the sender's display name for gate 1 and with the Reader's claimed_person for gate 2.
     """
+    return find_contact_among(list_contacts(receiver_address), person_name)
+
+
+def find_contact_among(contacts: list[Contact], person_name: str | None) -> Contact | None:
+    """The same rule over an already-fetched contact list, so one email costs one contacts query."""
     if not person_name:
         return None
     wanted_name = " ".join(person_name.split()).casefold()
-    for contact in list_contacts(receiver_address):
-        if " ".join(contact.contact_name.split()).casefold() == wanted_name:
-            return contact
-    return None
+    return next((contact for contact in contacts if " ".join(contact.contact_name.split()).casefold() == wanted_name), None)
 
 
 def list_contacts(receiver_address: str) -> list[Contact]:
+    return [contact_from_row(item) for item in list_contact_rows(receiver_address)]
+
+
+def list_contact_rows(receiver_address: str) -> list[dict]:
+    """The receiver's raw CONTACT# rows (numbers and addresses included: callers decide what leaves the server)."""
     response = get_table().query(
         KeyConditionExpression=Key("PK").eq(f"RECEIVER#{receiver_address}") & Key("SK").begins_with("CONTACT#")
     )
-    return [contact_from_row(item) for item in response["Items"]]
+    return response["Items"]
+
+
+def find_contact_row_for_user(receiver_address: str, contact_user_id: str) -> dict | None:
+    """The receiver's own CONTACT# row whose contactPwaUserId matches; the sort key is never built from the caller's text."""
+    return next((row for row in list_contact_rows(receiver_address) if row["contactPwaUserId"] == contact_user_id), None)
+
+
+def mark_contact_verified(receiver_address: str, contact_sort_key: str, verified_via: VerifiedVia, verified_at: str) -> bool:
+    """Sets verifiedVia and verifiedAt on an existing CONTACT# row (never a put: the row holds the numbers); False if it is gone."""
+    try:
+        get_table().update_item(
+            Key={"PK": f"RECEIVER#{receiver_address}", "SK": contact_sort_key},
+            UpdateExpression="SET verifiedVia = :via, verifiedAt = :at",
+            ConditionExpression="attribute_exists(PK)",
+            ExpressionAttributeValues={":via": str(verified_via), ":at": verified_at},
+        )
+        return True
+    except ClientError as error:
+        if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
+            return False
+        raise
 
 
 def contact_domains(receiver_address: str) -> frozenset[str]:
     """The domains the family writes from (from every contact's knownAddresses); link lookalikes are judged against these."""
-    return frozenset(address.rpartition("@")[2] for contact in list_contacts(receiver_address) for address in contact.known_addresses if "@" in address)
+    return domains_of(list_contacts(receiver_address))
+
+
+def domains_of(contacts: list[Contact]) -> frozenset[str]:
+    return frozenset(address.rpartition("@")[2] for contact in contacts for address in contact.known_addresses if "@" in address)
+
+
+def current_hour_label() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
+
+
+def take_hourly_slot(partition_key: str, limit: int) -> bool:
+    """One conditional increment of this hour's counter under the partition. False at the cap or on any write failure (fail closed)."""
+    try:
+        get_table().update_item(
+            Key={"PK": partition_key, "SK": f"{HOUR_SORT_KEY_PREFIX}{current_hour_label()}"},
+            UpdateExpression="ADD slotCount :one SET ttlEpochSeconds = :expiry",
+            ConditionExpression="attribute_not_exists(slotCount) OR slotCount < :limit",
+            ExpressionAttributeValues={":one": 1, ":limit": limit, ":expiry": retention_epoch(HOURLY_COUNTER_RETENTION_SECONDS)},
+        )
+        return True
+    except ClientError as error:
+        if error.response["Error"]["Code"] != CONDITIONAL_CHECK_FAILED:
+            logger.error("hourly counter write failed for %s; refusing: %s", partition_key, error)
+        return False
+
+
+def take_ask_slot(contact_key: str, asks_per_hour_limit: int) -> bool:
+    """The ask cap: a contact is asked at most this many times an hour; past it the hold stays and nothing is sent."""
+    return take_hourly_slot(f"{ASK_COUNTER_PARTITION_PREFIX}{contact_key}", asks_per_hour_limit)
+
+
+def record_ask_capped(request_id: str) -> None:
+    get_table().update_item(
+        Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY},
+        UpdateExpression="SET channelsSent = :none, askCapped = :true",
+        ExpressionAttributeValues={":none": [], ":true": True},
+    )
 
 
 def claim_email(email_id: str, email_fields: dict) -> bool:
@@ -246,7 +319,8 @@ def get_connection_user_id(connection_id: str) -> str | None:
 
 
 def get_request(request_id: str) -> dict | None:
-    return get_table().get_item(Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY}).get("Item")
+    """Strongly consistent: the case agent reads the row one second after the stream event that changed it."""
+    return get_table().get_item(Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY}, ConsistentRead=True).get("Item")
 
 
 def get_email(email_id: str) -> dict | None:
@@ -297,11 +371,12 @@ def mark_email_quarantined(email_id: str) -> bool:
 
 
 def write_listed_address(sender_address: str, reason: str) -> None:
-    """Tier 0 lookup row from a Confirm: the full address, never the domain."""
+    """Tier 0 scam-list row from a Confirm: the full address, never the domain; the same shape as every other LIST# row."""
     get_table().put_item(Item={
         "PK": "LIST#address", "SK": sender_address.lower(),
-        "category": "scam", "strength": "listed", "source": "pidge-confirmed", "tier": 0,
-        "reason": reason, "addedAt": iso_timestamp(datetime.now(timezone.utc)),
+        "category": str(ListCategory.SCAM), "strength": str(ListStrength.LISTED), "source": str(ListSource.PIDGE_CONFIRMED),
+        "tier": 0, "reason": reason, "attribution": "Reported by the receiver after the contact denied it",
+        "addedAt": iso_timestamp(datetime.now(timezone.utc)), "expiresAt": None, "generation": 0,
     })
 
 

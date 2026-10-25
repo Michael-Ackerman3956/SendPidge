@@ -1,5 +1,6 @@
 """Turn a raw .eml into the few fields the Reader and the policy need."""
 
+import re
 from dataclasses import dataclass, field
 from email import message_from_bytes, policy
 from email.message import EmailMessage
@@ -74,6 +75,12 @@ def collapse_whitespace(text: str) -> str:
     return " ".join(text.split())
 
 
+def collapse_whitespace_keeping_paragraphs(text: str) -> str:
+    """Wrapped lines join into one; a blank line stays a paragraph break, so the PWA shows the sender's paragraphs."""
+    paragraphs = (collapse_whitespace(paragraph) for paragraph in re.split(r"\n[ \t\r]*\n", text))
+    return "\n\n".join(paragraph for paragraph in paragraphs if paragraph)
+
+
 def parse_eml(raw_bytes: bytes) -> ParsedEmail:
     message = message_from_bytes(raw_bytes, policy=policy.default)
     sender_name, sender_address = parseaddr(message.get("From", ""))
@@ -95,7 +102,7 @@ def extract_text_body(message: EmailMessage) -> str:
     """Prefer the text/plain part; otherwise strip the HTML part."""
     plain_part = message.get_body(preferencelist=("plain",))
     if plain_part is not None:
-        return collapse_whitespace(plain_part.get_content())
+        return collapse_whitespace_keeping_paragraphs(plain_part.get_content())
     html_part = message.get_body(preferencelist=("html",))
     if html_part is not None:
         return strip_html(html_part.get_content())

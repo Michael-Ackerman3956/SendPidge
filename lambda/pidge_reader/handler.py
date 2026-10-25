@@ -9,7 +9,7 @@ from urllib.parse import unquote_plus
 
 import boto3
 
-from shared import channels, graph, payloads, schedules
+from shared import channels, graph, lists, payloads, schedules
 from shared.auth import authentication_reasons
 from shared import links as link_checks
 from shared.email_parse import ParsedEmail, parse_eml
@@ -33,10 +33,12 @@ ESCALATION_ENABLED = os.environ.get("ESCALATION_ENABLED") == "true"
 RETRY_SCHEDULER_ENABLED = os.environ.get("RETRY_SCHEDULER_ENABLED") == "true"
 RE_ASK_DELAY_SECONDS = int(os.environ.get("RE_ASK_DELAY_SECONDS", "600"))
 RETRY_FUNCTION_ARN = os.environ.get("RETRY_FUNCTION_ARN", "")
+ASKS_PER_CONTACT_PER_HOUR = int(os.environ.get("ASKS_PER_CONTACT_PER_HOUR", "3"))  # the ask cap; past it the hold stays silent
 
 s3_client = boto3.client("s3")
 reader = build_reader(ReaderModelChoice(os.environ["READER_MODEL"]))
 escalation_reader = build_escalation_reader(ReaderModelChoice(os.environ["ESCALATION_MODEL"])) if ESCALATION_ENABLED else None
+list_store = lists.DynamoListStore()
 
 
 def handle(event, context):
@@ -47,21 +49,24 @@ def handle(event, context):
 def process_email_object(bucket_name: str, object_key: str) -> None:
     raw_email = s3_client.get_object(Bucket=bucket_name, Key=object_key)["Body"].read()
     parsed_email = parse_eml(raw_email)
-    link_assessments = link_checks.assess_links(parsed_email.links, graph.contact_domains(RECEIVER_ADDRESS))
+    contacts = graph.list_contacts(RECEIVER_ADDRESS)  # one query per email; every name match below reads this list
+    link_assessments = link_checks.assess_links(parsed_email.links, graph.domains_of(contacts))
     email_row = build_email_row(object_key, parsed_email, link_assessments)
     if not graph.claim_email(object_key, email_row):
         logger.info("duplicate event for %s; already processed", object_key)
         return
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
     reasons.extend(link_checks.link_reasons(link_assessments, parsed_email.links_unreadable))
+    reasons.extend(lists.sender_reasons_or_lookup_failure(
+        list_store, parsed_email.sender_address, parsed_email.sender_domain, parsed_email.sender_name, contacts))
     # Same cap as the stored copy: a 10 MB email never becomes a full-context model call.
     capped_email = replace(parsed_email, text_body=parsed_email.text_body[:TEXT_BODY_MAX_CHARACTERS])
-    contact_by_name = graph.find_contact(RECEIVER_ADDRESS, capped_email.sender_name)  # gate 1: display name only
-    reader_outcome, contact_by_claim = read_and_look_up_claimed_contact(capped_email)
+    contact_by_name = graph.find_contact_among(contacts, capped_email.sender_name)  # gate 1: display name only
+    reader_outcome, contact_by_claim = read_and_look_up_claimed_contact(capped_email, contacts)
     outcome = decide(reader_outcome, contact_by_name, contact_by_claim, capped_email.sender_address, reasons)
     escalation = None
     if needs_escalation(outcome, ESCALATION_ENABLED):
-        outcome, escalation = review_hold(capped_email, outcome, reasons, reader_outcome)
+        outcome, escalation = review_hold(capped_email, outcome, reasons, reader_outcome, contacts)
     logger.info("email %s → %s %s %s", object_key, outcome.decision, outcome.warn_reason, list(outcome.reasons))
     if outcome.decision is PolicyDecision.HOLD:
         hold_and_ask(object_key, email_row, reader_outcome, outcome, escalation)
@@ -72,18 +77,21 @@ def process_email_object(bucket_name: str, object_key: str) -> None:
         push_email_state(email_row, outcome, request_row=None, contact_name=None)
 
 
-def read_and_look_up_claimed_contact(parsed_email: ParsedEmail) -> tuple[EmailVerdict | ReaderFailure, graph.Contact | None]:
-    """Any Reader or graph failure becomes ReaderFailure (WARN unreadable, or gate 1's hold) plus a logged error; never a PASS."""
+def read_and_look_up_claimed_contact(
+    parsed_email: ParsedEmail, contacts: list[graph.Contact],
+) -> tuple[EmailVerdict | ReaderFailure, graph.Contact | None]:
+    """Any Reader failure becomes ReaderFailure (WARN unreadable, or gate 1's hold) plus a logged error; never a PASS."""
     try:
         verdict = read_email(reader, parsed_email)
-        return verdict, graph.find_contact(RECEIVER_ADDRESS, verdict.claimed_person)
+        return verdict, graph.find_contact_among(contacts, verdict.claimed_person)
     except Exception as error:
         logger.exception("reader or contact lookup failed")
         return ReaderFailure(str(error)), None
 
 
 def review_hold(
-    parsed_email: ParsedEmail, outcome: PolicyOutcome, reasons: list, reader_outcome: EmailVerdict | ReaderFailure
+    parsed_email: ParsedEmail, outcome: PolicyOutcome, reasons: list, reader_outcome: EmailVerdict | ReaderFailure,
+    contacts: list[graph.Contact],
 ) -> tuple[PolicyOutcome, EscalationVerdict | EscalationFailure]:
     """The second reviewer sees code's facts and the body; code applies its answer (gate 1 is never downgraded)."""
     facts = EscalationFacts(
@@ -98,7 +106,7 @@ def review_hold(
     escalation = escalate(escalation_reader, parsed_email, facts)
     if isinstance(escalation, EscalationFailure):
         return apply_escalation(outcome, escalation), escalation
-    answer = EscalationAnswer(escalation.decision, graph.find_contact(RECEIVER_ADDRESS, escalation.claimed_person))
+    answer = EscalationAnswer(escalation.decision, graph.find_contact_among(contacts, escalation.claimed_person))
     return apply_escalation(outcome, answer), escalation
 
 
@@ -117,12 +125,27 @@ def hold_and_ask(
     request_id = graph.request_id_of(request_row)
     graph.record_email_outcome(email_id, outcome.decision, None, outcome.reasons, request_id)
     push_email_state(email_row, outcome, request_row, contact.contact_name)
+    if not graph.take_ask_slot(contact.contact_key, ASKS_PER_CONTACT_PER_HOUR):
+        # The hold stays; no channel is tried and no re-ask is booked, so a flood of asks never reaches the contact.
+        logger.info("ask cap reached for %s; %s held without an ask", contact.contact_key, request_id)
+        graph.record_ask_capped(request_id)
+        keep_held_with_warning(email_id, email_row, request_row, outcome, WarnReason.ASK_CAPPED, contact.contact_name)
+        return
     channels_sent = asyncio.run(channels.ask_on_every_channel(request_row, contact, RECEIVER_NAME))
     graph.record_channels_sent(request_id, channels_sent)
     if not channels_sent:
-        unreachable = PolicyOutcome(PolicyDecision.WARN, WarnReason.UNREACHABLE, outcome.reasons)
-        push_email_state(email_row, unreachable, request_row, contact.contact_name)  # still held, never a release
+        keep_held_with_warning(email_id, email_row, request_row, outcome, WarnReason.UNREACHABLE, contact.contact_name)
     schedule_re_ask(request_id)
+
+
+def keep_held_with_warning(
+    email_id: str, email_row: dict, request_row: dict, outcome: PolicyOutcome, warn_reason: WarnReason, contact_name: str,
+) -> None:
+    """The request stays pending and the email held, but the EMAIL# row and the receiver both get the WARN, so a reload
+    shows the same calm banner as the live push instead of a countdown for an ask that never went out. Never a release."""
+    warned = PolicyOutcome(PolicyDecision.WARN, warn_reason, outcome.reasons)
+    graph.record_email_outcome(email_id, warned.decision, warned.warn_reason, warned.reasons, graph.request_id_of(request_row))
+    push_email_state(email_row, warned, request_row, contact_name)
 
 
 def schedule_re_ask(request_id: str) -> None:

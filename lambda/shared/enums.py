@@ -30,6 +30,7 @@ class WarnReason(StrEnum):
     UNREACHABLE = "unreachable"        # every channel failed; the hold is kept
     ESCALATION_CLEARED = "escalation_cleared"  # a model-driven hold that the second reviewer downgraded to a mark
     LINK_REASONS = "link_reasons"      # no ask, and every reason is about a link
+    ASK_CAPPED = "ask_capped"          # held, but the contact already has the hour's asks open; nothing was sent
 
 
 class ReasonCode(StrEnum):
@@ -47,12 +48,49 @@ class ReasonCode(StrEnum):
     KNOWN_SHORTENER = "known_shortener"                  # a link through a public URL shortener
     LOOKALIKE_LINK_DOMAIN = "lookalike_link_domain"      # a link domain that imitates a family domain
     LINKS_UNREADABLE = "links_unreadable"                # the HTML part would not parse, so the links are unknown
+    LISTED_SENDER_ADDRESS = "listed_sender_address"      # the exact sender address is on the scam list (sample rows in the POC)
+    LISTED_SENDER_DOMAIN = "listed_sender_domain"        # the sender's registrable domain is on the scam list
+    LOOKALIKE_SENDER_NAME = "lookalike_sender_name"      # a display name one edit or one confusable away from a contact's name
+    LOOKALIKE_SENDER_DOMAIN = "lookalike_sender_domain"  # a sender domain that imitates a family domain
+    REPORTED_SENDER = "reported_sender"                  # tier 0: Grandma reported this exact address before (Confirm)
+    LIST_LOOKUP_FAILED = "list_lookup_failed"            # the scam-list read failed; the email is marked, never passed silently
 
 
 LINK_REASON_CODES = frozenset({
     ReasonCode.LINK_TEXT_HREF_MISMATCH, ReasonCode.HIDDEN_LINK, ReasonCode.KNOWN_SHORTENER,
     ReasonCode.LOOKALIKE_LINK_DOMAIN, ReasonCode.LINKS_UNREADABLE,
 })
+
+
+class IndicatorKind(StrEnum):
+    """What a LIST# row keys on: LIST#<kind> / <normalised value>."""
+
+    ADDRESS = "address"      # a full sender address, lower-cased
+    DOMAIN = "domain"        # a registrable domain
+    LOOKALIKE = "lookalike"  # the confusable skeleton of a contact's name
+    PHONE = "phone"          # E.164 (slice 12)
+    URL = "url"              # a registrable domain or full URL (slice 12)
+
+
+class ListCategory(StrEnum):
+    """Why a value is listed."""
+
+    SCAM = "scam"
+    LOOKALIKE = "lookalike"
+
+
+class ListStrength(StrEnum):
+    """How much a hit means on its own: a reason, never a verdict."""
+
+    LISTED = "listed"
+    SUSPECT = "suspect"
+
+
+class ListSource(StrEnum):
+    """Where a LIST# row came from. Only sample rows and Pidge's own confirms exist in the POC."""
+
+    SAMPLE = "sample"                    # hand-written infra/seed/lists.sample.json, labelled as sample data in the PWA
+    PIDGE_CONFIRMED = "pidge-confirmed"  # tier 0: written by pidge-verdict on Confirm
 
 
 class GateFired(StrEnum):
@@ -115,9 +153,44 @@ class RcsInboundMessageType(StrEnum):
 
 
 class WhatsAppInboundMessageType(StrEnum):
-    """The `type` of an inbound WhatsApp message. Only a quick-reply tap on our template carries a payload."""
+    """The `type` of an inbound WhatsApp message: a quick-reply tap on our template, or a reply-button tap."""
 
     BUTTON = "button"
+    INTERACTIVE = "interactive"  # a reply-button tap on a non-template interactive message (the call offer)
+
+
+class WhatsAppInteractiveType(StrEnum):
+    """The `interactive.type` of an inbound interactive WhatsApp message. Only a reply-button tap is read."""
+
+    BUTTON_REPLY = "button_reply"
+
+
+class WhatsAppMessageStatus(StrEnum):
+    """The `status` of a WhatsApp delivery status for one of our own messages. Only a failure is acted on."""
+
+    FAILED = "failed"
+
+
+class CallPromise(StrEnum):
+    """When the contact promised to call the receiver, as tapped on the call offer."""
+
+    TODAY = "today"
+    TOMORROW = "tomorrow"
+
+
+class CallNudgeState(StrEnum):
+    """Lifecycle of the 'call Grandma?' offer sent to the contact after a verdict."""
+
+    OFFERED = "offered"                  # the reply-button offer was sent
+    CAPPED = "capped"                    # not sent: the contact already got the allowed offers
+    OFFER_FAILED = "offer_failed"        # the send raised, or Meta reported the offer failed
+    NOT_ON_WHATSAPP = "not_on_whatsapp"  # the contact has no WhatsApp number, so nothing was sent
+    PROMISED = "promised"                # the contact tapped today or tomorrow
+    REMINDED = "reminded"                # the reminder text was sent
+    REMINDER_FAILED = "reminder_failed"  # the reminder send raised, or Meta reported it failed
+
+
+PROMISED_CALL_NUDGE_STATES = (CallNudgeState.PROMISED, CallNudgeState.REMINDED, CallNudgeState.REMINDER_FAILED)
 
 
 class ReaderModelChoice(StrEnum):
@@ -158,12 +231,22 @@ class ClientAction(StrEnum):
     CLOSE_CASE = "close_case"          # the receiver: "Done" → the case is closed
     SAVE_PUSH_SUBSCRIPTION = "save_push_subscription"  # either user: this browser may get Web Push notifications
     ASK_PIDGE = "ask_pidge"                            # the receiver: a question typed in the Pidge chat window
+    VERIFY_CONTACT = "verify_contact"                  # the receiver: onboarding's code step; mock mode only for Oct 28
 
 
 class PushNotice(StrEnum):
     """Which Web Push notification is sent; each maps to one fixed sentence in shared/web_push.py, never email text."""
 
     BANK_REPLIED = "bank_replied"
+    FAMILY_CALL_TODAY = "family_call_today"        # the contact promised to call the receiver today
+    FAMILY_CALL_TOMORROW = "family_call_tomorrow"  # the contact promised to call the receiver tomorrow
+
+
+class VerifiedVia(StrEnum):
+    """How a CONTACT# row was verified. Mirrored in pwa/js/constants.js; rcs/inapp code verification is later."""
+
+    SEED = "seed"  # written by scripts/seed_graph.py
+    MOCK = "mock"  # onboarding's code step with CONTACT_VERIFICATION_MOCK on (no real channel carries the code yet)
 
 
 class ChatRole(StrEnum):
@@ -275,6 +358,7 @@ class CaseTrigger(StrEnum):
     VERDICT = "verdict"          # a REQUEST# reached a final state
     CASE = "case"                # Grandma reported a payment (CASE# written)
     CASE_CLOSED = "case_closed"  # Grandma tapped Done on the case
+    CALL_PROMISED = "call_promised"  # the contact promised to call Grandma
 
 
 class CaseEvent(StrEnum):

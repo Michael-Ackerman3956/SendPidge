@@ -19,10 +19,14 @@ NOTICE_TIME_TO_LIVE_SECONDS = 86400
 PUSH_SERVICE_TIMEOUT_SECONDS = 5
 FAILED_METRIC_NAME = "PushFailed"
 VAPID_SUBJECT = "mailto:pidge@sendpidge.com"
-# Fixed text only: a lock screen must never show email text, amounts or names from a reply.
+# Fixed text only: a lock screen must never show email text, amounts or names from a reply. The only variable is the
+# contact's name from the family graph, filled into the {contact_name} notices.
 NOTICE_TEXT = {
     PushNotice.BANK_REPLIED: ("SendPidge", "Your bank replied to your Pidge case."),
+    PushNotice.FAMILY_CALL_TODAY: ("SendPidge", "{contact_name} will call you today."),
+    PushNotice.FAMILY_CALL_TOMORROW: ("SendPidge", "{contact_name} will call you tomorrow."),
 }
+NOTICES_NEEDING_CONTACT_NAME = (PushNotice.FAMILY_CALL_TODAY, PushNotice.FAMILY_CALL_TOMORROW)
 
 _vapid_signer = None
 
@@ -50,13 +54,24 @@ def send_to_subscription(row: dict, payload: str) -> None:
             ttl=NOTICE_TIME_TO_LIVE_SECONDS, timeout=PUSH_SERVICE_TIMEOUT_SECONDS)
 
 
-def send_notice(user_id: str, notice: PushNotice) -> int:
+def notice_title_and_text(notice: PushNotice, contact_name: str | None) -> tuple[str, str]:
+    """The fixed title and sentence; a family-call notice without a contact name raises ValueError."""
+    title, text = NOTICE_TEXT[notice]
+    if notice in NOTICES_NEEDING_CONTACT_NAME:
+        if not contact_name:
+            raise ValueError(f"notice {notice} needs a contact name")
+        text = text.format(contact_name=contact_name)
+    return title, text
+
+
+def send_notice(user_id: str, notice: PushNotice, contact_name: str | None = None) -> int:
     """Sends the notice to every saved browser of the user; returns how many accepted it.
 
-    A 404/410 means the browser unsubscribed, so its row is deleted. Any other failure is logged with a PushFailed
-    metric and never raised: the in-app card already shows the same event.
+    A family-call notice without contact_name raises ValueError before anything is sent. A 404/410 means the browser
+    unsubscribed, so its row is deleted. Any other send failure is logged with a PushFailed metric and never raised:
+    the in-app card already shows the same event.
     """
-    title, text = NOTICE_TEXT[notice]
+    title, text = notice_title_and_text(notice, contact_name)
     payload = json.dumps({"title": title, "body": text, "notice": str(notice)})
     delivered_count = 0
     for row in push_subscriptions.list_subscription_rows(user_id):

@@ -106,6 +106,19 @@ def test_the_payload_is_only_the_fixed_sentence(vapid_secret, monkeypatch):
     assert sent_payloads == [{"title": "SendPidge", "body": "Your bank replied to your Pidge case.", "notice": "bank_replied"}]
 
 
+def test_family_call_notice_names_the_contact_and_refuses_without_a_name(vapid_secret, monkeypatch):
+    push_subscriptions.save_subscription("grandma", {"subscription": browser_subscription()})
+    sent_payloads = []
+    monkeypatch.setattr(web_push, "webpush", lambda subscription, data, **_: sent_payloads.append(json.loads(data)))
+    assert web_push.send_notice("grandma", PushNotice.FAMILY_CALL_TODAY, contact_name="Jimin") == 1
+    assert web_push.send_notice("grandma", PushNotice.FAMILY_CALL_TOMORROW, contact_name="Jimin") == 1
+    assert [payload["body"] for payload in sent_payloads] == ["Jimin will call you today.", "Jimin will call you tomorrow."]
+    for notice in (PushNotice.FAMILY_CALL_TODAY, PushNotice.FAMILY_CALL_TOMORROW):
+        with pytest.raises(ValueError):
+            web_push.send_notice("grandma", notice)
+    assert len(sent_payloads) == 2  # the refused notices sent nothing
+
+
 def test_an_expired_browser_is_removed(vapid_secret, monkeypatch):
     push_subscriptions.save_subscription("grandma", {"subscription": browser_subscription()})
     monkeypatch.setattr(pywebpush.requests, "post", RecordedPost(410))

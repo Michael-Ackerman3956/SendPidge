@@ -1,0 +1,23 @@
+[
+  {"kind": "domain", "value": "jimin-help.example", "category": "scam", "strength": "listed", "reason": "A free mail domain used to pose as a grandchild in the sample case", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "friend-mail.example", "category": "scam", "strength": "suspect", "reason": "'My phone broke, I am writing from a friend's email' sample pattern", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "kakaobank-secure.example", "category": "lookalike", "strength": "listed", "reason": "Brand name hyphenated into an unrelated domain", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "zelle-pay-help.example", "category": "lookalike", "strength": "listed", "reason": "Brand name hyphenated into an unrelated domain", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "apple-id-verify.example", "category": "lookalike", "strength": "listed", "reason": "Brand name hyphenated into an unrelated domain", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "paypa1-service.example", "category": "lookalike", "strength": "listed", "reason": "Digit 1 for the letter l in a brand name", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "hospital-deposit-urgent.example", "category": "scam", "strength": "listed", "reason": "Sample hospital-deposit lure domain", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "bail-bond-now.example", "category": "scam", "strength": "listed", "reason": "Sample bail-money lure domain", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "gift-card-rewards.example", "category": "scam", "strength": "listed", "reason": "Sample gift-card lure domain", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "crypto-atm-support.example", "category": "scam", "strength": "listed", "reason": "Sample crypto-ATM lure domain", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "domain", "value": "delivery-fee-notice.example", "category": "scam", "strength": "suspect", "reason": "Sample parcel-fee lure domain", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "address", "value": "support@kakaobank-secure.example", "category": "scam", "strength": "listed", "reason": "Sample bank-impersonation address", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "address", "value": "helpdesk@apple-id-verify.example", "category": "scam", "strength": "listed", "reason": "Sample account-verification address", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "address", "value": "grandson.urgent@freemail.example", "category": "scam", "strength": "listed", "reason": "Sample grandchild-impersonation address", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "address", "value": "rewards@gift-card-rewards.example", "category": "scam", "strength": "listed", "reason": "Sample gift-card lure address", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "lookalike", "value": "Jimin", "contactName": "Jimin", "category": "lookalike", "strength": "suspect", "reason": "Names that print like the contact's name (confusable skeleton)", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "lookalike", "value": "Minho", "contactName": "Minho", "category": "lookalike", "strength": "suspect", "reason": "Names that print like the contact's name (confusable skeleton)", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "phone", "value": "+82 10 0000 0001", "category": "scam", "strength": "listed", "reason": "Sample callback number from a hospital-deposit lure (slice 12 reads phone rows)", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "phone", "value": "+1 555 010 0002", "category": "scam", "strength": "listed", "reason": "Sample callback number from a bail lure (slice 12 reads phone rows)", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "url", "value": "https://kakaobank-secure.example/verify", "category": "scam", "strength": "listed", "reason": "Sample credential-harvest URL (slice 12 reads url rows)", "addedAt": "2026-10-25T00:00:00Z"},
+  {"kind": "url", "value": "https://delivery-fee-notice.example/pay", "category": "scam", "strength": "listed", "reason": "Sample parcel-fee URL (slice 12 reads url rows)", "addedAt": "2026-10-25T00:00:00Z"}
+]

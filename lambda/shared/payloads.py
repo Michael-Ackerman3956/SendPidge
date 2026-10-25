@@ -1,6 +1,10 @@
 """The JSON shapes pushed to the PWAs. One place, so the Reader, the verdict handler and sync agree."""
 
-from shared.enums import CaseEvent, PushMessageType, RequestState
+import logging
+
+from shared.enums import CaseEvent, Channel, Friction, PushMessageType, RequestState, VerifiedVia
+
+logger = logging.getLogger(__name__)
 
 EMAIL_FIELDS_FOR_PWA = ("senderName", "senderAddress", "subject", "receivedAt", "textBody")
 
@@ -50,7 +54,7 @@ def card_for_contact(request_row: dict, email_row: dict | None, receiver_name: s
         "summary": request_row["verdict"]["summary"],
         "senderAddress": (email_row or {}).get("senderAddress", ""),
         "subject": (email_row or {}).get("subject", ""),
-        "friction": request_row["friction"],
+        "friction": request_row.get("friction", Friction.SINGLE_TAP),  # absent on rows written before slice 8 (one tap then)
         "status": status,
         "receiverName": receiver_name,
         **request_timing(request_row),
@@ -108,3 +112,27 @@ def case_state_message(case_row: dict, reply_rows: list[dict], event: CaseEvent)
 
 def contact_notice_message(text: str) -> dict:
     return {"type": PushMessageType.CONTACT_NOTICE, "text": text}
+
+
+def verified_via_of(contact_row: dict) -> VerifiedVia:
+    """Only scripts/seed_graph.py writes CONTACT# rows, so a row without the field is a seeded one; it is logged, never silent.
+    An unknown value still raises."""
+    if "verifiedVia" not in contact_row:
+        logger.warning("contact row %s has no verifiedVia; treating as seed (re-run scripts/seed_graph.py)", contact_row["SK"])
+        return VerifiedVia.SEED
+    return VerifiedVia(contact_row["verifiedVia"])
+
+
+def circle_entry_for_receiver(contact_row: dict) -> dict:
+    """One member of the receiver's circle: who, how verified, which channels reach them. Never a number or an address."""
+    return {
+        "contactUserId": contact_row["contactPwaUserId"],
+        "contactName": contact_row["contactName"],
+        "verifiedVia": str(verified_via_of(contact_row)),
+        "verifiedAt": contact_row.get("verifiedAt"),
+        "reach": {
+            str(Channel.INAPP): True,
+            str(Channel.RCS): "contactRcs" in contact_row,
+            str(Channel.WHATSAPP): "contactWhatsApp" in contact_row,
+        },
+    }

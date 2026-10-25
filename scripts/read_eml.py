@@ -9,6 +9,7 @@ Needs AWS_PROFILE (or ambient credentials) and READER_MODEL in the environment; 
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -23,6 +24,7 @@ from shared.email_parse import parse_eml  # noqa: E402
 from shared.enums import EscalationDecision, ReaderModelChoice  # noqa: E402
 from shared.graph import Contact  # noqa: E402
 from shared.links import assess_links, link_reasons  # noqa: E402
+from shared.lists import SeedListStore, list_row_from_seed, lookup_sender_reasons  # noqa: E402
 from shared.policy import EscalationAnswer, ReaderFailure, apply_escalation, decide, needs_escalation  # noqa: E402
 from shared.reader_agent import BEDROCK_REGION, build_reader, read_email  # noqa: E402
 from shared.sanitize import sanitize_summary  # noqa: E402
@@ -73,6 +75,8 @@ def main() -> None:
                         help="an address every named contact is known to write from; repeatable")
     parser.add_argument("--escalation", type=EscalationDecision, choices=list(EscalationDecision), default=None,
                         help="fake the second reviewer's decision instead of calling Opus")
+    parser.add_argument("--lists", type=Path, default=None,
+                        help="a scam-list seed file (infra/seed/lists.sample.json) read in memory instead of DynamoDB")
     arguments = parser.parse_args()
     contact_names = arguments.contact_names or DEFAULT_CONTACT_NAMES
     known_addresses = tuple(address.casefold() for address in arguments.known_addresses)
@@ -88,6 +92,9 @@ def main() -> None:
     link_assessments = assess_links(parsed_email.links, family_domains)
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
     reasons.extend(link_reasons(link_assessments, parsed_email.links_unreadable))
+    if arguments.lists is not None:
+        list_store = SeedListStore([list_row_from_seed(seed_row) for seed_row in json.loads(arguments.lists.read_text())])
+        reasons.extend(lookup_sender_reasons(list_store, parsed_email.sender_address, parsed_email.sender_domain, parsed_email.sender_name, contacts))
     for assessment in link_assessments:
         print(f"link: text={assessment.link.visible_text!r} domain={assessment.link.registrable_domain} flagged={assessment.is_flagged}")
     reader = build_reader(model_choice, session)

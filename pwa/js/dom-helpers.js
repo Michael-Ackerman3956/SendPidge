@@ -34,14 +34,17 @@ export function buildPidgeIconElement(className, alternativeText) {
   return pidgeIcon;
 }
 
-function buildSvgIcon(className, pathData) {
+// One 24-unit icon from one path string or a list of them; styling (fill, stroke) comes from the class.
+export function buildSvgIcon(className, pathData) {
   const iconSvg = document.createElementNS(SVG_NAMESPACE, "svg");
   iconSvg.setAttribute("viewBox", "0 0 24 24");
   iconSvg.setAttribute("aria-hidden", "true");
   iconSvg.setAttribute("class", className);
-  const iconPath = document.createElementNS(SVG_NAMESPACE, "path");
-  iconPath.setAttribute("d", pathData);
-  iconSvg.append(iconPath);
+  [].concat(pathData).forEach((singlePathData) => {
+    const iconPath = document.createElementNS(SVG_NAMESPACE, "path");
+    iconPath.setAttribute("d", singlePathData);
+    iconSvg.append(iconPath);
+  });
   return iconSvg;
 }
 

@@ -5,15 +5,18 @@ import { connectToPushChannel } from "./websocket.js";
 import { refreshPushSubscriptionAfterSync, startPushNotifications } from "./push-notifications.js";
 import { ACTION_STATUS_MESSAGE, showActionStatusMessage } from "./action-status.js";
 import {
-  applyReceiverSyncState, handleEmailStatePush, handleReceiverActionRejected, handleReceiverRequestStatePush,
-  hideReceiverView, showReceiverView,
+  applyReadingPaneLayout, applyReceiverSyncState, handleEmailStatePush, handleReceiverActionRejected, handleReceiverRequestStatePush,
+  hideReceiverView, setUnseenHoldListener, showReceiverView,
 } from "./receiver-view.js";
 import {
   applyContactSyncState, handleContactActionRejected, handleContactRequestStatePush, handleVerificationCardPush,
   hideContactView, showContactView,
 } from "./contact-view.js";
-import { handlePidgeReplyPush, startPidgeChat } from "./pidge-chat.js";
+import { applyChatSyncState, handlePidgeReplyPush, startPidgeChat } from "./pidge-chat.js";
 import { applyPidgeSyncState, handleCaseNotePush, handleCaseStatePush, handlePidgeActionRejected, hidePidgeView, showPidgeView } from "./pidge-view.js";
+import { applyCircleSyncState, hideCircleView, showCircleView, startCircleView } from "./circle-view.js";
+import { ONBOARDING_START, handleCircleSyncDuringOnboarding, handleOnboardingActionRejected, hideOnboarding, startOnboarding } from "./onboarding.js";
+import { startReadingPane } from "./reading-pane.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
 const ACCESS_TOKEN_QUERY_PARAMETER = "token";
@@ -21,8 +24,10 @@ const KNOWN_ACTION_REJECTED_REASONS = new Set(Object.values(ACTION_REJECTED_REAS
 
 let activeUserRole = null;
 
-const RECEIVER_TAB = Object.freeze({ INBOX: "inbox", PIDGE: "pidge" });
+const RECEIVER_TAB = Object.freeze({ INBOX: "inbox", CIRCLE: "circle", PIDGE: "pidge" });
 let activeReceiverTab = RECEIVER_TAB.INBOX;
+let isOnboardingOpen = false;
+let hasUnseenHold = false;
 
 const pageElements = {
   connectionDot: document.getElementById("connection-dot"),
@@ -30,24 +35,44 @@ const pageElements = {
   tokenError: document.getElementById("token-error"),
   loadingState: document.getElementById("loading-state"),
   receiverTabs: document.getElementById("receiver-tabs"),
-  inboxTab: document.getElementById("tab-inbox"),
-  pidgeTab: document.getElementById("tab-pidge"),
+  inboxTabDot: document.getElementById("tab-inbox-dot"),
 };
+const tabButtons = Object.freeze({
+  [RECEIVER_TAB.INBOX]: document.getElementById("tab-inbox"),
+  [RECEIVER_TAB.CIRCLE]: document.getElementById("tab-circle"),
+  [RECEIVER_TAB.PIDGE]: document.getElementById("tab-pidge"),
+});
+const tabViews = Object.freeze({
+  [RECEIVER_TAB.INBOX]: { show: showReceiverView, hide: hideReceiverView },
+  [RECEIVER_TAB.CIRCLE]: { show: showCircleView, hide: hideCircleView },
+  [RECEIVER_TAB.PIDGE]: { show: showPidgeView, hide: hidePidgeView },
+});
+
+function renderInboxTabDot() {
+  pageElements.inboxTabDot.hidden = !hasUnseenHold || activeReceiverTab === RECEIVER_TAB.INBOX;
+}
 
 function showReceiverTab(tab) {
   activeReceiverTab = tab;
-  const isInbox = tab === RECEIVER_TAB.INBOX;
-  pageElements.inboxTab.classList.toggle("is-active", isInbox);
-  pageElements.inboxTab.setAttribute("aria-pressed", String(isInbox));
-  pageElements.pidgeTab.classList.toggle("is-active", !isInbox);
-  pageElements.pidgeTab.setAttribute("aria-pressed", String(!isInbox));
-  if (isInbox) {
-    hidePidgeView();
-    showReceiverView();
-  } else {
-    hideReceiverView();
-    showPidgeView();
+  if (isOnboardingOpen) {
+    isOnboardingOpen = false;
+    hideOnboarding();
+    pageElements.receiverTabs.hidden = false;
   }
+  Object.entries(tabButtons).forEach(([tabName, button]) => {
+    button.classList.toggle("is-active", tabName === tab);
+    button.setAttribute("aria-pressed", String(tabName === tab));
+  });
+  Object.entries(tabViews).forEach(([tabName, view]) => (tabName === tab ? view.show() : view.hide()));
+  renderInboxTabDot();
+}
+
+// Onboarding takes the whole screen; the tab bar comes back when it finishes or a tab is tapped.
+function openOnboarding(startStep) {
+  isOnboardingOpen = true;
+  Object.values(tabViews).forEach((view) => view.hide());
+  pageElements.receiverTabs.hidden = true;
+  startOnboarding({ startStep, onFinishedCallback: () => showReceiverTab(RECEIVER_TAB.INBOX) });
 }
 
 function readAccessTokenFromStorage() {
@@ -86,14 +111,17 @@ function handleSyncStatePush(pushMessage) {
       if (activeUserRole === USER_ROLE.CONTACT) hideContactView();
       activeUserRole = USER_ROLE.RECEIVER;
       pageElements.loadingState.hidden = true;
-      pageElements.receiverTabs.hidden = false;
-      if (activeReceiverTab === RECEIVER_TAB.INBOX) showReceiverView();
+      pageElements.receiverTabs.hidden = isOnboardingOpen;
+      if (activeReceiverTab === RECEIVER_TAB.INBOX && !isOnboardingOpen) showReceiverView();
+      applyCircleSyncState(pushMessage.circle);
       applyReceiverSyncState(pushMessage.emails);
       applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);
+      applyChatSyncState(pushMessage.chat, pushMessage.chatEnabled);
+      handleCircleSyncDuringOnboarding();
       refreshPushSubscriptionAfterSync();
       break;
     case USER_ROLE.CONTACT:
-      if (activeUserRole === USER_ROLE.RECEIVER) { hideReceiverView(); hidePidgeView(); pageElements.receiverTabs.hidden = true; }
+      if (activeUserRole === USER_ROLE.RECEIVER) { Object.values(tabViews).forEach((view) => view.hide()); hideOnboarding(); pageElements.receiverTabs.hidden = true; }
       activeUserRole = USER_ROLE.CONTACT;
       pageElements.loadingState.hidden = true;
       showContactView();
@@ -124,6 +152,7 @@ function handleActionRejectedPush(pushMessage) {
   if (activeUserRole === USER_ROLE.RECEIVER) {
     handleReceiverActionRejected(requestId);
     handlePidgeActionRejected();
+    handleOnboardingActionRejected();
   } else {
     handleContactActionRejected(requestId);
   }
@@ -157,7 +186,7 @@ function handlePushMessage(pushMessage) {
       handleSyncStatePush(pushMessage);
       break;
     case PUSH_MESSAGE_TYPE.EMAIL_STATE:
-      if (activeReceiverTab === RECEIVER_TAB.PIDGE) showReceiverTab(RECEIVER_TAB.INBOX); // a new hold must be seen
+      if (activeReceiverTab !== RECEIVER_TAB.INBOX || isOnboardingOpen) showReceiverTab(RECEIVER_TAB.INBOX); // a new hold must be seen
       handleEmailStatePush(pushMessage.email);
       break;
     case PUSH_MESSAGE_TYPE.VERIFICATION_CARD:
@@ -193,8 +222,10 @@ function updateConnectionDot(connectionStatus) {
 }
 
 function startApp() {
-  pageElements.inboxTab.addEventListener("click", () => showReceiverTab(RECEIVER_TAB.INBOX));
-  pageElements.pidgeTab.addEventListener("click", () => showReceiverTab(RECEIVER_TAB.PIDGE));
+  Object.entries(tabButtons).forEach(([tabName, button]) => button.addEventListener("click", () => showReceiverTab(tabName)));
+  setUnseenHoldListener((hasUnseenPendingHold) => { hasUnseenHold = hasUnseenPendingHold; renderInboxTabDot(); });
+  startCircleView(() => openOnboarding(ONBOARDING_START.PICK_CIRCLE));
+  startReadingPane(() => { if (activeUserRole === USER_ROLE.RECEIVER && activeReceiverTab === RECEIVER_TAB.INBOX) applyReadingPaneLayout(); });
   startPidgeChat();
   const accessToken = resolveAccessToken();
   if (!accessToken) {

@@ -110,3 +110,16 @@ def test_a_confirmed_request_tells_the_agent_the_email_was_real(aws):
     metadata = case_agent.case_metadata(case_agent.CaseScope(RECEIVER_USER_ID, request_id, CaseTrigger.VERDICT))
     assert metadata["status"] == "confirmed"
     assert metadata["whatHappened"].startswith("Jimin answered Yes: the email really came from Jimin")
+
+
+def test_the_request_row_is_read_with_a_strongly_consistent_read(monkeypatch):
+    captured_kwargs = {}
+
+    class FakeTable:
+        def get_item(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            return {"Item": {"status": "reversed_no"}}
+
+    monkeypatch.setattr(graph, "get_table", lambda: FakeTable())
+    assert graph.get_request("req-1")["status"] == "reversed_no"
+    assert captured_kwargs["ConsistentRead"] is True

@@ -1,8 +1,9 @@
 // Jimin's screen (CONTACT): one "Was this you?" card per request, newest first. Yes / No go over the socket; a double_tap
-// card asks once more before Yes; a Yes can be undone while it waits to release; a No can be taken back for five minutes.
+// card arms Yes on the first tap and sends on the second; a Yes can be undone while it waits to release; a No can be taken
+// back for five minutes.
 // summary, senderAddress, subject and receiverName are attacker-influenced: rendered only through textContent / createElement.
 import { CLIENT_ACTION, FRICTION, REQUEST_STATUS, VERDICT_ANSWER } from "./constants.js";
-import { buildPidgeIconElement, buildTickIcon, createElementWithText, formatRemainingTimeAsMinutesSeconds, parseTimestampMilliseconds } from "./dom-helpers.js";
+import { buildPidgeIconElement, buildSvgIcon, buildTickIcon, createElementWithText, formatRemainingTimeAsMinutesSeconds, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
 
@@ -26,7 +27,7 @@ const CONTACT_CARD_STATE = Object.freeze({
 
 const requestsById = new Map();
 const answersInFlightByRequestId = new Map();
-const confirmingRequestIds = new Set(); // double_tap cards whose first Yes was tapped
+const armedRequestIds = new Set(); // double_tap cards whose first Yes was tapped
 let countdownIntervalId = null;
 
 const pageElements = {
@@ -80,8 +81,15 @@ function buildCardButton(request, answer, labelText, buttonClass, onClick) {
 }
 
 function buildAnswerButton(request, answer, labelText) {
-  const buttonClass = answer === VERDICT_ANSWER.YES ? "contact-answer-button is-yes" : "contact-answer-button is-no";
-  return buildCardButton(request, answer, labelText, buttonClass, () => handleContactTappedAnswer(request.requestId, answer));
+  const isArmed = answer === VERDICT_ANSWER.YES && armedRequestIds.has(request.requestId);
+  const buttonClass = answer === VERDICT_ANSWER.YES ? `contact-answer-button is-yes${isArmed ? " is-armed" : ""}` : "contact-answer-button is-no";
+  const button = buildCardButton(request, answer, labelText, buttonClass, () => handleContactTappedAnswer(request.requestId, answer));
+  button.prepend(answer === VERDICT_ANSWER.YES ? buildTickIcon("tick-icon") : buildCrossIcon());
+  return button;
+}
+
+function buildCrossIcon() {
+  return buildSvgIcon("cross-icon", "M6 6l12 12M18 6 6 18");
 }
 
 function buildCountdownElement(targetIsoText, className) {
@@ -92,36 +100,24 @@ function buildCountdownElement(targetIsoText, className) {
   return countdownElement;
 }
 
+// Title, "From <address>", the subject in quotes, then the one-sentence summary. The address is the fact Jimin judges by.
 function buildCardHeaderChildren(request) {
   const metaElement = createElementWithText("p", "contact-card-meta");
-  metaElement.append(createElementWithText("span", "contact-card-meta-label", "From "),
-    createElementWithText("span", "contact-card-address", request.senderAddress));
+  metaElement.append(createElementWithText("span", "", "From "), createElementWithText("span", "contact-card-address", request.senderAddress),
+    document.createElement("br"), createElementWithText("span", "contact-card-subject", `“${request.subject}”`));
   return [buildPidgeIconElement("contact-card-pidge", ""), createElementWithText("h2", "contact-card-title", "Was this you?"),
-    createElementWithText("p", "contact-card-summary", request.summary), metaElement,
-    createElementWithText("p", "contact-card-subject", request.subject),
-    createElementWithText("p", "contact-card-receiver", `Email to ${request.receiverName}`)];
-}
-
-// Second step of a double_tap card: the address is shown again and Yes must be tapped once more.
-function buildConfirmStepChildren(request) {
-  const answerRow = createElementWithText("div", "contact-answer-row");
-  answerRow.append(buildAnswerButton(request, VERDICT_ANSWER.YES, "Yes, it was me"));
-  const backButton = createElementWithText("button", "contact-secondary-button", "Back");
-  backButton.type = "button";
-  backButton.addEventListener("click", () => { confirmingRequestIds.delete(request.requestId); renderContactCards(); });
-  answerRow.append(backButton);
-  return [createElementWithText("p", "contact-card-confirm-step", `This came from ${request.senderAddress}. Really you?`), answerRow];
+    metaElement, createElementWithText("p", "contact-card-summary", request.summary)];
 }
 
 function buildQuestionCardChildren(request, contactCardState) {
   const children = buildCardHeaderChildren(request);
-  if (confirmingRequestIds.has(request.requestId) && contactCardState === CONTACT_CARD_STATE.ASKING) {
-    return children.concat(buildConfirmStepChildren(request));
-  }
   const answerRow = createElementWithText("div", "contact-answer-row");
   if (contactCardState === CONTACT_CARD_STATE.ASKING) {
-    children.push(buildCountdownElement(request.expiresAt, "contact-countdown"));
-    answerRow.append(buildAnswerButton(request, VERDICT_ANSWER.YES, "Yes, it was me"));
+    const countdownElement = buildCountdownElement(request.expiresAt, "contact-countdown");
+    countdownElement.append(createElementWithText("span", "", " left"));
+    children.push(countdownElement);
+    const isArmed = armedRequestIds.has(request.requestId);
+    answerRow.append(buildAnswerButton(request, VERDICT_ANSWER.YES, isArmed ? "Tap again: yes, it was me" : "Yes, it was me"));
   } else {
     children.push(createElementWithText("p", "contact-card-late", "Time's up, but you can still say no."));
   }
@@ -131,8 +127,7 @@ function buildQuestionCardChildren(request, contactCardState) {
 }
 
 function buildAnsweredCardChildren(request, contactCardState) {
-  const children = [createElementWithText("p", "contact-card-summary", request.summary),
-    createElementWithText("p", "contact-card-receiver", request.senderAddress)];
+  const children = [...buildCardHeaderChildren(request)];
   if (contactCardState === CONTACT_CARD_STATE.SAID_YES_PENDING) {
     const resultLine = createElementWithText("p", "contact-card-result is-yes", "You said yes. Opening in ");
     resultLine.append(buildCountdownElement(request.releaseAt, "contact-release-countdown"));
@@ -147,9 +142,11 @@ function buildAnsweredCardChildren(request, contactCardState) {
     resultLine.append(buildTickIcon("tick-icon"), createElementWithText("span", "", "You changed your answer. The email was opened."));
     children.push(resultLine);
   } else {
-    children.push(createElementWithText("p", "contact-card-result is-no", `You said no. ${request.receiverName}'s email stays held.`));
+    const resultLine = createElementWithText("p", "contact-card-result is-no");
+    resultLine.append(buildCrossIcon(), createElementWithText("span", "", `You said no. ${request.receiverName}'s email stays held.`));
+    children.push(resultLine);
     if (isWithinReverseWindow(request)) {
-      children.push(buildCardButton(request, VERDICT_ANSWER.REVERSE, "I made a mistake, it was me", "contact-secondary-button",
+      children.push(buildCardButton(request, VERDICT_ANSWER.REVERSE, "I made a mistake", "contact-secondary-button",
         () => handleContactTappedAnswer(request.requestId, VERDICT_ANSWER.REVERSE)));
     }
   }
@@ -158,7 +155,7 @@ function buildAnsweredCardChildren(request, contactCardState) {
 
 function buildContactCardElement(request) {
   const contactCardState = resolveContactCardState(request);
-  const cardElement = createElementWithText("li", "contact-card");
+  const cardElement = createElementWithText("li", contactCardState === CONTACT_CARD_STATE.ASKING ? "contact-card is-open" : "contact-card");
   cardElement.dataset.requestId = request.requestId;
   const isAnswered = contactCardState !== CONTACT_CARD_STATE.ASKING && contactCardState !== CONTACT_CARD_STATE.LATE;
   cardElement.append(...(isAnswered ? buildAnsweredCardChildren(request, contactCardState) : buildQuestionCardChildren(request, contactCardState)));
@@ -204,9 +201,9 @@ function tickContactCountdowns() {
 function handleContactTappedAnswer(requestId, answer) {
   clearActionStatusMessage();
   const request = requestsById.get(requestId);
-  const needsSecondTap = answer === VERDICT_ANSWER.YES && request.friction === FRICTION.DOUBLE_TAP && !confirmingRequestIds.has(requestId);
+  const needsSecondTap = answer === VERDICT_ANSWER.YES && request.friction === FRICTION.DOUBLE_TAP && !armedRequestIds.has(requestId);
   if (needsSecondTap) {
-    confirmingRequestIds.add(requestId);
+    armedRequestIds.add(requestId);
     renderContactCards();
     return;
   }
@@ -247,7 +244,7 @@ export function handleContactRequestStatePush(requestUpdate) {
   requestsById.set(existingRequest.requestId, { ...existingRequest, status: requestUpdate.status,
     resolvedAt: requestUpdate.resolvedAt ?? null, releaseAt: requestUpdate.releaseAt ?? null });
   answersInFlightByRequestId.delete(existingRequest.requestId);
-  confirmingRequestIds.delete(existingRequest.requestId);
+  armedRequestIds.delete(existingRequest.requestId);
   renderContactCards();
 }
 

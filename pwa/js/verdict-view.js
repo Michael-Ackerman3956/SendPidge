@@ -1,8 +1,11 @@
-// Grandma's verdict visuals: one display state per email, the row mark, the detail banner and the red denied-verdict overlay.
-// contactName and every email field are attacker-influenced: rendered only through textContent.
-import { EMAIL_DISPLAY_STATE, POLICY_DECISION, REQUEST_STATUS } from "./constants.js";
-import { buildPidgeIconElement, buildTickIcon, createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
+// Grandma's verdict visuals: one display state per email, the row mark and status chip, the detail banner, the celebration
+// card and the red denied-verdict overlay. contactName and every email field are attacker-influenced: textContent only.
+import { CALL_PROMISE, EMAIL_DISPLAY_STATE, POLICY_DECISION, REQUEST_STATUS } from "./constants.js";
+import { buildPidgeIconElement, buildTickIcon, createElementWithText, formatRemainingTimeAsMinutesSeconds, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { buildWarnBannerElement, replaceActiveOverlay } from "./pidge-overlay.js";
+
+const CONFETTI_PIECE_COUNT = 18;
+const CONFETTI_COLORS = Object.freeze(["#4ade80", "#3AA68E", "#F59E0B", "#ffffff"]);
 
 // A confirmed_pending whose releaseAt has passed reads as confirmed (the server releases it on its next read too).
 export function hasReleaseTimePassed(request) {
@@ -42,8 +45,8 @@ function buildVerifiedTickMarkElement() {
   return tickMark;
 }
 
-// The small mark at the end of an inbox row, or null for a plain row.
-export function buildRowStatusElement(emailDisplayState) {
+// The small mark on the row's avatar, or null for a plain row.
+export function buildRowMarkElement(emailDisplayState) {
   switch (emailDisplayState) {
     case EMAIL_DISPLAY_STATE.QUARANTINED:
     case EMAIL_DISPLAY_STATE.DENIED:
@@ -52,12 +55,37 @@ export function buildRowStatusElement(emailDisplayState) {
     case EMAIL_DISPLAY_STATE.REVERSED:
       return buildVerifiedTickMarkElement();
     case EMAIL_DISPLAY_STATE.RELEASING:
-      return createElementWithText("span", "row-released-tag", "Opening…");
-    case EMAIL_DISPLAY_STATE.RELEASED_BY_USER:
-      return createElementWithText("span", "row-released-tag", "Released by you");
     case EMAIL_DISPLAY_STATE.AWAITING_VERDICT:
     case EMAIL_DISPLAY_STATE.FLAGGED:
       return buildFlagMarkElement(false);
+    default:
+      return null;
+  }
+}
+
+function buildStatusChipElement(chipClassName, chipText) {
+  return createElementWithText("span", `status-chip ${chipClassName}`, chipText);
+}
+
+// The text chip beside the channel tag on an inbox row ("Held · checking with Jimin"), or null for a plain row.
+export function buildRowStatusChipElement(email, emailDisplayState) {
+  const contactName = email.request === null ? "" : email.request.contactName;
+  switch (emailDisplayState) {
+    case EMAIL_DISPLAY_STATE.QUARANTINED:
+      return buildStatusChipElement("is-threat", "Reported");
+    case EMAIL_DISPLAY_STATE.DENIED:
+      return buildStatusChipElement("is-threat", `Not from ${contactName}`);
+    case EMAIL_DISPLAY_STATE.CONFIRMED:
+    case EMAIL_DISPLAY_STATE.REVERSED:
+      return buildStatusChipElement("is-verified", `${contactName} confirmed`);
+    case EMAIL_DISPLAY_STATE.RELEASING:
+      return buildStatusChipElement("is-hold", "Opening…");
+    case EMAIL_DISPLAY_STATE.RELEASED_BY_USER:
+      return buildStatusChipElement("", "Released by you");
+    case EMAIL_DISPLAY_STATE.AWAITING_VERDICT:
+      return buildStatusChipElement("is-hold", `Held · checking with ${contactName}`);
+    case EMAIL_DISPLAY_STATE.FLAGGED:
+      return buildStatusChipElement("is-warn", email.state === POLICY_DECISION.HOLD ? "Held" : "Be careful");
     default:
       return null;
   }
@@ -72,23 +100,44 @@ function buildVerifiedBannerElement(bannerText, shouldCelebrate) {
   return bannerElement;
 }
 
+// "{contactName} will call you today." / "… tomorrow.", or null when the contact made no call promise.
+function buildCallPromiseLineElement(request) {
+  if (request === null || request.callPromise === null || request.callPromise === undefined) return null;
+  const dayText = request.callPromise === CALL_PROMISE.TODAY ? "today" : "tomorrow";
+  return createElementWithText("p", "call-promise-line", `${request.contactName} will call you ${dayText}.`);
+}
+
+// The verdict banner followed by the call promise line, wrapped only when there is a promise.
+function withCallPromiseLine(bannerElement, request) {
+  const callPromiseLine = buildCallPromiseLineElement(request);
+  if (callPromiseLine === null) return bannerElement;
+  const bannerGroup = createElementWithText("div", "verdict-banner-group");
+  bannerGroup.append(bannerElement, callPromiseLine);
+  return bannerGroup;
+}
+
 // The banner at the top of the detail, or null when the state has none.
 export function buildDetailBannerElement(email, emailDisplayState, shouldCelebrate) {
   if (emailDisplayState === EMAIL_DISPLAY_STATE.QUARANTINED) {
     const quarantineBanner = createElementWithText("p", "threat-banner", "Reported and quarantined.");
     quarantineBanner.setAttribute("role", "status");
-    return quarantineBanner;
+    return withCallPromiseLine(quarantineBanner, email.request);
   }
   if (emailDisplayState === EMAIL_DISPLAY_STATE.CONFIRMED) {
-    return buildVerifiedBannerElement(`${email.request.contactName} confirmed they sent this.`, shouldCelebrate);
+    return withCallPromiseLine(
+      buildVerifiedBannerElement(`${email.request.contactName} confirmed they sent this.`, shouldCelebrate), email.request);
   }
   if (emailDisplayState === EMAIL_DISPLAY_STATE.REVERSED) {
-    return buildVerifiedBannerElement(`${email.request.contactName} changed their answer: they sent this.`, shouldCelebrate);
+    return withCallPromiseLine(
+      buildVerifiedBannerElement(`${email.request.contactName} changed their answer: they sent this.`, shouldCelebrate), email.request);
   }
   if (emailDisplayState === EMAIL_DISPLAY_STATE.RELEASING) {
-    const releasingBanner = createElementWithText("p", "warn-banner", `${email.request.contactName} said yes. Opening in a moment.`);
-    releasingBanner.setAttribute("role", "status");
-    return releasingBanner;
+    return withCallPromiseLine(buildReleasingBannerElement(email.request), email.request);
+  }
+  if (emailDisplayState === EMAIL_DISPLAY_STATE.RELEASED_BY_USER) {
+    const releasedBanner = createElementWithText("p", "released-banner", `You released this one yourself. Pidge still hasn't heard from ${email.request.contactName}.`);
+    releasedBanner.setAttribute("role", "status");
+    return releasedBanner;
   }
   if (email.state === POLICY_DECISION.WARN) {
     return buildWarnBannerElement(email);
@@ -96,8 +145,51 @@ export function buildDetailBannerElement(email, emailDisplayState, shouldCelebra
   return null;
 }
 
+// "Jimin said yes. Opening in 7 s." with the seconds ticking until releaseAt; the caller re-renders when it passes.
+function buildReleasingBannerElement(request) {
+  const releasingBanner = createElementWithText("p", "warn-banner", `${request.contactName} said yes. Opening in `);
+  releasingBanner.setAttribute("role", "status");
+  const secondsElement = createElementWithText("span", "releasing-seconds");
+  secondsElement.setAttribute("role", "timer");
+  const releaseAtMilliseconds = parseTimestampMilliseconds(request.releaseAt) ?? Date.now();
+  const updateSeconds = () => {
+    const remainingMilliseconds = releaseAtMilliseconds - Date.now();
+    secondsElement.textContent = `${Math.max(0, Math.ceil(remainingMilliseconds / 1000))} s.`;
+    if (remainingMilliseconds <= 0 || !secondsElement.isConnected) clearInterval(tickIntervalId);
+  };
+  const tickIntervalId = setInterval(updateSeconds, 1000);
+  updateSeconds();
+  releasingBanner.append(secondsElement);
+  return releasingBanner;
+}
+
+// The confetti card over the detail after the real person said yes; any tap closes it.
+export function buildCelebrationElement(contactName, onClosed) {
+  const celebration = createElementWithText("div", "celebration");
+  celebration.setAttribute("role", "dialog");
+  celebration.setAttribute("aria-label", `It really was ${contactName}`);
+  for (let pieceIndex = 0; pieceIndex < CONFETTI_PIECE_COUNT; pieceIndex += 1) {
+    const piece = createElementWithText("i", "confetti-piece");
+    piece.style.left = `${8 + pieceIndex * 5}%`;
+    piece.style.background = CONFETTI_COLORS[pieceIndex % CONFETTI_COLORS.length];
+    piece.style.animationDelay = `${(pieceIndex % 6) * 0.12}s`;
+    celebration.append(piece);
+  }
+  const card = createElementWithText("div", "celebration-card");
+  const iconGroup = createElementWithText("span", "verified-icon-group celebration-icon-group");
+  iconGroup.append(buildPidgeIconElement("verified-pidge celebration-pidge", ""), buildTickIcon("tick-icon verified-tick celebration-tick"));
+  const openButton = createElementWithText("button", "celebration-open-button", "Open the email");
+  openButton.type = "button";
+  card.append(iconGroup, createElementWithText("p", "celebration-title", `It really was ${contactName}.`),
+    createElementWithText("p", "celebration-subtitle", "Verified by the real person, not by a filter."), openButton);
+  celebration.append(card);
+  celebration.addEventListener("click", () => { celebration.remove(); onClosed(); });
+  openButton.focus();
+  return celebration;
+}
+
 function buildConfirmReportButton(isReporting, onConfirmTapped) {
-  const confirmButton = createElementWithText("button", "confirm-report-button", isReporting ? "Reporting…" : "Report and block");
+  const confirmButton = createElementWithText("button", "confirm-report-button", isReporting ? "Reporting…" : "Confirm and report");
   confirmButton.type = "button";
   confirmButton.disabled = isReporting;
   confirmButton.addEventListener("click", onConfirmTapped);
@@ -111,10 +203,16 @@ export function showDeniedVerdictOverlay({ overlayHostElement, email, isReportin
   overlayElement.setAttribute("aria-modal", "true");
   overlayElement.setAttribute("aria-labelledby", "denied-verdict-message");
   const messageElement = createElementWithText("p", "hold-overlay-message denied-verdict-message",
-    `Real ${email.request.contactName} replied: they did not send this. Do not send money.`);
+    `Real ${email.request.contactName} replied: they did not send this.`);
   messageElement.id = "denied-verdict-message";
   const confirmButton = buildConfirmReportButton(isReporting, () => onConfirmTapped(email));
-  overlayElement.append(buildPidgeIconElement("hold-overlay-pidge", "Pidge"), messageElement, confirmButton);
+  const pidgeFace = createElementWithText("span", "hold-overlay-face is-threat");
+  pidgeFace.append(buildPidgeIconElement("hold-overlay-pidge", "Pidge"), createElementWithText("span", "hold-overlay-face-badge", "✕"));
+  overlayElement.append(createElementWithText("span", "sheet-grab"), pidgeFace, messageElement,
+    createElementWithText("p", "hold-overlay-status", "Do not send money or share anything from this email."));
+  const callPromiseLine = buildCallPromiseLineElement(email.request);
+  if (callPromiseLine !== null) overlayElement.append(callPromiseLine);
+  overlayElement.append(confirmButton);
   replaceActiveOverlay(() => overlayElement.remove());
   overlayHostElement.append(overlayElement);
   if (isReporting) {

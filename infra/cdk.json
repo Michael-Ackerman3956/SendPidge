@@ -26,6 +26,11 @@
     "bankFollowUpEnabled": true,
     "bankFollowUpDelaySeconds": 120,
     "chatEnabled": true,
-    "chatGuardrailEnabled": true
+    "chatGuardrailEnabled": true,
+    "contactVerificationMock": true,
+    "callNudgeEnabled": false,
+    "callNudgesPerContactPerHour": 1,
+    "callReminderTodayDelaySeconds": 14400,
+    "callReminderTomorrowDelaySeconds": 79200
   }
 }

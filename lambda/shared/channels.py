@@ -96,19 +96,25 @@ def get_whatsapp_client():
     return _whatsapp_client
 
 
+def send_whatsapp_message(message: dict) -> str:
+    """Sends one Meta message JSON from Pidge's WhatsApp number; returns Meta's message id. Failures raise."""
+    response = get_whatsapp_client().send_whatsapp_message(
+        originationPhoneNumberId=os.environ["WHATSAPP_PHONE_NUMBER_ID"],
+        metaApiVersion=os.environ["WHATSAPP_META_API_VERSION"],
+        message=json.dumps(message).encode(),
+    )
+    return response["messageId"]
+
+
 def ask_on_whatsapp(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
     """The approved template with Yes / No quick replies; the tap comes back on the WABA event topic."""
     request_id = graph.request_id_of(request_row)
     message = whatsapp.build_template_message(
         request_id, request_row["verdict"]["summary"], contact.contact_whatsapp, os.environ["WHATSAPP_TEMPLATE_NAME"]
     )
-    response = get_whatsapp_client().send_whatsapp_message(
-        originationPhoneNumberId=os.environ["WHATSAPP_PHONE_NUMBER_ID"],
-        metaApiVersion=os.environ["WHATSAPP_META_API_VERSION"],
-        message=json.dumps(message).encode(),
-    )
-    graph.record_whatsapp_message_id(request_id, response["messageId"])
-    logger.info("whatsapp ask %s sent as %s", request_id, response["messageId"])
+    meta_message_id = send_whatsapp_message(message)
+    graph.record_whatsapp_message_id(request_id, meta_message_id)
+    logger.info("whatsapp ask %s sent as %s", request_id, meta_message_id)
     return Channel.WHATSAPP
 
 

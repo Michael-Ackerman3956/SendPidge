@@ -7,7 +7,7 @@ import pytest
 from botocore.stub import Stubber
 from moto import mock_aws
 
-from shared import graph, verdict
+from shared import graph, payloads, verdict
 from shared.enums import ActionOutcome, Channel, Friction, RequestState, VerdictAnswer
 
 RECEIVER_ADDRESS = "grandma@example.com"
@@ -288,3 +288,9 @@ def test_confirm_by_the_contact_is_not_allowed(aws):
                                         s3_client, BUCKET_NAME)
     assert result.outcome is ActionOutcome.NOT_ALLOWED
     assert graph.get_email(EMAIL_ID)["quarantined"] is False
+
+
+def test_a_request_row_written_before_slice_8_still_makes_a_one_tap_card():
+    request_row = {"PK": "REQUEST#req-old", "verdict": {"summary": "Jimin asks for money"}, "expiresAt": "2026-10-21T23:40:49Z"}
+    card = payloads.card_for_contact(request_row, None, "Grandma", RequestState.PENDING)
+    assert card["friction"] == Friction.SINGLE_TAP

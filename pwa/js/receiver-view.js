@@ -1,13 +1,24 @@
 // Grandma's screens (RECEIVER): inbox, email detail, hold overlay and verdict states, driven by sync_state, email_state and request_state.
 // Email fields and contactName are attacker-controlled: rendered only through textContent / createElement.
-import { CLIENT_ACTION, EMAIL_DISPLAY_STATE, REQUEST_STATUS } from "./constants.js";
+import { CLIENT_ACTION, EMAIL_DISPLAY_STATE, REQUEST_STATUS, ROW_KIND } from "./constants.js";
 import { createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { closeHoldOverlay, showHoldOverlay } from "./pidge-overlay.js";
-import { buildDetailBannerElement, buildRowStatusElement, deriveEmailDisplayState, hasReleaseTimePassed, showDeniedVerdictOverlay } from "./verdict-view.js";
-import { buildMockFamilyEmails, isValidRequestStateUpdate, normalizeEmailPayloadOrReportError } from "./receiver-payloads.js";
+import {
+  buildCelebrationElement, buildDetailBannerElement, buildRowMarkElement, buildRowStatusChipElement, deriveEmailDisplayState,
+  hasReleaseTimePassed, showDeniedVerdictOverlay,
+} from "./verdict-view.js";
+import { buildMockFamilyEmails, isValidRequestStateUpdate, normalizeCallPromise, normalizeEmailPayloadOrReportError } from "./receiver-payloads.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
 import { buildLinkReasonLineElements, buildLinkStripElement } from "./link-strip.js";
+import { buildSenderReasonLineElements } from "./reason-lines.js";
+import { isSplitReadingPane, renderPaneTools, renderReaderBar } from "./reading-pane.js";
+
+const ROW_KIND_LABELS = Object.freeze({
+  [ROW_KIND.EMAIL]: "Email",
+  [ROW_KIND.SMS]: "SMS",
+  [ROW_KIND.APP]: "App",
+});
 
 const MILLISECONDS_PER_MINUTE = 60000;
 const MILLISECONDS_PER_HOUR = 3600000;
@@ -20,6 +31,7 @@ const reportingRequestIds = new Set();
 let openEmailId = null;
 let isReceiverViewInitialized = false;
 let releaseTimerId = null;
+let onUnseenHoldChanged = () => {};
 
 const pageElements = {
   backButton: document.getElementById("back-button"),
@@ -44,9 +56,13 @@ function formatRelativeReceivedTime(receivedAtIsoText) {
   return new Date(receivedAtMilliseconds).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function buildAvatarInitialElement(senderName) {
-  const avatar = createElementWithText("span", "avatar-initial", (senderName.trim()[0] || "?").toUpperCase());
+// The round initial, tinted by channel, with the verdict mark on its corner when the email has one.
+function buildAvatarElement(email, emailDisplayState) {
+  const avatar = createElementWithText("span", `avatar-initial is-${email.rowKind}`);
   avatar.setAttribute("aria-hidden", "true");
+  avatar.append(createElementWithText("span", "", (email.senderName.trim()[0] || "?").toUpperCase()));
+  const markElement = buildRowMarkElement(emailDisplayState);
+  if (markElement !== null) avatar.append(markElement);
   return avatar;
 }
 
@@ -56,7 +72,8 @@ function getEmailDisplayState(email) {
 
 function buildInboxRowElement(email) {
   const listItem = document.createElement("li");
-  const rowButton = createElementWithText("button", "inbox-row");
+  const emailDisplayState = getEmailDisplayState(email);
+  const rowButton = createElementWithText("button", email.emailId === openEmailId && isSplitReadingPane() ? "inbox-row is-selected" : "inbox-row");
   rowButton.type = "button";
   rowButton.dataset.emailId = email.emailId;
   const rowText = createElementWithText("span", "row-text");
@@ -64,12 +81,12 @@ function buildInboxRowElement(email) {
   rowTopLine.append(createElementWithText("span", "row-sender", email.senderName),
     createElementWithText("span", "row-time", formatRelativeReceivedTime(email.receivedAt)));
   const rowBottomLine = createElementWithText("span", "row-bottom-line");
-  rowBottomLine.append(createElementWithText("span", "channel-tag", "Email"));
-  const rowStatus = buildRowStatusElement(getEmailDisplayState(email));
-  if (rowStatus !== null) rowBottomLine.append(rowStatus);
+  rowBottomLine.append(createElementWithText("span", `channel-tag is-${email.rowKind}`, ROW_KIND_LABELS[email.rowKind]));
+  const statusChip = buildRowStatusChipElement(email, emailDisplayState);
+  if (statusChip !== null) rowBottomLine.append(statusChip);
   rowText.append(rowTopLine, createElementWithText("span", "row-subject", email.subject),
     createElementWithText("span", "row-preview", email.textBody), rowBottomLine);
-  rowButton.append(buildAvatarInitialElement(email.senderName), rowText);
+  rowButton.append(buildAvatarElement(email, emailDisplayState), rowText);
   rowButton.addEventListener("click", () => openEmailDetail(email.emailId));
   listItem.append(rowButton);
   return listItem;
@@ -80,9 +97,19 @@ function sortEmailsNewestFirst(emails) {
   return [...emails].sort((first, second) => sortKey(second) - sortKey(first));
 }
 
+function listSortedEmailIds() {
+  return sortEmailsNewestFirst(emailsById.values()).map((email) => email.emailId);
+}
+
+function hasUnseenPendingHold() {
+  return [...emailsById.values()].some((email) => email.emailId !== openEmailId && isNewestCandidatePendingHold(email));
+}
+
 function renderInbox() {
   const rowElements = sortEmailsNewestFirst(emailsById.values()).map(buildInboxRowElement);
   pageElements.inboxList.replaceChildren(...rowElements);
+  renderPaneTools(emailsById.size);
+  onUnseenHoldChanged(hasUnseenPendingHold());
 }
 
 function buildDetailHeaderElement(email) {
@@ -90,9 +117,23 @@ function buildDetailHeaderElement(email) {
   const senderBlock = createElementWithText("div", "detail-sender-block");
   senderBlock.append(createElementWithText("p", "detail-sender-name", email.senderName),
     createElementWithText("p", "detail-sender-address", email.senderAddress));
-  headerElement.append(buildAvatarInitialElement(email.senderName),
+  headerElement.append(buildAvatarElement(email, getEmailDisplayState(email)),
     senderBlock, createElementWithText("span", "row-time", formatRelativeReceivedTime(email.receivedAt)));
   return headerElement;
+}
+
+// One reason line under the banner: the first sender reason, else the first link reason. The rest stay in the link strip.
+function buildFirstReasonLineElements(email) {
+  const reasonLines = [...buildSenderReasonLineElements(email.reasons), ...buildLinkReasonLineElements(email.links)];
+  return reasonLines.slice(0, 1);
+}
+
+function showCelebration(email) {
+  const existingCelebration = pageElements.detailScreen.querySelector(".celebration");
+  if (existingCelebration !== null) existingCelebration.remove();
+  pageElements.detailScreen.append(buildCelebrationElement(email.request.contactName, () => {
+    pageElements.detailContent.querySelector(".detail-subject")?.focus();
+  }));
 }
 
 // A releasing email re-renders itself as confirmed (with the celebration) when its releaseAt passes.
@@ -115,13 +156,18 @@ function renderEmailDetail(email, shouldCelebrate = false) {
   const emailDisplayState = getEmailDisplayState(email);
   const detailChildren = [buildDetailHeaderElement(email)];
   const bannerElement = buildDetailBannerElement(email, emailDisplayState, shouldCelebrate);
-  if (bannerElement !== null) detailChildren.push(bannerElement, ...buildLinkReasonLineElements(email.links));
+  if (bannerElement !== null) {
+    detailChildren.push(bannerElement, ...buildFirstReasonLineElements(email));
+  }
   const subjectHeading = createElementWithText("h2", "detail-subject", email.subject);
   subjectHeading.tabIndex = -1;
-  detailChildren.push(subjectHeading, createElementWithText("p", "detail-body", email.textBody));
+  const bodyElement = createElementWithText("p", emailDisplayState === EMAIL_DISPLAY_STATE.QUARANTINED ? "detail-body is-muted" : "detail-body", email.textBody);
+  detailChildren.push(subjectHeading, bodyElement);
   const linkStrip = buildLinkStripElement(email.links);
   if (linkStrip !== null) detailChildren.push(linkStrip);
   pageElements.detailContent.replaceChildren(...detailChildren);
+  renderReaderBar({ emailIds: listSortedEmailIds(), openEmailId: email.emailId, onBack: showInboxScreen, onOpen: openEmailDetail });
+  if (shouldCelebrate) showCelebration(email);
   if (emailDisplayState === EMAIL_DISPLAY_STATE.AWAITING_VERDICT) {
     showHoldOverlay({ overlayHostElement: pageElements.detailScreen, email, onReleasedByUser: handleUserReleasedHeldEmail });
   } else if (emailDisplayState === EMAIL_DISPLAY_STATE.DENIED) {
@@ -132,13 +178,17 @@ function renderEmailDetail(email, shouldCelebrate = false) {
   }
 }
 
+// In a split reading pane the list stays beside the email; otherwise the email takes the screen (phone, or Gmail's "No split").
 function openEmailDetail(emailId) {
   openEmailId = emailId;
-  pageElements.inboxScreen.hidden = true;
+  const isSplit = isSplitReadingPane();
+  pageElements.inboxScreen.hidden = !isSplit;
   pageElements.detailScreen.hidden = false;
-  pageElements.backButton.hidden = false;
-  pageElements.topbarTitle.textContent = "Email";
+  pageElements.backButton.hidden = isSplit;
+  pageElements.topbarTitle.textContent = isSplit ? "Inbox" : "Email";
+  document.body.classList.toggle("is-reading-email", !isSplit); // the phone's tab bar steps aside for the email and the Pidge sheet
   renderEmailDetail(emailsById.get(emailId));
+  renderInbox();
 }
 
 function showInboxScreen() {
@@ -149,9 +199,26 @@ function showInboxScreen() {
   pageElements.backButton.hidden = true;
   pageElements.inboxScreen.hidden = false;
   pageElements.topbarTitle.textContent = "Inbox";
+  document.body.classList.remove("is-reading-email");
+  renderInbox();
   const previouslyOpenRow = [...pageElements.inboxList.querySelectorAll(".inbox-row")]
     .find((rowButton) => rowButton.dataset.emailId === previouslyOpenEmailId);
   if (previouslyOpenRow) previouslyOpenRow.focus();
+}
+
+// Re-applies the current reading-pane choice: in a split the open email stays beside the list, otherwise it fills the screen.
+export function applyReadingPaneLayout() {
+  if (openEmailId === null) {
+    pageElements.detailScreen.hidden = true;
+    renderInbox(); // the tools row shows the new choice and closes the menu
+    return;
+  }
+  openEmailDetail(openEmailId);
+}
+
+// app.js listens so the Inbox tab can show its dot while a hold waits on another screen.
+export function setUnseenHoldListener(listener) {
+  onUnseenHoldChanged = listener;
 }
 
 // Local only: the server is not told about a long-press release.
@@ -233,6 +300,7 @@ export function handleReceiverRequestStatePush(requestUpdate) {
   const wasConfirmed = getEmailDisplayState(email) === EMAIL_DISPLAY_STATE.CONFIRMED;
   const updatedEmail = { ...email, quarantined: requestUpdate.quarantined, request: {
     ...email.request, status: requestUpdate.status, resolvedAt: requestUpdate.resolvedAt ?? null, releaseAt: requestUpdate.releaseAt ?? null,
+    callPromise: normalizeCallPromise(requestUpdate.callPromise),
   } };
   emailsById.set(updatedEmail.emailId, updatedEmail);
   if (requestUpdate.status !== REQUEST_STATUS.DENIED || requestUpdate.quarantined) {
@@ -273,6 +341,7 @@ export function showReceiverView() {
 export function hideReceiverView() {
   closeHoldOverlay();
   openEmailId = null;
+  document.body.classList.remove("is-reading-email");
   pageElements.inboxScreen.hidden = true;
   pageElements.detailScreen.hidden = true;
   pageElements.backButton.hidden = true;

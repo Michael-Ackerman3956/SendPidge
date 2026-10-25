@@ -5,6 +5,9 @@ import { buildPidgeIconElement, buildShieldIcon, createElementWithText, formatRe
 
 const CANCEL_LONG_PRESS_DURATION_MS = 5000;
 const COUNTDOWN_TICK_INTERVAL_MS = 1000;
+const COUNTDOWN_RING_RADIUS = 38;
+const COUNTDOWN_RING_CIRCUMFERENCE = 2 * Math.PI * COUNTDOWN_RING_RADIUS;
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
 const INTENT_PHRASES = Object.freeze({
   [INTENT.MONEY]: "money",
@@ -32,15 +35,36 @@ function parseExpiryTimeOrReportError(expiresAtIsoText) {
   return expiresAtMilliseconds;
 }
 
+// The ring around the countdown: a track circle and a fill circle whose dash offset follows the time left.
+function buildCountdownRingElement() {
+  const ringSvg = document.createElementNS(SVG_NAMESPACE, "svg");
+  ringSvg.setAttribute("viewBox", "0 0 86 86");
+  ringSvg.setAttribute("class", "countdown-ring");
+  ringSvg.setAttribute("aria-hidden", "true");
+  ["countdown-ring-track", "countdown-ring-fill"].forEach((className) => {
+    const circle = document.createElementNS(SVG_NAMESPACE, "circle");
+    circle.setAttribute("class", className);
+    circle.setAttribute("cx", "43");
+    circle.setAttribute("cy", "43");
+    circle.setAttribute("r", String(COUNTDOWN_RING_RADIUS));
+    ringSvg.append(circle);
+  });
+  ringSvg.querySelector(".countdown-ring-fill").style.strokeDasharray = String(COUNTDOWN_RING_CIRCUMFERENCE);
+  return ringSvg;
+}
+
 // Starts the countdown to expiresAt. At 0 the checking line becomes the shield state.
-function startHoldCountdown({ countdownElement, checkingLineElement, statusRegionElement, contactName, expiresAtIsoText }) {
+function startHoldCountdown({ countdownElement, ringElement, checkingLineElement, statusRegionElement, contactName, expiresAtIsoText }) {
   const expiresAtMilliseconds = parseExpiryTimeOrReportError(expiresAtIsoText);
+  const totalMilliseconds = Math.max(1, expiresAtMilliseconds - Date.now());
+  const ringFill = ringElement.querySelector(".countdown-ring-fill");
   let countdownIntervalId = null;
 
   function showShieldTimeoutState() {
     checkingLineElement.replaceChildren(buildShieldIcon());
     statusRegionElement.textContent = `${contactName} hasn't answered. The email stays held.`;
     countdownElement.hidden = true;
+    ringElement.hidden = true;
   }
 
   function updateCountdown() {
@@ -51,6 +75,7 @@ function startHoldCountdown({ countdownElement, checkingLineElement, statusRegio
       return;
     }
     countdownElement.textContent = formatRemainingTimeAsMinutesSeconds(remainingMilliseconds);
+    ringFill.style.strokeDashoffset = String(COUNTDOWN_RING_CIRCUMFERENCE * (1 - remainingMilliseconds / totalMilliseconds));
   }
 
   countdownIntervalId = setInterval(updateCountdown, COUNTDOWN_TICK_INTERVAL_MS);
@@ -100,7 +125,9 @@ function wireCancelLongPress(cancelButton, onLongPressCompleted) {
 function buildCancelButton() {
   const cancelButton = createElementWithText("button", "cancel-long-press-button");
   cancelButton.type = "button";
-  cancelButton.append(createElementWithText("span", "cancel-fill"), createElementWithText("span", "cancel-label", "Hold to cancel"));
+  const label = createElementWithText("span", "cancel-label", "Hold to cancel");
+  label.append(createElementWithText("small", "", "press and hold for 5 seconds"));
+  cancelButton.append(createElementWithText("span", "cancel-fill"), label);
   return cancelButton;
 }
 
@@ -127,22 +154,27 @@ export function showHoldOverlay({ overlayHostElement, email, onReleasedByUser })
   overlayElement.setAttribute("aria-modal", "true");
   overlayElement.setAttribute("aria-labelledby", "hold-overlay-message");
 
-  const pidgeIcon = buildPidgeIconElement("hold-overlay-pidge", "Pidge");
-  const messageElement = createElementWithText("p", "hold-overlay-message",
-    `This email says it is from ${contactName} and asks for ${describeIntentForHoldMessage(intent)}. I will check with ${contactName}.`);
+  const pidgeFace = createElementWithText("span", "hold-overlay-face");
+  pidgeFace.append(buildPidgeIconElement("hold-overlay-pidge", "Pidge"));
+  const messageElement = createElementWithText("p", "hold-overlay-message");
+  messageElement.append(`This email says it is from `, createElementWithText("strong", "", contactName),
+    ` and asks for ${describeIntentForHoldMessage(intent)}. I will check with ${contactName}.`);
   messageElement.id = "hold-overlay-message";
   const checkingLineElement = createElementWithText("div", "hold-overlay-checking");
   checkingLineElement.append(createElementWithText("span", "checking-pulse"));
   const statusRegionElement = createElementWithText("p", "hold-overlay-status", `Pidge is checking with ${contactName}`);
   statusRegionElement.setAttribute("aria-live", "polite");
+  const countdownWrap = createElementWithText("div", "hold-overlay-countdown-wrap");
+  const ringElement = buildCountdownRingElement();
   const countdownElement = createElementWithText("p", "hold-overlay-countdown");
   countdownElement.setAttribute("role", "timer");
+  countdownWrap.append(ringElement, countdownElement);
   const cancelButton = buildCancelButton();
 
-  overlayElement.append(pidgeIcon, messageElement, checkingLineElement, statusRegionElement, countdownElement, cancelButton);
+  overlayElement.append(createElementWithText("span", "sheet-grab"), pidgeFace, messageElement, checkingLineElement, statusRegionElement, countdownWrap, cancelButton);
   overlayHostElement.append(overlayElement);
 
-  const stopCountdown = startHoldCountdown({ countdownElement, checkingLineElement, statusRegionElement, contactName, expiresAtIsoText: expiresAt });
+  const stopCountdown = startHoldCountdown({ countdownElement, ringElement, checkingLineElement, statusRegionElement, contactName, expiresAtIsoText: expiresAt });
   const abortCancelPress = wireCancelLongPress(cancelButton, () => {
     closeHoldOverlay();
     onReleasedByUser(email.emailId);
@@ -171,6 +203,8 @@ function describeWarnReason(email) {
       return "Pidge checked twice; a ! mark, not a hold.";
     case WARN_REASON.LINK_REASONS:
       return "A link in this email is not what it says.";
+    case WARN_REASON.ASK_CAPPED:
+      return describeAskCappedWarning(email);
     default:
       console.error("SendPidge: WARN email has an unknown warnReason", email.warnReason);
       return "Pidge has a warning about this email.";
@@ -183,6 +217,14 @@ function describeUnreachableWarning(email) {
     return "Pidge couldn't reach your family. The email stays held.";
   }
   return `Pidge couldn't reach ${email.request.contactName}. The email stays held.`;
+}
+
+function describeAskCappedWarning(email) {
+  if (email.request === null || email.request === undefined) {
+    console.error("SendPidge: ask_capped warning arrived without a request", email.emailId);
+    return "Pidge has already asked your family a lot this hour. The email stays held.";
+  }
+  return `Pidge has already asked ${email.request.contactName} a lot this hour. The email stays held.`;
 }
 
 // One calm line shown at the top of a WARN email's detail.

@@ -1,9 +1,10 @@
 """WebSocket $default: sync, the contact's Yes / No / Undo / Reverse, the receiver's Confirm, case actions and questions
-to Pidge, a browser's Web Push subscription; SNS: phone-channel taps.
+to Pidge, a browser's Web Push subscription, the receiver's contact verification code; SNS: phone-channel taps.
 
 The user comes from the connection row, never from the message body.
 """
 
+import hmac
 import json
 import logging
 import os
@@ -12,7 +13,10 @@ from datetime import datetime, timedelta, timezone
 import boto3
 
 from shared import cases, channels, chat, graph, payloads, push_subscriptions, rcs, schedules, verdict, whatsapp
-from shared.enums import ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, PushMessageType, RequestState, UserRole, VerdictAnswer
+from shared.enums import (
+    ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, PushMessageType, RequestState, UserRole, VerdictAnswer,
+    VerifiedVia,
+)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -35,6 +39,8 @@ SYNC_CASE_LIMIT = 10
 SYNC_EMAIL_LIMIT = 20
 SYNC_REQUEST_LIMIT = 10
 SYNC_NOTE_LIMIT = 20
+SYNC_CHAT_LIMIT = 20
+DEFAULT_CONTACT_VERIFICATION_MOCK_CODE = "4821"
 HANDLED = {"statusCode": 200}
 FORBIDDEN = {"statusCode": 403}
 ANSWER_FOR_ACTION = {ClientAction.UNDO: VerdictAnswer.UNDO, ClientAction.REVERSE: VerdictAnswer.REVERSE}
@@ -75,6 +81,8 @@ def handle(event, context):
         handle_save_push_subscription(connection_id, user_id, body)
     elif action is ClientAction.ASK_PIDGE:
         handle_ask_pidge(connection_id, user_id, body)
+    elif action is ClientAction.VERIFY_CONTACT:
+        handle_verify_contact(connection_id, user_id, body)
     else:
         handle_confirm(connection_id, user_id, body)
     return HANDLED
@@ -110,7 +118,10 @@ def handle_sync(connection_id: str, user_id: str) -> None:
         notes = [payloads.note_for_receiver(note_row) for note_row in graph.list_recent_rows(user_id, graph.NOTE_ROW_KIND, SYNC_NOTE_LIMIT)]
         case_rows = graph.list_recent_rows(user_id, graph.CASE_ROW_KIND, SYNC_CASE_LIMIT)
         case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(case_row["PK"].removeprefix("CASE#"))) for case_row in case_rows]
-        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "emails": emails, "notes": notes, "cases": case_cards}
+        chat_messages = [chat.chat_message_for_sync(message_row) for message_row in chat.list_recent_messages(user_id, SYNC_CHAT_LIMIT)]
+        circle = [payloads.circle_entry_for_receiver(contact_row) for contact_row in graph.list_contact_rows(RECEIVER_ADDRESS)]
+        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "emails": emails, "notes": notes, "cases": case_cards,
+                   "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages, "circle": circle}
     else:
         cards = []
         for request_row in graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT):
@@ -294,3 +305,30 @@ def handle_ask_pidge(connection_id: str, user_id: str, body: dict) -> None:
         channels.push_to_connection(connection_id, chat.pidge_reply_message(None, accepted.refusal_text, ChatCardKind.REFUSAL))
         return
     logger.info("question %s stored for %s (%d characters)", accepted.message_row["SK"], user_id, len(accepted.message_row["text"]))
+
+
+def is_contact_verification_mock_on() -> bool:
+    """Read per call: no real channel carries the code yet, so verification works only in mock mode."""
+    return os.environ.get("CONTACT_VERIFICATION_MOCK") == "true"
+
+
+def handle_verify_contact(connection_id: str, user_id: str, body: dict) -> None:
+    """Onboarding's code step: the receiver only, mock mode only; the contact is looked up server-side, then sync is re-sent."""
+    if user_id != RECEIVER_USER_ID or not is_contact_verification_mock_on():
+        reject(connection_id, None, ActionOutcome.NOT_ALLOWED)
+        return
+    contact_user_id, code = body.get("contactUserId"), body.get("code")
+    if not isinstance(contact_user_id, str) or not isinstance(code, str):
+        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
+        return
+    expected_code = os.environ.get("CONTACT_VERIFICATION_MOCK_CODE", DEFAULT_CONTACT_VERIFICATION_MOCK_CODE)
+    contact_row = graph.find_contact_row_for_user(RECEIVER_ADDRESS, contact_user_id)
+    if contact_row is None or not hmac.compare_digest(code.encode(), expected_code.encode()):
+        logger.info("contact verification refused for %s: %s", user_id, "unknown contact" if contact_row is None else "wrong code")
+        reject(connection_id, None, ActionOutcome.NOT_APPLIED)
+        return
+    if not graph.mark_contact_verified(RECEIVER_ADDRESS, contact_row["SK"], VerifiedVia.MOCK, now_timestamp()):
+        reject(connection_id, None, ActionOutcome.NOT_APPLIED)  # the row vanished between the lookup and the update
+        return
+    logger.info("contact %s verified via %s", contact_row["SK"], VerifiedVia.MOCK)
+    handle_sync(connection_id, user_id)

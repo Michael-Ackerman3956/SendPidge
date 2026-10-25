@@ -64,6 +64,8 @@ export class SendPidgeStack extends Stack {
     const sendingDomain = receiptSender.split("@")[1];
     const pwaDomain: string = this.node.getContext("pwaDomain");
     const landingDomain: string = this.node.getContext("landingDomain");
+    // The ask cap: how many "Was this you?" asks one contact can get per hour; later holds stay silent (slice 9).
+    const asksPerContactPerHour: number = Number(this.node.tryGetContext("asksPerContactPerHour") ?? 3);
     const rcsEnabled: boolean = this.node.getContext("rcsEnabled") === true;
     const rcsAgentId: string = this.node.getContext("rcsAgentId") ?? "";
     const rcsAgentArn: string = this.node.getContext("rcsAgentArn") ?? "";
@@ -95,6 +97,22 @@ export class SendPidgeStack extends Stack {
     const escalationModel: string = this.node.getContext("escalationModel") ?? "opus-4.5";
     const chatEnabled: boolean = this.node.tryGetContext("chatEnabled") === true;
     const chatGuardrailEnabled: boolean = this.node.tryGetContext("chatGuardrailEnabled") === true;
+    // Onboarding's contact code step: only a mock code exists until a real channel carries it (pidge-verdict only).
+    const contactVerificationMock: boolean = this.node.tryGetContext("contactVerificationMock") === true;
+    // The call nudge: after a WhatsApp verdict, offer "call Grandma?" and book one reminder inside Meta's 24-h window.
+    const callNudgeEnabled: boolean = this.node.tryGetContext("callNudgeEnabled") === true;
+    const callNudgesPerContactPerHour: number = Number(this.node.tryGetContext("callNudgesPerContactPerHour") ?? 1);
+    const callReminderTodayDelaySeconds: number = Number(this.node.tryGetContext("callReminderTodayDelaySeconds") ?? 14400);
+    const callReminderTomorrowDelaySeconds: number = Number(this.node.tryGetContext("callReminderTomorrowDelaySeconds") ?? 79200);
+    const maximumCallReminderDelaySeconds = 82800;
+    for (const [contextKey, delaySeconds] of [
+      ["callReminderTodayDelaySeconds", callReminderTodayDelaySeconds],
+      ["callReminderTomorrowDelaySeconds", callReminderTomorrowDelaySeconds],
+    ] as const) {
+      if (!(delaySeconds > 0 && delaySeconds < maximumCallReminderDelaySeconds)) {
+        throw new Error(`${contextKey} must be > 0 and < ${maximumCallReminderDelaySeconds} to stay inside Meta's 24-h window`);
+      }
+    }
     if (chatEnabled && !receiverMailbox.includes("@")) {
       throw new Error("chatEnabled needs RECEIVER_MAILBOX in ../.env (Grandma's real mailbox for pidge@)");
     }
@@ -168,7 +186,7 @@ export class SendPidgeStack extends Stack {
       partitionKey: { name: "PK", type: AttributeType.STRING },
       sortKey: { name: "SK", type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      // Retention TTL; separate from a request's 60 s hold expiry (expiresAt).
+      // Retention TTL; separate from a request's hold expiry (expiresAt, one re-ask interval).
       timeToLiveAttribute: "ttlEpochSeconds",
       // The stream wakes pidge-dispatch (the case agent) on a final verdict, a new CASE# row or a closed case.
       stream: StreamViewType.NEW_AND_OLD_IMAGES,
@@ -451,6 +469,7 @@ export class SendPidgeStack extends Stack {
       environment: {
         TABLE_NAME: table.tableName,
         READER_MODEL: readerModel,
+        ASKS_PER_CONTACT_PER_HOUR: String(asksPerContactPerHour),
         ESCALATION_ENABLED: escalationEnabled ? "true" : "false",
         ESCALATION_MODEL: escalationModel,
         RETRY_SCHEDULER_ENABLED: retrySchedulerEnabled ? "true" : "false",
@@ -568,6 +587,30 @@ export class SendPidgeStack extends Stack {
     );
     releaseFunction.grantInvoke(schedulerRole);
 
+    // The one "call Grandma" reminder, fired by a schedule booked when the contact taps the call offer.
+    const callReminderFunction = new Function(this, "CallReminderFunction", {
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.X86_64,
+      code: lambdaCode,
+      handler: "pidge_call_reminder.handler.handle",
+      memorySize: 256,
+      timeout: Duration.seconds(15),
+      environment: {
+        TABLE_NAME: table.tableName,
+        RECEIVER_NAME: receiverName,
+        WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId,
+        WHATSAPP_META_API_VERSION: whatsappMetaApiVersion,
+      },
+      logGroup: new LogGroup(this, "CallReminderLogs", { retention: RetentionDays.TWO_WEEKS, removalPolicy: RemovalPolicy.DESTROY }),
+    });
+    table.grantReadWriteData(callReminderFunction);
+    if (whatsappPhoneNumberArn) {
+      callReminderFunction.addToRolePolicy(
+        new PolicyStatement({ actions: ["social-messaging:SendWhatsAppMessage"], resources: [whatsappPhoneNumberArn] }),
+      );
+    }
+    callReminderFunction.grantInvoke(schedulerRole);
+
     const verdictFunction = new Function(this, "VerdictFunction", {
       runtime: Runtime.PYTHON_3_12,
       architecture: Architecture.X86_64,
@@ -595,6 +638,14 @@ export class SendPidgeStack extends Stack {
         BANK_FOLLOW_UP_DELAY_SECONDS: String(bankFollowUpDelaySeconds),
         CASE_FOLLOWUP_FUNCTION_ARN: caseFollowUpFunction.functionArn,
         CHAT_ENABLED: chatEnabled ? "true" : "false",
+        CONTACT_VERIFICATION_MOCK: contactVerificationMock ? "true" : "false",
+        WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId,
+        WHATSAPP_META_API_VERSION: whatsappMetaApiVersion,
+        CALL_NUDGE_ENABLED: callNudgeEnabled ? "true" : "false",
+        CALL_NUDGES_PER_CONTACT_PER_HOUR: String(callNudgesPerContactPerHour),
+        CALL_REMINDER_TODAY_DELAY_SECONDS: String(callReminderTodayDelaySeconds),
+        CALL_REMINDER_TOMORROW_DELAY_SECONDS: String(callReminderTomorrowDelaySeconds),
+        CALL_REMINDER_FUNCTION_ARN: callReminderFunction.functionArn,
       },
       logGroup: new LogGroup(this, "VerdictLogs", {
         retention: RetentionDays.TWO_WEEKS,
@@ -617,6 +668,11 @@ export class SendPidgeStack extends Stack {
     );
     scheduleGroup.grantWriteSchedules(verdictFunction);
     schedulerRole.grantPassRole(verdictFunction.grantPrincipal);
+    if (whatsappPhoneNumberArn) {
+      verdictFunction.addToRolePolicy(
+        new PolicyStatement({ actions: ["social-messaging:SendWhatsAppMessage"], resources: [whatsappPhoneNumberArn] }),
+      );
+    }
     webSocketApi.addRoute("$default", {
       integration: new WebSocketLambdaIntegration("DefaultIntegration", verdictFunction),
     });
@@ -707,6 +763,7 @@ export class SendPidgeStack extends Stack {
         CHAT_GUARDRAIL_VERSION: chatGuardrailVersion.attrVersion,
         RECEIVER_MAILBOX: receiverMailbox,
         RECEIPT_SENDER: receiptSender,
+        VAPID_SECRET_NAME: vapidSecret.secretName,
       },
       logGroup: new LogGroup(this, "DispatchLogs", {
         retention: RetentionDays.TWO_WEEKS,
@@ -714,6 +771,7 @@ export class SendPidgeStack extends Stack {
       }),
     });
     table.grantReadWriteData(dispatchFunction);
+    vapidSecret.grantRead(dispatchFunction);
     webSocketStage.grantManagementApiAccess(dispatchFunction);
     dispatchFunction.addToRolePolicy(
       new PolicyStatement({

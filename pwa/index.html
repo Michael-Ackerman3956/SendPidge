@@ -8,7 +8,7 @@
   <title>SendPidge</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="assets/pidge-icon.png">
-  <link rel="apple-touch-icon" href="assets/pidge-icon.png">
+  <link rel="apple-touch-icon" href="assets/pidge-icon-192.png">
   <link rel="stylesheet" href="css/app.css">
   <script type="module" src="js/app.js"></script>
 </head>
@@ -18,33 +18,67 @@
       <button id="back-button" class="topbar-back-button" type="button" aria-label="Back" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
       </button>
-      <img class="topbar-pidge" src="assets/pidge-icon.png" alt="">
       <h1 id="topbar-title" class="topbar-title">SendPidge</h1>
-      <span id="connection-dot" class="connection-dot" role="status">
-        <span id="connection-label" class="visually-hidden">Reconnecting</span>
+      <span class="topbar-pidge-wrap">
+        <img class="topbar-pidge" src="assets/pidge-icon.png" alt="">
+        <span id="connection-dot" class="connection-dot" role="status">
+          <span id="connection-label" class="visually-hidden">Reconnecting</span>
+        </span>
       </span>
     </header>
+    <nav id="receiver-tabs" class="receiver-tabs" aria-label="Screens" hidden>
+      <button id="tab-inbox" class="receiver-tab is-active" type="button" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"/></svg>
+        <span>Inbox</span><i id="tab-inbox-dot" class="receiver-tab-dot" hidden></i>
+      </button>
+      <button id="tab-circle" class="receiver-tab" type="button" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Circle</span>
+      </button>
+      <button id="tab-pidge" class="receiver-tab" type="button" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>
+        <span>Pidge</span>
+      </button>
+    </nav>
     <main class="screen-body">
       <p id="token-error" class="token-error" role="alert" hidden>Open the link with your access token.</p>
       <p id="loading-state" class="loading-state" role="status" hidden>Loading…</p>
       <p id="action-status" class="action-status" aria-live="polite"></p>
-      <section id="inbox-screen" aria-label="Inbox" hidden>
-        <ul id="inbox-list" class="inbox-list"></ul>
-      </section>
-      <section id="detail-screen" class="detail-screen" hidden>
-        <article id="detail-content" class="detail-content"></article>
-      </section>
+      <div id="reading-pane" class="reading-pane">
+        <section id="inbox-screen" class="inbox-screen" aria-label="Inbox" hidden>
+          <div id="pane-tools" class="pane-tools"></div>
+          <ul id="inbox-list" class="inbox-list"></ul>
+        </section>
+        <section id="detail-screen" class="detail-screen" hidden>
+          <div id="reader-bar" class="reader-bar" hidden></div>
+          <article id="detail-content" class="detail-content"></article>
+        </section>
+      </div>
       <section id="contact-screen" aria-label="Requests" hidden>
         <ul id="contact-card-list" class="contact-card-list"></ul>
-        <p id="contact-empty-message" class="contact-empty-message" hidden>No requests.</p>
+        <div id="contact-empty-message" class="contact-empty" hidden>
+          <img class="contact-empty-pidge" src="assets/pidge-icon.png" alt="">
+          <p>Nothing to check.<br>Pidge will ask you here when an email arrives in your name.</p>
+        </div>
       </section>
+      <section id="circle-screen" aria-label="Circle" hidden>
+        <h2 class="section-header">People Pidge can ask</h2>
+        <ul id="circle-list" class="circle-list"></ul>
+        <button id="circle-add-button" class="contact-secondary-button" type="button">Add someone</button>
+      </section>
+      <section id="onboarding-screen" class="onboarding-screen" aria-label="Set up" hidden></section>
       <section id="pidge-screen" aria-label="Pidge" hidden>
         <button id="enable-notifications-button" class="contact-secondary-button enable-notifications-button" type="button" hidden>Turn on notifications</button>
         <section class="pidge-chat" aria-label="Ask Pidge">
-          <ol id="pidge-chat-thread" class="pidge-chat-thread" aria-live="polite" hidden></ol>
+          <ol id="pidge-chat-thread" class="pidge-chat-thread" aria-live="polite"></ol>
           <form id="pidge-chat-form" class="pidge-chat-composer">
+            <button id="pidge-chat-mic" class="pidge-chat-mic" type="button" aria-label="Dictate" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            </button>
             <input id="pidge-chat-input" type="text" placeholder="Ask Pidge" aria-label="Ask Pidge" autocomplete="off">
-            <button type="submit" aria-label="Send">Send</button>
+            <button class="pidge-chat-send" type="submit" aria-label="Send">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+            </button>
           </form>
         </section>
         <div id="pidge-report-host"></div>
@@ -53,10 +87,6 @@
         <p id="pidge-empty-message" class="contact-empty-message" hidden>No notes yet.</p>
       </section>
     </main>
-    <nav id="receiver-tabs" class="receiver-tabs" aria-label="Screens" hidden>
-      <button id="tab-inbox" class="receiver-tab is-active" type="button" aria-pressed="true">Inbox</button>
-      <button id="tab-pidge" class="receiver-tab" type="button" aria-pressed="false">Pidge</button>
-    </nav>
   </div>
 </body>
 </html>

@@ -20,7 +20,7 @@ Who installs what: only the protected person is inside SendPidge. The person bei
 3. **Pidge flags the email** with a ! mark in the inbox. The email is visually marked but not blocked — Grandma can still open it.
 4. **Grandma ignores the flag and opens the email.** She reads the message.
 5. **Pidge pops up** on the side: "This email doesn't look like Jimin and is asking for money. I will check with Jimin." This is a hold, not a question — Pidge acts by default. The injection line changes nothing: the part of Pidge that reads the email cannot act, and the hold rule is code.
-6. **Waiting state** — "Pidge is checking with Jimin" with a timer (1 minute timeout). The only way to bypass is a 5-second long press on a Cancel button.
+6. **Waiting state** — "Pidge is checking with Jimin" with a timer (10-minute window, one re-ask interval; was 1 minute until 2026-10-24). The only way to bypass is a 5-second long press on a Cancel button.
 7. **On Jimin's phone** — he receives a notification (WhatsApp, SendPidge app, or potentially a call) with an AI-generated summary: "Grandma received an email claiming to be you asking for money — was this you? Yes / No."
 8. **Jimin taps No** → Grandma's screen shows: "Warning: Real Jimin replied that this isn't him — we will report and block this content. Do not make transaction!" with a one-tap Confirm button.
 9. **Grandma taps Confirm** → the ! mark turns red, the email moves to quarantine/spam, and it's recorded in SendPidge's records.
@@ -56,7 +56,7 @@ Full email content. When Pidge intervenes, a popup/overlay appears on the side w
 ### Pidge Hold Overlay
 Appears over the email detail:
 - Pidge's message: "This email doesn't look like Jimin and is asking for money. I will check with Jimin."
-- Timer: "Pidge is checking with Jimin" (1 min countdown)
+- Timer: "Pidge is checking with Jimin" (10 min countdown)
 - Cancel button (5-second long press to activate)
 - Verdict display when response arrives
 
@@ -83,7 +83,7 @@ Reference: `MailPidge/docs/product/MAILPIDGE_MOBILE_PROTOTYPE.html`.
 Source: `scope.md > The Unique Kernel`.
 - When a flagged email is opened and contains a money/action request, Pidge holds by default.
 - The hold is assertive: "I will check with Jimin", not "Should I check?"
-- 1-minute timeout for the verification response.
+- 10-minute window for the verification response (one re-ask interval, then one re-ask, then timeout; `spec.md > Workflow Patterns`).
 - Cancel requires 5-second long press — designed to be hard to do accidentally under social pressure.
 - Pidge contacts the real person via their verified channel in the relationship graph.
 
