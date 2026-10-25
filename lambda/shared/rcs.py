@@ -4,7 +4,8 @@ import json
 import logging
 from dataclasses import dataclass
 
-from shared.enums import PHONE_CHANNEL_ANSWERS, RcsInboundMessageType, VerdictAnswer
+from shared.enums import RcsInboundMessageType, VerdictAnswer
+from shared.verdict import parse_phone_answer
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +59,10 @@ def parse_inbound_reply(sns_message: dict) -> RcsReply | None:
         body = json.loads(sns_message["messageBody"])
         if RcsInboundMessageType(body["type"]) is not RcsInboundMessageType.SUGGESTION:
             return None
-        request_id, answer_value = body["postbackData"].rsplit(POSTBACK_SEPARATOR, 1)
-        answer = VerdictAnswer(answer_value)
-        if answer not in PHONE_CHANNEL_ANSWERS:
-            return None  # undo and reverse exist only in the PWA
+        parsed_answer = parse_phone_answer(body["postbackData"], POSTBACK_SEPARATOR)
+        if parsed_answer is None:
+            return None
+        request_id, answer = parsed_answer
         return RcsReply(request_id, answer, sns_message["originationNumber"], sns_message["inboundMessageId"])
     except (KeyError, TypeError, ValueError):
         logger.info("inbound RCS message is not a chip tap; ignored")

@@ -96,7 +96,8 @@ def reply_subject(question_subject: str) -> str:
 
 
 def send_reply_email(ses_client, sender_address: str, receiver_mailbox: str, question_row: dict, reply_row: dict) -> None:
-    """Pidge's answer to her real mailbox only; raises when SES refuses (the stream retry logs it)."""
+    """Pidge's answer to her real mailbox only; raises when SES refuses. The reply row is already marked answered, so a
+    refused send is logged once by pidge-dispatch and not retried (a resend would need answeredAt set after SES accepts)."""
     ses_client.send_email(
         FromEmailAddress=sender_address,
         Destination={"ToAddresses": [receiver_mailbox]},

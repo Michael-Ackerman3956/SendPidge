@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lambda"))
 from shared.auth import authentication_reasons  # noqa: E402
 from shared.email_parse import parse_eml  # noqa: E402
 from shared.enums import EscalationDecision, ReaderModelChoice  # noqa: E402
-from shared.graph import Contact  # noqa: E402
+from shared.graph import Contact, domains_of, find_contact_among  # noqa: E402
 from shared.links import assess_links, link_reasons  # noqa: E402
 from shared.lists import SeedListStore, list_row_from_seed, lookup_sender_reasons  # noqa: E402
 from shared.policy import EscalationAnswer, ReaderFailure, apply_escalation, decide, needs_escalation  # noqa: E402
@@ -59,14 +59,6 @@ class ConverseRequestRecorder:
         return f"tools sent: {self.tool_names or 'none'} · outputConfig schema: {self.output_schema_name or 'none'}"
 
 
-def find_local_contact(contacts: list[Contact], person_name: str | None) -> Contact | None:
-    """The same rule as graph.find_contact, over the contacts named on the command line."""
-    if not person_name:
-        return None
-    wanted_name = " ".join(person_name.split()).casefold()
-    return next((contact for contact in contacts if " ".join(contact.contact_name.split()).casefold() == wanted_name), None)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("eml_path", type=Path)
@@ -88,7 +80,7 @@ def main() -> None:
     recorder.attach(session)
 
     parsed_email = parse_eml(arguments.eml_path.read_bytes())
-    family_domains = frozenset(address.rpartition("@")[2] for address in known_addresses if "@" in address)
+    family_domains = domains_of(contacts)
     link_assessments = assess_links(parsed_email.links, family_domains)
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
     reasons.extend(link_reasons(link_assessments, parsed_email.links_unreadable))
@@ -107,8 +99,8 @@ def main() -> None:
         reader_outcome = ReaderFailure(str(error))
         print(f"reader failed: {error}")
 
-    contact_by_name = find_local_contact(contacts, parsed_email.sender_name)
-    contact_by_claim = find_local_contact(contacts, getattr(reader_outcome, "claimed_person", None))
+    contact_by_name = find_contact_among(contacts, parsed_email.sender_name)
+    contact_by_claim = find_contact_among(contacts, getattr(reader_outcome, "claimed_person", None))
     outcome = decide(reader_outcome, contact_by_name, contact_by_claim, parsed_email.sender_address, reasons)
     if needs_escalation(outcome, arguments.escalation is not None):
         print(f"escalation (faked): decision={arguments.escalation} applied to {outcome.gate}")

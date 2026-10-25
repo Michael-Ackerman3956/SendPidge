@@ -11,7 +11,7 @@ from tests.test_verdict import BUCKET_NAME, CONTACT_EMAIL, JIMIN_WHATSAPP_NUMBER
 
 CONTACT_SORT_KEY = "CONTACT#jimin"
 OTHER_RECEIVER_ADDRESS = "someone-else@example.com"
-MOCK_CODE = "4821"  # the handler's default; CDK never sets CONTACT_VERIFICATION_MOCK_CODE
+MOCK_CODE = "4821"  # the handler's only code: the PWA plays the reply with it
 
 
 @pytest.fixture

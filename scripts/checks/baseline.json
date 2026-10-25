@@ -1,0 +1,18 @@
+[
+  "infra/bin/sendpidge.ts::nullish_default::context[contextKey] = (envValues[envKey] ?? \"\").trim();",
+  "infra/lib/stack-settings.ts::nullish_default::asksPerContactPerHour: Number(stack.node.tryGetContext(\"asksPerContactPerHour\") ?? 3),",
+  "infra/lib/stack-settings.ts::nullish_default::callNudgesPerContactPerHour: Number(stack.node.tryGetContext(\"callNudgesPerContactPerHour\") ?? 1),",
+  "infra/lib/stack-settings.ts::nullish_default::const callReminderTodayDelaySeconds: number = Number(stack.node.tryGetContext(\"callReminderTodayDelaySeconds\") ?? 14400);",
+  "infra/lib/stack-settings.ts::nullish_default::const callReminderTomorrowDelaySeconds: number = Number(stack.node.tryGetContext(\"callReminderTomorrowDelaySeconds\") ?? 79200);",
+  "infra/lib/stack-settings.ts::nullish_default::const mockBankMailbox: string = stack.node.tryGetContext(\"mockBankMailbox\") ?? \"\";",
+  "infra/lib/stack-settings.ts::nullish_default::const receiverMailbox: string = stack.node.tryGetContext(\"receiverMailbox\") ?? \"\";",
+  "infra/lib/stack-settings.ts::nullish_default::vapidSecretName: stack.node.tryGetContext(\"vapidSecretName\") ?? \"sendpidge/vapid-private-key\",",
+  "pwa/js/app.js::nullish_default::applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);",
+  "pwa/js/pidge-chat.js::nullish_default::return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;",
+  "pwa/js/pidge-view.js::nullish_default::const title = `${PAYMENT_RAIL_LABELS[caseRow.paymentRail] ?? caseRow.paymentRail} \u00b7 ${caseRow.bank} \u00b7 ${caseRow.amount} ${caseRow.currency}`;",
+  "pwa/js/pidge-view.js::nullish_default::payeeHint: String(fields.get(\"payeeHint\") ?? \"\").trim(),",
+  "pwa/js/push-notifications.js::nullish_default::?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodeBase64UrlToBytes(VAPID_PUBLIC_KEY) });",
+  "pwa/js/receiver-view.js::nullish_default::const sortKey = (email) => parseTimestampMilliseconds(email.receivedAt) ?? Number.NEGATIVE_INFINITY;",
+  "pwa/js/verdict-view.js::nullish_default::const releaseAtMilliseconds = parseTimestampMilliseconds(request.releaseAt) ?? Date.now();",
+  "pwa/sw.js::nullish_default::pushEvent.waitUntil(self.registration.showNotification(title, { body, icon: \"assets/pidge-icon.png\", tag: notice?.notice ?? \"pidge\" }));"
+]

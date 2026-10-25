@@ -2,7 +2,8 @@
 
 from shared.email_parse import EmailLink
 from shared.enums import ReasonCode
-from shared.links import assess_link, assess_links, confusable_skeleton, link_reasons
+from shared.links import assess_link, assess_links, link_reasons
+from shared.lists import confusable_skeleton
 
 FAMILY_DOMAINS = frozenset({"example.com", "kakaobank.com"})
 

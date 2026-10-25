@@ -6,13 +6,13 @@ import logging
 from dataclasses import dataclass
 
 from shared.enums import (
-    PHONE_CHANNEL_ANSWERS,
     CallPromise,
     VerdictAnswer,
     WhatsAppInboundMessageType,
     WhatsAppInteractiveType,
     WhatsAppMessageStatus,
 )
+from shared.verdict import parse_phone_answer
 
 logger = logging.getLogger(__name__)
 
@@ -93,10 +93,10 @@ def parse_inbound_reply(sns_message: dict) -> WhatsAppReply | None:
         message = change_value["messages"][0]
         if WhatsAppInboundMessageType(message["type"]) is not WhatsAppInboundMessageType.BUTTON:
             return None
-        request_id, answer_value = message["button"]["payload"].rsplit(PAYLOAD_SEPARATOR, 1)
-        answer = VerdictAnswer(answer_value)
-        if answer not in PHONE_CHANNEL_ANSWERS:
-            return None  # undo and reverse exist only in the PWA
+        parsed_answer = parse_phone_answer(message["button"]["payload"], PAYLOAD_SEPARATOR)
+        if parsed_answer is None:
+            return None
+        request_id, answer = parsed_answer
         return WhatsAppReply(request_id, answer, f"+{message['from']}", message["id"])
     except (KeyError, IndexError, TypeError, ValueError):
         logger.info("inbound WhatsApp message is not a button tap; ignored")

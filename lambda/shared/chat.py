@@ -4,19 +4,17 @@ pidge-verdict accepts a question (cap, then the grandma row); pidge-dispatch ans
 then the chat agent, then the pidge row). The user id always comes from the caller's connection row, never from text.
 """
 
-import json
 import logging
 import os
-import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 import boto3
 from boto3.dynamodb.conditions import Key
 
 from shared import graph
+from shared.metrics import emit_count_metric
 from shared.enums import ChatCardKind, ChatRole, ChatVia, GuardrailOutcome, PushMessageType
 
 logger = logging.getLogger(__name__)
@@ -61,7 +59,7 @@ def take_question_slot(user_id: str) -> bool:
 
 def write_message(user_id: str, role: ChatRole, via: ChatVia, text: str, extra_fields: dict | None = None) -> dict:
     """MSG#<time>#<suffix>: sorts by time, and two questions in the same second never overwrite each other."""
-    sent_at = graph.iso_timestamp(datetime.now(timezone.utc))
+    sent_at = graph.now_timestamp()
     message_row = {
         "PK": chat_partition(user_id), "SK": f"{MESSAGE_SORT_KEY_PREFIX}{sent_at}#{uuid.uuid4().hex[:8]}",
         "role": str(role), "via": str(via), "text": text, "sentAt": sent_at, **(extra_fields or {}),
@@ -143,12 +141,7 @@ def check_prompt_attack(question: str) -> GuardrailOutcome:
 
 
 def emit_prompt_attack_metric() -> None:
-    """CloudWatch embedded metric format: one count per blocked question, no extra permissions needed."""
-    print(json.dumps({
-        "_aws": {"Timestamp": int(time.time() * 1000), "CloudWatchMetrics": [
-            {"Namespace": "SendPidge", "Dimensions": [[]], "Metrics": [{"Name": PROMPT_ATTACK_METRIC_NAME, "Unit": "Count"}]}]},
-        PROMPT_ATTACK_METRIC_NAME: 1,
-    }))
+    emit_count_metric(PROMPT_ATTACK_METRIC_NAME)
 
 
 def write_reply(user_id: str, question_row: dict, text: str, card_kind: ChatCardKind | None) -> dict:

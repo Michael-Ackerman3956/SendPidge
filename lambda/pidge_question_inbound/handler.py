@@ -1,15 +1,14 @@
 """S3 pidge/ → Grandma's question by email. Only a mail from her real mailbox with aligned DKIM becomes a CHAT# row;
 pidge-dispatch answers it from the stream. Everything else is dropped, logged and counted. No Bedrock here."""
 
-import json
 import logging
 import os
-import time
 from urllib.parse import unquote_plus
 
 import boto3
 
 from shared import chat_email
+from shared.metrics import emit_count_metric
 from shared.enums import EmailedQuestionOutcome
 
 logger = logging.getLogger()
@@ -28,12 +27,7 @@ def handle(event, context):
 
 
 def emit_dropped_metric(outcome: EmailedQuestionOutcome) -> None:
-    """CloudWatch embedded metric format: a count per drop reason, no extra permissions needed."""
-    print(json.dumps({
-        "_aws": {"Timestamp": int(time.time() * 1000), "CloudWatchMetrics": [
-            {"Namespace": "SendPidge", "Dimensions": [["Outcome"]], "Metrics": [{"Name": DROPPED_METRIC_NAME, "Unit": "Count"}]}]},
-        "Outcome": str(outcome), DROPPED_METRIC_NAME: 1,
-    }))
+    emit_count_metric(DROPPED_METRIC_NAME, "Outcome", str(outcome))
 
 
 def handle_question_object(bucket_name: str, object_key: str) -> None:

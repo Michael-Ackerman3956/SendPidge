@@ -1,13 +1,14 @@
 // Pidge hold overlay (countdown, 5-second long-press cancel, shield on timeout) and the calm WARN banner.
 // All email fields are attacker-controlled: rendered only through textContent.
 import { INTENT, WARN_REASON } from "./constants.js";
-import { buildPidgeIconElement, buildShieldIcon, createElementWithText, formatRemainingTimeAsMinutesSeconds } from "./dom-helpers.js";
+import {
+  SVG_NAMESPACE, buildPidgeIconElement, buildShieldIcon, createElementWithText, formatRemainingTimeAsMinutesSeconds, parseTimestampMilliseconds,
+} from "./dom-helpers.js";
 
 const CANCEL_LONG_PRESS_DURATION_MS = 5000;
 const COUNTDOWN_TICK_INTERVAL_MS = 1000;
 const COUNTDOWN_RING_RADIUS = 38;
 const COUNTDOWN_RING_CIRCUMFERENCE = 2 * Math.PI * COUNTDOWN_RING_RADIUS;
-const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
 const INTENT_PHRASES = Object.freeze({
   [INTENT.MONEY]: "money",
@@ -27,8 +28,8 @@ function describeIntentForHoldMessage(intent) {
 }
 
 function parseExpiryTimeOrReportError(expiresAtIsoText) {
-  const expiresAtMilliseconds = Date.parse(expiresAtIsoText);
-  if (Number.isNaN(expiresAtMilliseconds)) {
+  const expiresAtMilliseconds = parseTimestampMilliseconds(expiresAtIsoText);
+  if (expiresAtMilliseconds === null) {
     console.error("SendPidge: hold request has an unreadable expiresAt; showing it as expired", expiresAtIsoText);
     return Date.now();
   }

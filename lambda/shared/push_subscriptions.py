@@ -3,7 +3,6 @@
 No third-party imports, so the WebSocket handler can save a subscription without the dependency layer.
 """
 
-from datetime import datetime, timezone
 from hashlib import sha256
 from urllib.parse import urlsplit
 
@@ -72,7 +71,7 @@ def save_subscription(user_id: str, body: dict) -> ActionOutcome:
     graph.get_table().put_item(Item={
         "PK": f"USER#{user_id}", "SK": sort_key, "endpoint": subscription["endpoint"],
         "p256dh": subscription["keys"]["p256dh"], "auth": subscription["keys"]["auth"],
-        "createdAt": graph.iso_timestamp(datetime.now(timezone.utc)),
+        "createdAt": graph.now_timestamp(),
     })
     return ActionOutcome.RECORDED
 

@@ -23,7 +23,6 @@ CASE_AGENT_MODEL = ReaderModelChoice(os.environ.get("CASE_AGENT_MODEL", ReaderMo
 MEMORY_ID = os.environ.get("CASE_AGENT_MEMORY_ID", "")  # empty → no AgentCore Memory (local smoke test)
 MEMORY_REGION = os.environ.get("AWS_REGION", "us-east-1")
 FAMILY_FACTS_NAMESPACE = "/pidge/families/{actorId}/facts"
-MINIMUM_SESSION_ID_LENGTH = 33
 
 app = BedrockAgentCoreApp()
 

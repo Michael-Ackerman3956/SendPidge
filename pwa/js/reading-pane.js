@@ -51,10 +51,6 @@ function storeLayout(layout) {
   }
 }
 
-export function isWideScreen() {
-  return wideScreenQuery.matches;
-}
-
 export function isSplitReadingPane() {
   return wideScreenQuery.matches && activeLayout !== READING_PANE_LAYOUT.NO_SPLIT;
 }

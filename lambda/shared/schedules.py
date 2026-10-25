@@ -1,4 +1,4 @@
-"""One-time EventBridge Scheduler invocations: the release timer today, the re-ask and the bank follow-up later."""
+"""One-time EventBridge Scheduler invocations: the release timer, the re-ask and the bank follow-up."""
 
 import json
 import logging

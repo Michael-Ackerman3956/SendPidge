@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from shared.email_parse import EmailLink, registrable_domain_of_host
 from shared.enums import ReasonCode
-from shared.lists import confusable_skeleton, is_lookalike_of  # noqa: F401  (re-exported for the link tests)
+from shared.lists import is_lookalike_of
 
 KNOWN_SHORTENER_HOSTS = frozenset({
     "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rb.gy", "tiny.cc", "t.ly", "shorturl.at",

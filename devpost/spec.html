@@ -55,6 +55,7 @@ details[open] summary::before { transform: rotate(90deg); }
 
 .arch { background: #0b0f16; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin: 12px 0; }
 .arch svg { display: block; width: 100%; height: auto; }
+.arch-wide { position: relative; left: 50%; width: min(1500px, calc(100vw - 40px)); transform: translateX(-50%); }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--text-2); margin: 8px 4px 0; }
 .legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--sw); }
 
@@ -2034,6 +2035,768 @@ elif reasons:
 <p><b>Flags.</b> <code>orgEnabled</code>, <code>orgBroadcastEnabled</code>, <code>orgEventsEnabled</code>, <code>medicationRemindersEnabled</code>, <code>aggregateFeedEnabled</code> (all false), <code>broadcastsPerOrgPerHour</code> 2, <code>orgSendsPerResidentPerDay</code> 1 / <code>orgSendsPerResidentPerWeek</code> 3 per template category, <code>whatsappPortfolioTier</code> 250, quiet hours seed 21:00–08:00 (the PROFILE row is the source); synth throws when <code>orgEnabled</code> is on without <code>releaseSchedulerEnabled</code>.</p>
 <p class="muted">Blocked or for counsel: social over WhatsApp to US residents; medication outside in-app; hospital patients (BAA); alert as "emergency purposes"; per-org counts as PHI in small facilities; reporting duties on a confirmed fraud. Slices K0, S1, S2, S2b, S3, S7, S8, slice 13, S4, S5, S6 in <code>checklist.md &gt; Stretch slices — organisation dashboard</code>; open rulings E1–E7 and wave asks in <code>06-architect-requirements.md</code>.</p></div></details>
 </div>
+
+<!-- ═══ STRETCH OVERVIEW DIAGRAMS ═══ -->
+<h3 id="stretch-overview">Stretch overview — three diagrams (2026-10-25)</h3>
+<p class="muted">Two one-page overviews (numbered columns, one tile per service, one sub-line, an operations strip), then one full diagram in the format of the Architecture diagram above. Solid = built; dashed orange = stretch, not built, not scheduled; red = the privacy rule.</p>
+<p class="muted"><strong>1 · Today — the Oct 28 scope.</strong></p>
+<div class="arch arch-wide">
+<svg viewBox="0 0 1240 476" xmlns="http://www.w3.org/2000/svg" font-family="Avenir, -apple-system, system-ui, sans-serif">
+<defs>
+  <marker id="ov-ahO" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 z" fill="#F59E0B"/></marker>
+  <symbol id="ov-sqs" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#E7157B"/><rect x="12" y="20" width="32" height="16" rx="3" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M19 20v16M26 20v16M33 20v16" stroke="#fff" stroke-width="2"/><path d="M44 28h6" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="ov-bus" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#E7157B"/><path d="M10 28h36" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="28" r="3.5" fill="#fff"/><circle cx="28" cy="28" r="3.5" fill="#fff"/><circle cx="40" cy="28" r="3.5" fill="#fff"/><path d="M16 24v-8M28 32v8M40 24v-8" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="ov-page" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#8C4FFF"/><rect x="13" y="12" width="30" height="32" rx="3" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M19 36v-8M26 36v-14M33 36v-5M40 36v-11" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></symbol>
+  <symbol id="ov-shield" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#DD344C"/><path d="M28 11l13 5v10c0 9-5.5 15.5-13 19-7.5-3.5-13-10-13-19V16z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/><path d="M22 23l12 12M34 23L22 35" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></symbol>
+</defs>
+<text x="26" y="40" font-size="30">🕊️</text>
+<text x="68" y="36" font-size="19" fill="#e8ecf3" font-weight="800">SendPidge architecture — today</text>
+<text x="68" y="56" font-size="11.5" fill="#8a94a6">Hold-and-ask: an email claiming to be family is held, the real person is asked on a channel already verified as theirs, and their answer decides.</text>
+<rect x="24.0" y="74" width="219.2" height="288" rx="12" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.12)" stroke-width="1.3"/>
+<text x="36.0" y="96" font-size="12.5" fill="#d7dbe2" font-weight="800">1. People</text>
+<rect x="34.0" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<text x="59.0" y="148" text-anchor="middle" font-size="24">📧</text>
+<text x="84.0" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">Impersonator email</text>
+<text x="84.0" y="151" font-size="9.5" fill="#8a94a6">"from Jimin" · asks for money</text>
+<rect x="34.0" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<text x="59.0" y="210" text-anchor="middle" font-size="24">👵</text>
+<text x="84.0" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">Grandma</text>
+<text x="84.0" y="213" font-size="9.5" fill="#8a94a6">PWA on iPhone · held → verdict</text>
+<rect x="34.0" y="236" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<text x="59.0" y="272" text-anchor="middle" font-size="24">📱</text>
+<text x="84.0" y="259" font-size="10.5" fill="#e8ecf3" font-weight="700">Jimin, the real one</text>
+<text x="84.0" y="275" font-size="9.5" fill="#8a94a6">WhatsApp or in-app · Yes / No</text>
+<rect x="267.2" y="74" width="219.2" height="288" rx="12" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.12)" stroke-width="1.3"/>
+<text x="279.2" y="96" font-size="12.5" fill="#9aa5ff" font-weight="800">2. Inbound</text>
+<rect x="277.2" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-ses" x="285.2" y="122" width="34" height="34"/>
+<text x="327.2" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">Amazon SES Mail Manager</text>
+<text x="327.2" y="151" font-size="9.5" fill="#8a94a6">SPF·DKIM header · deny default</text>
+<rect x="277.2" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-s3" x="285.2" y="184" width="34" height="34"/>
+<text x="327.2" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">Amazon S3</text>
+<text x="327.2" y="213" font-size="9.5" fill="#8a94a6">raw .eml · evidence · 30 d</text>
+<rect x="510.4" y="74" width="219.2" height="288" rx="12" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.12)" stroke-width="1.3"/>
+<text x="522.4" y="96" font-size="12.5" fill="#ffb366" font-weight="800">3. Detect and hold</text>
+<rect x="520.4" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-lambda" x="528.4" y="122" width="34" height="34"/>
+<text x="570.4" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">AWS Lambda pidge-reader</text>
+<text x="570.4" y="151" font-size="9.5" fill="#8a94a6">Strands agent · no tools</text>
+<rect x="520.4" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-bedrock" x="528.4" y="184" width="34" height="34"/>
+<text x="570.4" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">Amazon Bedrock</text>
+<text x="570.4" y="213" font-size="9.5" fill="#8a94a6">Claude Haiku 5.5 · verdict JSON</text>
+<rect x="520.4" y="236" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-policy" x="528.4" y="246" width="34" height="34"/>
+<text x="570.4" y="259" font-size="10.5" fill="#e8ecf3" font-weight="700">Policy, in code</text>
+<text x="570.4" y="275" font-size="9.5" fill="#8a94a6">two gates → HOLD or warn</text>
+<rect x="520.4" y="298" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-ddb" x="528.4" y="308" width="34" height="34"/>
+<text x="570.4" y="321" font-size="10.5" fill="#e8ecf3" font-weight="700">Amazon DynamoDB</text>
+<text x="570.4" y="337" font-size="9.5" fill="#8a94a6">one table · contacts, requests</text>
+<rect x="753.5999999999999" y="74" width="219.2" height="288" rx="12" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.12)" stroke-width="1.3"/>
+<text x="765.5999999999999" y="96" font-size="12.5" fill="#ff7cc0" font-weight="800">4. Ask the real person</text>
+<rect x="763.5999999999999" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-eum" x="771.5999999999999" y="122" width="34" height="34"/>
+<text x="813.5999999999999" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">AWS End User Messaging</text>
+<text x="813.5999999999999" y="151" font-size="9.5" fill="#8a94a6">WhatsApp card · Yes / No</text>
+<rect x="763.5999999999999" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-apigw" x="771.5999999999999" y="184" width="34" height="34"/>
+<text x="813.5999999999999" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">Amazon API Gateway</text>
+<text x="813.5999999999999" y="213" font-size="9.5" fill="#8a94a6">WebSocket · in-app card + push</text>
+<rect x="763.5999999999999" y="236" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-sns" x="771.5999999999999" y="246" width="34" height="34"/>
+<text x="813.5999999999999" y="259" font-size="10.5" fill="#e8ecf3" font-weight="700">Amazon SNS → Lambda</text>
+<text x="813.5999999999999" y="275" font-size="9.5" fill="#8a94a6">pidge-verdict · No beats Yes</text>
+<rect x="996.8" y="74" width="219.2" height="288" rx="12" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.12)" stroke-width="1.3"/>
+<text x="1008.8" y="96" font-size="12.5" fill="#5EC4AA" font-weight="800">5. After the verdict</text>
+<rect x="1006.8" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-agentcore" x="1014.8" y="122" width="34" height="34"/>
+<text x="1056.8" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">Bedrock AgentCore</text>
+<text x="1056.8" y="151" font-size="9.5" fill="#8a94a6">case agent · read-only tools</text>
+<rect x="1006.8" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-memory" x="1014.8" y="184" width="34" height="34"/>
+<text x="1056.8" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">AgentCore Memory</text>
+<text x="1056.8" y="213" font-size="9.5" fill="#8a94a6">facts per family · one session</text>
+<rect x="1006.8" y="236" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-guardrails" x="1014.8" y="246" width="34" height="34"/>
+<text x="1056.8" y="259" font-size="10.5" fill="#e8ecf3" font-weight="700">Bedrock Guardrails</text>
+<text x="1056.8" y="275" font-size="9.5" fill="#8a94a6">chat input · before the agent</text>
+<path d="M245.2 139.0 H265.2" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M488.4 139.0 H508.4" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M731.5999999999999 139.0 H751.5999999999999" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M974.8 139.0 H994.8" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="24" y="378" width="1192" height="70" rx="12" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.12)" stroke-width="1.3"/>
+<text x="36" y="400" font-size="12.5" fill="#d7dbe2" font-weight="800">6. Infrastructure and operations</text>
+<rect x="36" y="410" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#i-package" x="43" y="415" width="18" height="18"/>
+<text x="68" y="428" font-size="9.8" fill="#e8ecf3">AWS CDK v2 · one stack · us-east-1</text>
+<rect x="271.6" y="410" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#i-scheduler" x="278.6" y="415" width="18" height="18"/>
+<text x="303.6" y="428" font-size="9.8" fill="#e8ecf3">EventBridge Scheduler · re-ask</text>
+<rect x="507.20000000000005" y="410" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#ov-sqs" x="514.2" y="415" width="18" height="18"/>
+<text x="539.2" y="428" font-size="9.8" fill="#e8ecf3">SQS dead-letter + CloudWatch alarm</text>
+<rect x="742.8000000000001" y="410" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#i-cf" x="749.8000000000001" y="415" width="18" height="18"/>
+<text x="774.8000000000001" y="428" font-size="9.8" fill="#e8ecf3">PWA on Amazon S3 + CloudFront</text>
+<rect x="978.4000000000001" y="410" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#i-cloudwatch" x="985.4000000000001" y="415" width="18" height="18"/>
+<text x="1010.4000000000001" y="428" font-size="9.8" fill="#e8ecf3">Strands OpenTelemetry → CloudWatch</text>
+<text x="26" y="466" font-size="9.5" fill="#555e6e">Not drawn: Opus escalation on unknown addresses (flag on) · RCS rich card and call nudge (built, flag off) · scam lists · Web Push. Columns follow the Core Journey; arrows show the main flow.</text>
+</svg>
+</div>
+<p class="muted"><strong>2 · Today + organisation centre (stretch).</strong> Build order (read side first, the write side last because S4 waits on Meta template review): many residents and the office as a contact (K0, S1, S2) · the read side (S2b, S3) · the command center (S7, S8) · passkeys for admins (13) · the write side (S4–S6).</p>
+<div class="arch arch-wide">
+<svg viewBox="0 0 1240 538" xmlns="http://www.w3.org/2000/svg" font-family="Avenir, -apple-system, system-ui, sans-serif">
+<text x="26" y="40" font-size="30">🕊️</text>
+<text x="68" y="36" font-size="19" fill="#e8ecf3" font-weight="800">SendPidge architecture — today + organisation centre (stretch)</text>
+<text x="68" y="56" font-size="11.5" fill="#8a94a6">The kernel stays; the org reads states through a projection, sends through capped templates, and Nestuary sees counts only. Orange = not built, not scheduled.</text>
+<rect x="24.0" y="74" width="219.2" height="350" rx="12" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.12)" stroke-width="1.3"/>
+<text x="36.0" y="96" font-size="12.5" fill="#d7dbe2" font-weight="800">1. People</text>
+<rect x="34.0" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<text x="59.0" y="148" text-anchor="middle" font-size="24">👵</text>
+<text x="84.0" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">Residents × N</text>
+<text x="84.0" y="151" font-size="9.5" fill="#8a94a6">one PWA each · own consent</text>
+<rect x="34.0" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<text x="59.0" y="210" text-anchor="middle" font-size="24">🏢</text>
+<text x="84.0" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">Office admin on duty</text>
+<text x="84.0" y="213" font-size="9.5" fill="#8a94a6">passkey sign-in · dashboard</text>
+<rect x="36.0" y="177" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="49.0" y="187" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">13</text>
+<rect x="34.0" y="236" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<text x="59.0" y="272" text-anchor="middle" font-size="24">📧</text>
+<text x="84.0" y="259" font-size="10.5" fill="#e8ecf3" font-weight="700">Impersonator email</text>
+<text x="84.0" y="275" font-size="9.5" fill="#8a94a6">"from the office" · asks money</text>
+<rect x="34.0" y="298" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<text x="59.0" y="334" text-anchor="middle" font-size="24">🧑‍💻</text>
+<text x="84.0" y="321" font-size="10.5" fill="#e8ecf3" font-weight="700">Nestuary ops</text>
+<text x="84.0" y="337" font-size="9.5" fill="#8a94a6">command center · counts only</text>
+<rect x="36.0" y="301" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="49.0" y="311" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S8</text>
+<rect x="267.2" y="74" width="219.2" height="350" rx="12" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.12)" stroke-width="1.3"/>
+<text x="279.2" y="96" font-size="12.5" fill="#9aa5ff" font-weight="800">2. Hold-and-ask kernel</text>
+<rect x="277.2" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-ses" x="285.2" y="122" width="34" height="34"/>
+<text x="327.2" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">Amazon SES Mail Manager</text>
+<text x="327.2" y="151" font-size="9.5" fill="#8a94a6">one rule per resident</text>
+<rect x="279.2" y="115" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="292.2" y="125" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S1</text>
+<rect x="277.2" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-lambda" x="285.2" y="184" width="34" height="34"/>
+<text x="327.2" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">Lambda + Amazon Bedrock</text>
+<text x="327.2" y="213" font-size="9.5" fill="#8a94a6">Reader · no tools · unchanged</text>
+<rect x="277.2" y="236" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-ddb" x="285.2" y="246" width="34" height="34"/>
+<text x="327.2" y="259" font-size="10.5" fill="#e8ecf3" font-weight="700">Policy + DynamoDB</text>
+<text x="327.2" y="275" font-size="9.5" fill="#8a94a6">two gates · one table · orgId</text>
+<rect x="279.2" y="239" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="292.2" y="249" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S2</text>
+<rect x="277.2" y="298" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-eum" x="285.2" y="308" width="34" height="34"/>
+<text x="327.2" y="321" font-size="10.5" fill="#e8ecf3" font-weight="700">Ask the office</text>
+<text x="327.2" y="337" font-size="9.5" fill="#8a94a6">same ask, same verdict path</text>
+<rect x="279.2" y="301" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="292.2" y="311" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S2</text>
+<rect x="277.2" y="360" width="199.2" height="54" rx="8" fill="#171e29" stroke="rgba(255,255,255,0.10)" stroke-width="1.2"/>
+<use href="#i-agentcore" x="285.2" y="370" width="34" height="34"/>
+<text x="327.2" y="383" font-size="10.5" fill="#e8ecf3" font-weight="700">Bedrock AgentCore</text>
+<text x="327.2" y="399" font-size="9.5" fill="#8a94a6">case agent · unchanged</text>
+<rect x="510.4" y="74" width="219.2" height="350" rx="12" fill="rgba(255,255,255,0.025)" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="7 5"/>
+<text x="522.4" y="96" font-size="12.5" fill="#F59E0B" font-weight="800">3. Dashboard · read side</text>
+<rect x="520.4" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-stream" x="528.4" y="122" width="34" height="34"/>
+<text x="570.4" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">DynamoDB Streams</text>
+<text x="570.4" y="151" font-size="9.5" fill="#8a94a6">second reader on the table</text>
+<rect x="522.4" y="115" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="535.4" y="125" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<rect x="520.4" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-lambda" x="528.4" y="184" width="34" height="34"/>
+<text x="570.4" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">pidge_org_projection</text>
+<text x="570.4" y="213" font-size="9.5" fill="#8a94a6">visibility filter, fail closed</text>
+<rect x="522.4" y="177" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="535.4" y="187" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<rect x="520.4" y="236" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-ddb" x="528.4" y="246" width="34" height="34"/>
+<text x="570.4" y="259" font-size="10.5" fill="#e8ecf3" font-weight="700">ORGLOG# · ORGSTAT# rows</text>
+<text x="570.4" y="275" font-size="9.5" fill="#8a94a6">states 90 d · counts 400 d</text>
+<rect x="522.4" y="239" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="535.4" y="249" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<rect x="520.4" y="298" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#ov-page" x="528.4" y="308" width="34" height="34"/>
+<text x="570.4" y="321" font-size="10.5" fill="#e8ecf3" font-weight="700">Org dashboard page</text>
+<text x="570.4" y="337" font-size="9.5" fill="#8a94a6">same PWA · ORG_ADMIN role</text>
+<rect x="522.4" y="301" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="535.4" y="311" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<rect x="520.4" y="360" width="199.2" height="54" rx="8" fill="rgba(239,68,68,0.08)" stroke="#EF4444" stroke-width="1.2"/>
+<use href="#ov-shield" x="528.4" y="370" width="34" height="34"/>
+<text x="570.4" y="383" font-size="10.5" fill="#EF4444" font-weight="700">Privacy rule</text>
+<text x="570.4" y="399" font-size="9.5" fill="#8a94a6">never subject, body, amount</text>
+<rect x="753.5999999999999" y="74" width="219.2" height="350" rx="12" fill="rgba(255,255,255,0.025)" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="7 5"/>
+<text x="765.5999999999999" y="96" font-size="12.5" fill="#F59E0B" font-weight="800">4. Broadcast · write side</text>
+<rect x="763.5999999999999" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-lambda" x="771.5999999999999" y="122" width="34" height="34"/>
+<text x="813.5999999999999" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">pidge_broadcast</text>
+<text x="813.5999999999999" y="151" font-size="9.5" fill="#8a94a6">caps fail closed · category</text>
+<rect x="765.5999999999999" y="115" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="778.5999999999999" y="125" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<rect x="763.5999999999999" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#ov-sqs" x="771.5999999999999" y="184" width="34" height="34"/>
+<text x="813.5999999999999" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">Amazon SQS</text>
+<text x="813.5999999999999" y="213" font-size="9.5" fill="#8a94a6">one message per recipient</text>
+<rect x="765.5999999999999" y="177" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="778.5999999999999" y="187" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<rect x="763.5999999999999" y="236" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-lambda" x="771.5999999999999" y="246" width="34" height="34"/>
+<text x="813.5999999999999" y="259" font-size="10.5" fill="#e8ecf3" font-weight="700">pidge_broadcast_send</text>
+<text x="813.5999999999999" y="275" font-size="9.5" fill="#8a94a6">day / week slot, then send</text>
+<rect x="765.5999999999999" y="239" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="778.5999999999999" y="249" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<rect x="763.5999999999999" y="298" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-eum" x="771.5999999999999" y="308" width="34" height="34"/>
+<text x="813.5999999999999" y="321" font-size="10.5" fill="#e8ecf3" font-weight="700">WhatsApp · email · in-app</text>
+<text x="813.5999999999999" y="337" font-size="9.5" fill="#8a94a6">UTILITY template · ≤ 2 variables</text>
+<rect x="765.5999999999999" y="301" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="778.5999999999999" y="311" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<rect x="763.5999999999999" y="360" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-scheduler" x="771.5999999999999" y="370" width="34" height="34"/>
+<text x="813.5999999999999" y="383" font-size="10.5" fill="#e8ecf3" font-weight="700">Events and reminders</text>
+<text x="813.5999999999999" y="399" font-size="9.5" fill="#8a94a6">RSVP · Scheduler · in-app meds</text>
+<rect x="765.5999999999999" y="363" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="778.5999999999999" y="373" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S5</text>
+<rect x="996.8" y="74" width="219.2" height="350" rx="12" fill="rgba(255,255,255,0.025)" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="7 5"/>
+<text x="1008.8" y="96" font-size="12.5" fill="#F59E0B" font-weight="800">5. Command center · Nestuary</text>
+<rect x="1006.8" y="112" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#ov-bus" x="1014.8" y="122" width="34" height="34"/>
+<text x="1056.8" y="135" font-size="10.5" fill="#e8ecf3" font-weight="700">Amazon EventBridge</text>
+<text x="1056.8" y="151" font-size="9.5" fill="#8a94a6">cross-account bus · counts</text>
+<rect x="1008.8" y="115" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="1021.8" y="125" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S7</text>
+<rect x="1006.8" y="174" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#i-lambda" x="1014.8" y="184" width="34" height="34"/>
+<text x="1056.8" y="197" font-size="10.5" fill="#e8ecf3" font-weight="700">Ingest Lambda</text>
+<text x="1056.8" y="213" font-size="9.5" fill="#8a94a6">account → orgId · higher wins</text>
+<rect x="1008.8" y="177" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="1021.8" y="187" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S8</text>
+<rect x="1006.8" y="236" width="199.2" height="54" rx="8" fill="#171e29" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#ov-page" x="1014.8" y="246" width="34" height="34"/>
+<text x="1056.8" y="259" font-size="10.5" fill="#e8ecf3" font-weight="700">CENTER# rows + page</text>
+<text x="1056.8" y="275" font-size="9.5" fill="#8a94a6">orgs × today · "no data since"</text>
+<rect x="1008.8" y="239" width="26" height="13" rx="4" fill="#0b0f16" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3 2"/><text x="1021.8" y="249" font-size="8.5" fill="#F59E0B" font-weight="800" text-anchor="middle">S8</text>
+<path d="M245.2 139.0 H265.2" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M488.4 139.0 H508.4" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+<path d="M731.5999999999999 139.0 H751.5999999999999" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+<path d="M974.8 139.0 H994.8" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+<rect x="24" y="440" width="1192" height="70" rx="12" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.12)" stroke-width="1.3"/>
+<text x="36" y="462" font-size="12.5" fill="#d7dbe2" font-weight="800">6. Rails for the stretch</text>
+<rect x="36" y="472" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#i-policy" x="43" y="477" width="18" height="18"/>
+<text x="68" y="490" font-size="9.8" fill="#e8ecf3">Flags: all org flags off by default</text>
+<rect x="271.6" y="472" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#ov-shield" x="278.6" y="477" width="18" height="18"/>
+<text x="303.6" y="490" font-size="9.8" fill="#e8ecf3">Passkeys for admins · never a token</text>
+<rect x="507.20000000000005" y="472" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#i-scheduler" x="514.2" y="477" width="18" height="18"/>
+<text x="539.2" y="490" font-size="9.8" fill="#e8ecf3">Quiet hours 21:00–08:00 · deferred</text>
+<rect x="742.8000000000001" y="472" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#i-ddb" x="749.8000000000001" y="477" width="18" height="18"/>
+<text x="774.8000000000001" y="490" font-size="9.8" fill="#e8ecf3">ORGAUDIT# insert-only · 1 year</text>
+<rect x="978.4000000000001" y="472" width="225.6" height="28" rx="7" fill="#171e29" stroke="rgba(255,255,255,0.10)"/>
+<use href="#ov-sqs" x="985.4000000000001" y="477" width="18" height="18"/>
+<text x="1010.4000000000001" y="490" font-size="9.8" fill="#e8ecf3">DLQ + alarm on the projection</text>
+<text x="26" y="528" font-size="9.5" fill="#555e6e">Blocked or counsel: social over WhatsApp to US residents · medication outside in-app · hospital patients (BAA) · per-org counts in small facilities · reporting duties. Slices K0, S1–S8, 13 in checklist.md.</text>
+</svg>
+</div>
+<p class="muted"><strong>3 · Full architecture — today + organisation centre, every seam.</strong> Same format as the Architecture diagram above: lanes top to bottom, AWS icons, numbered badges for Core Journey steps, dashed orange badges carrying the slice id (K0, S1–S8, 13) for stretch pieces. The seven kernel lanes are compressed; the detail for them is in the Architecture diagram. Canonical text: <code>spec.md &gt; Stretch</code>; slices: <code>checklist.md &gt; Stretch slices</code>; rulings E1–E7: <code>06-architect-requirements.md</code>.</p>
+<div class="arch">
+<svg viewBox="0 0 930 4898" xmlns="http://www.w3.org/2000/svg" font-family="Avenir, -apple-system, system-ui, sans-serif">
+<defs>
+  <symbol id="full-sqs" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#E7157B"/><rect x="12" y="20" width="32" height="16" rx="3" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M19 20v16M26 20v16M33 20v16" stroke="#fff" stroke-width="2"/><path d="M44 28h6" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="full-bus" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#E7157B"/><path d="M10 28h36" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="28" r="3.5" fill="#fff"/><circle cx="28" cy="28" r="3.5" fill="#fff"/><circle cx="40" cy="28" r="3.5" fill="#fff"/><path d="M16 24v-8M28 32v8M40 24v-8" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="full-page" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#8C4FFF"/><rect x="13" y="12" width="30" height="32" rx="3" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M19 36v-8M26 36v-14M33 36v-5M40 36v-11" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></symbol>
+  <symbol id="full-shield" viewBox="0 0 56 56"><rect width="56" height="56" rx="8" fill="#DD344C"/><path d="M28 11l13 5v10c0 9-5.5 15.5-13 19-7.5-3.5-13-10-13-19V16z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/><path d="M22 23l12 12M34 23L22 35" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></symbol>
+</defs>
+<rect x="130" y="150" width="640" height="4728" rx="10" fill="none" stroke="#8a94a6" stroke-width="1.4"/>
+<rect x="130" y="150" width="50" height="26" rx="6" fill="#232f3e"/>
+<text x="155" y="168" font-size="12" fill="#ff9900" font-weight="800" text-anchor="middle">aws</text>
+<text x="190" y="169" font-size="13" fill="#e8ecf3" font-weight="700">AWS Cloud</text>
+<text x="275" y="169" font-size="11" fill="#8a94a6">us-east-1 · one deployment per organisation (E5)</text>
+<text x="450" y="52" text-anchor="middle" font-size="34">📧</text>
+<text x="450" y="86" font-size="12.5" fill="#e8ecf3" font-weight="700" text-anchor="middle">Impersonator email “from the office”</text>
+<text x="450" y="103" font-size="11" fill="#8a94a6" text-anchor="middle">unknown address · an office name variant · asks a resident for payment</text>
+<path d="M450 110 V172 H203 V248" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="212" y="187" font-size="10.5" fill="#8a94a6">SMTP → MX  sendpidge.com</text>
+<rect x="150" y="195" width="600" height="320" rx="12" fill="rgba(59,72,204,0.09)" stroke="rgba(59,72,204,0.45)"/>
+<text x="170" y="222" font-size="13" fill="#9aa5ff" font-weight="800">Inbound per resident · Amazon SES Mail Manager</text>
+<use href="#i-ses" x="175" y="255" width="56" height="56"/>
+<rect x="172" y="252" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#badge" x="167" y="247" width="22" height="22"/><text x="178" y="263" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">1</text>
+<rect x="211" y="246" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="226.0" y="259" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S1</text>
+<text x="203" y="330" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon SES</text>
+<text x="203" y="345" font-size="10" fill="#8a94a6" text-anchor="middle">Mail Manager</text>
+<text x="203" y="359" font-size="10" fill="#8a94a6" text-anchor="middle">one rule per resident</text>
+<rect x="255" y="245" width="340" height="110" rx="8" fill="rgba(11,15,22,0.6)" stroke="rgba(59,72,204,0.45)"/>
+<rect x="263" y="253" width="324" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="268" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">a · Traffic policy</tspan>  address list of enrolled residents</text>
+<rect x="263" y="278" width="324" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="293" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">b · Else</tspan>  unknown recipient bounces at SMTP</text>
+<rect x="263" y="303" width="324" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="318" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">c · Rule per resident</tspan>  Write to S3 inbox/&lt;receiverUserId&gt;/</text>
+<rect x="263" y="328" width="324" height="22" rx="5" fill="rgba(59,72,204,0.25)"/><text x="271" y="343" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#e8ecf3">d · Rule set</tspan>  SPF·DKIM → X-Pidge-Auth · forged header drop</text>
+<path d="M231 283 H253" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<use href="#i-s3" x="640" y="255" width="56" height="56"/>
+<use href="#badge" x="632" y="247" width="22" height="22"/><text x="643" y="263" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">2</text>
+<text x="668" y="330" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon S3</text>
+<text x="668" y="345" font-size="10" fill="#8a94a6" text-anchor="middle">raw .eml · 30 d</text>
+<text x="668" y="359" font-size="10" fill="#8a94a6" text-anchor="middle">receiver = the key prefix</text>
+<text x="668" y="373" font-size="10" fill="#8a94a6" text-anchor="middle">never the To header</text>
+<path d="M597 288 H638" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="170" y="400" width="560" height="72" rx="8" fill="rgba(11,15,22,0.5)" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="6 4"/>
+<text x="182" y="420" font-size="11" fill="#F59E0B" font-weight="800">K0 · kill test before any code</text>
+<text x="182" y="438" font-size="10" fill="#e8ecf3">does the stored object carry the envelope recipient at all?</text>
+<text x="182" y="452" font-size="10" fill="#e8ecf3">rules-per-rule-set quota against the expected resident count</text>
+<text x="182" y="466" font-size="10" fill="#e8ecf3">one send from the org address through the rule set</text>
+<text x="70" y="275" text-anchor="middle" font-size="34">👵</text>
+<text x="70" y="309" font-size="12.5" fill="#e8ecf3" font-weight="700" text-anchor="middle">Residents</text>
+<text x="70" y="325" font-size="10.5" fill="#8a94a6" text-anchor="middle">one mailbox each</text>
+<text x="70" y="340" font-size="10.5" fill="#8a94a6" text-anchor="middle">PWA on a phone</text>
+<text x="70" y="355" font-size="10.5" fill="#8a94a6" text-anchor="middle">own consent + visibility</text>
+<path d="M696 298 H724 V527 H470 V539" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="478" y="523" font-size="9.5" fill="#8a94a6" text-anchor="start">S3 OBJECT_CREATED · receiver from the key</text>
+<rect x="150" y="541" width="600" height="335" rx="12" fill="rgba(237,113,0,0.09)" stroke="rgba(237,113,0,0.45)"/>
+<text x="170" y="568" font-size="13" fill="#ffb366" font-weight="800">Detect · Strands Agents SDK on AWS Lambda — unchanged, plus the org contact</text>
+<use href="#i-lambda" x="442" y="586" width="56" height="56"/>
+<rect x="439" y="583" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#badge" x="434" y="578" width="22" height="22"/><text x="445" y="594" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">3</text>
+<rect x="478" y="577" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="493.0" y="590" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S1</text>
+<text x="470" y="661" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AWS Lambda · pidge-reader</text>
+<text x="470" y="676" font-size="10" fill="#8a94a6" text-anchor="middle">Strands Agent · tools=[] · unchanged</text>
+<text x="470" y="690" font-size="10" fill="#8a94a6" text-anchor="middle">receiver from the object key</text>
+<text x="470" y="704" font-size="10" fill="#F59E0B" text-anchor="middle">RECEIVER#/PROFILE row, else drop + metric</text>
+<use href="#i-bedrock" x="627" y="586" width="56" height="56"/>
+<use href="#badge" x="619" y="578" width="22" height="22"/><text x="630" y="594" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">4</text>
+<text x="655" y="661" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon Bedrock</text>
+<text x="655" y="676" font-size="10" fill="#8a94a6" text-anchor="middle">Claude Haiku · typed verdict</text>
+<text x="655" y="690" font-size="10" fill="#8a94a6" text-anchor="middle">unchanged</text>
+<path d="M498 608 H625" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<path d="M625 622 H500" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<rect x="170" y="586" width="188" height="82" rx="8" fill="rgba(11,15,22,0.5)" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="6 4"/>
+<text x="182" y="606" font-size="11" fill="#F59E0B" font-weight="800">Wave ruling C3 · open</text>
+<text x="182" y="624" font-size="9.5" fill="#e8ecf3">one ask per (org contact, sender)</text>
+<text x="182" y="637" font-size="9.5" fill="#e8ecf3">later holds attach by waveKey</text>
+<text x="182" y="650" font-size="9.5" fill="#e8ecf3">the office's No → every hold</text>
+<text x="182" y="663" font-size="9.5" fill="#e8ecf3">one tap releases N → founder call</text>
+<path d="M470 708 V729" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<use href="#i-lambda" x="442" y="731" width="56" height="56"/>
+<rect x="439" y="728" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#badge" x="434" y="723" width="22" height="22"/><text x="445" y="739" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">5</text>
+<rect x="478" y="722" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="493.0" y="735" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S2</text>
+<text x="470" y="806" font-size="11" fill="#ffb366" font-weight="700" text-anchor="middle">Policy · code (two gates)</text>
+<text x="470" y="821" font-size="10" fill="#e8ecf3" text-anchor="middle">gate 1: name ∈ graph ∧ unknown address → HOLD</text>
+<text x="470" y="835" font-size="10" fill="#F59E0B" text-anchor="middle">org nameVariants matched exactly (S2)</text>
+<text x="470" y="849" font-size="10" fill="#F59E0B" text-anchor="middle">ask cap per (contact SK, receiverEmail) (S2)</text>
+<use href="#i-bedrock" x="640" y="731" width="56" height="56"/>
+<text x="668" y="806" font-size="11" fill="#3AA68E" font-weight="700" text-anchor="middle">Opus escalation</text>
+<text x="668" y="821" font-size="10" fill="#8a94a6" text-anchor="middle">hold | warn · gate 2 only</text>
+<text x="668" y="835" font-size="10" fill="#8a94a6" text-anchor="middle">unchanged</text>
+<path d="M498 753 H638" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<path d="M638 767 H500" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<text x="568" y="747" font-size="9.5" fill="#3AA68E" text-anchor="middle">escalate?</text>
+<text x="568" y="781" font-size="9.5" fill="#3AA68E" text-anchor="middle">hold | warn</text>
+<path d="M470 853 V900" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="478" y="890" font-size="9.5" fill="#8a94a6" text-anchor="start">HOLD → REQUEST# row · unchanged</text>
+<rect x="150" y="902" width="600" height="360" rx="12" fill="rgba(59,72,204,0.09)" stroke="rgba(59,72,204,0.45)"/>
+<text x="170" y="929" font-size="13" fill="#9aa5ff" font-weight="800">One table · Amazon DynamoDB — orgId leads every new key</text>
+<use href="#i-ddb" x="175" y="962" width="56" height="56"/>
+<use href="#badge" x="167" y="954" width="22" height="22"/><text x="178" y="970" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">6</text>
+<text x="203" y="1037" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon DynamoDB</text>
+<text x="203" y="1052" font-size="10" fill="#8a94a6" text-anchor="middle">single table</text>
+<text x="203" y="1066" font-size="10" fill="#8a94a6" text-anchor="middle">Query on ORG#&lt;orgId&gt;</text>
+<text x="203" y="1080" font-size="10" fill="#8a94a6" text-anchor="middle">never a Scan</text>
+<rect x="255" y="952" width="480" height="260" rx="8" fill="rgba(11,15,22,0.6)" stroke="rgba(59,72,204,0.45)"/>
+<rect x="263" y="960" width="464" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="975" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">S2</tspan>  ORG#&lt;orgId&gt; / PROFILE {nameVariants, quietHours} · ADMIN# · MEMBER#&lt;email&gt;</text>
+<rect x="263" y="985" width="464" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="1000" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">S1</tspan>  RECEIVER#&lt;addr&gt; / PROFILE {receiverUserId, residentName, orgId, timezone}</text>
+<rect x="263" y="1010" width="464" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="1025" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">S2b</tspan>  RECEIVER#&lt;addr&gt; / ORGPREF#&lt;orgId&gt; {orgVisibility, consent, preferredChannel}</text>
+<rect x="263" y="1035" width="464" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="1050" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">S2b</tspan>  RECEIVER#&lt;addr&gt; / CONTACT#org-&lt;orgId&gt; · by the resident's own action only</text>
+<rect x="263" y="1060" width="464" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="1075" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">S3</tspan>  ORGLOG#&lt;orgId&gt; / &lt;srcKey&gt;#&lt;OrgEvent&gt; 90 d · ORGSTAT#&lt;orgId&gt; / DAY# 400 d</text>
+<rect x="263" y="1085" width="464" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="1100" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">S3</tspan>  ORGAUDIT#&lt;orgId&gt; / TS#&lt;iso&gt;#&lt;uuid&gt; · insert-only · no delete · 1 y (E7)</text>
+<rect x="263" y="1110" width="464" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="1125" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">S4</tspan>  BROADCAST#&lt;orgId&gt;#&lt;id&gt; / META {adminId, kind, state} · RECIPIENT#&lt;email&gt;</text>
+<rect x="263" y="1135" width="464" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="1150" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">S4</tspan>  WAMSG# · BROADCASTRATE#&lt;orgId&gt; · ORGSENDRATE#&lt;orgId&gt;#&lt;email&gt; · WATIER#</text>
+<rect x="263" y="1160" width="464" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="271" y="1175" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">S5–6</tspan>  EVENT#&lt;orgId&gt;#&lt;id&gt; / META + RSVP# · REMINDER#&lt;id&gt; · CONTACTREQ#&lt;id&gt;</text>
+<rect x="263" y="1185" width="464" height="22" rx="5" fill="rgba(59,72,204,0.25)"/><text x="271" y="1200" font-size="10.5" fill="#e8ecf3"><tspan font-weight="700" fill="#e8ecf3">today</tspan>  REQUEST# · EMAIL# · CASE# · NOTE# · CHAT# — never read by org code</text>
+<text x="255" y="1234" font-size="9.5" fill="#8a94a6">Resident rows change only by resident actions · a pooled table later = dynamodb:LeadingKeys policy</text>
+<path d="M700 1212 V1274 H450 V1286" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="442" y="1277" font-size="9.5" fill="#8a94a6" text-anchor="end">who is “the office” to her? CONTACT#org-&lt;orgId&gt;</text>
+<rect x="150" y="1288" width="600" height="345" rx="12" fill="rgba(231,21,123,0.09)" stroke="rgba(231,21,123,0.45)"/>
+<text x="170" y="1315" font-size="13" fill="#ff7ab8" font-weight="800">Ask the office · AWS End User Messaging · API Gateway — the org as a contact</text>
+<circle cx="450" cy="1350" r="6" fill="#E7157B"/><use href="#badge" x="462" y="1339" width="22" height="22"/><text x="473" y="1355" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">7</text>
+<text x="490" y="1354" font-size="10.5" fill="#8a94a6">asyncio.gather · unchanged</text>
+<path d="M444 1354 L322 1386" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<path d="M456 1354 L578 1386" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<use href="#i-eum" x="272" y="1388" width="56" height="56"/>
+<rect x="269" y="1385" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#badge" x="264" y="1380" width="22" height="22"/><text x="275" y="1396" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">9</text>
+<rect x="308" y="1379" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="323.0" y="1392" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S2</text>
+<text x="300" y="1463" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AWS End User Messaging Social</text>
+<text x="300" y="1478" font-size="10" fill="#8a94a6" text-anchor="middle">WhatsApp UTILITY · Yes / No</text>
+<text x="300" y="1492" font-size="10" fill="#8a94a6" text-anchor="middle">to the on-duty staff phone (E1)</text>
+<use href="#i-apigw" x="572" y="1388" width="56" height="56"/>
+<rect x="569" y="1385" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#badge" x="564" y="1380" width="22" height="22"/><text x="575" y="1396" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">10</text>
+<rect x="608" y="1379" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="623.0" y="1392" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S2</text>
+<text x="600" y="1463" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon API Gateway</text>
+<text x="600" y="1478" font-size="10" fill="#8a94a6" text-anchor="middle">WebSocket in-app card + Web Push</text>
+<text x="600" y="1492" font-size="10" fill="#8a94a6" text-anchor="middle">contactPwaUserId = org-&lt;orgId&gt;</text>
+<text x="600" y="1506" font-size="10" fill="#8a94a6" text-anchor="middle">fans out to every ADMIN#</text>
+<rect x="170" y="1552" width="560" height="69" rx="8" fill="rgba(11,15,22,0.5)" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="6 4"/>
+<text x="182" y="1572" font-size="11" fill="#F59E0B" font-weight="800">The office is CONTACT#org-&lt;orgId&gt; in every resident's graph (S2, S2b)</text>
+<text x="182" y="1590" font-size="10" fill="#e8ecf3">knownAddresses = verified org addresses · nameVariants exact</text>
+<text x="182" y="1603" font-size="10" fill="#e8ecf3">admin sees the usual contact card: summary, sender, subject</text>
+<text x="182" y="1616" font-size="10" fill="#e8ecf3">never the body · scoped to contactPwaUserId · not in ORGLOG#</text>
+<text x="835" y="1388" text-anchor="middle" font-size="34">🏢</text>
+<text x="835" y="1422" font-size="12.5" fill="#e8ecf3" font-weight="700" text-anchor="middle">Office admin on duty</text>
+<text x="835" y="1438" font-size="10.5" fill="#8a94a6" text-anchor="middle">every admin's PWA</text>
+<text x="835" y="1453" font-size="10.5" fill="#8a94a6" text-anchor="middle">+ one staff phone</text>
+<text x="835" y="1468" font-size="10.5" fill="#8a94a6" text-anchor="middle">answers for the office</text>
+<text x="835" y="1487" font-size="11" fill="#4ade80" font-weight="700" text-anchor="middle">taps  Not me</text>
+<path d="M328 1416 H420 V1534 H788" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<text x="600" y="1529" font-size="9.5" fill="#8a94a6" text-anchor="middle">“An email claims to be the office — was this you?”</text>
+<path d="M628 1406 H788" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<text x="708" y="1400" font-size="9.5" fill="#8a94a6" text-anchor="middle">push + card</text>
+<rect x="150" y="1659" width="600" height="325" rx="12" fill="rgba(237,113,0,0.09)" stroke="rgba(237,113,0,0.45)"/>
+<text x="170" y="1686" font-size="13" fill="#ffb366" font-weight="800">Reply · Amazon SNS → AWS Lambda pidge-verdict → the resident's PWA</text>
+<use href="#i-sns" x="492" y="1704" width="56" height="56"/>
+<use href="#badge" x="484" y="1696" width="22" height="22"/><text x="495" y="1712" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">11</text>
+<text x="520" y="1779" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon SNS</text>
+<text x="520" y="1794" font-size="10" fill="#8a94a6" text-anchor="middle">WhatsApp topic</text>
+<text x="520" y="1808" font-size="10" fill="#8a94a6" text-anchor="middle">taps + statuses</text>
+<use href="#i-apigw" x="652" y="1704" width="56" height="56"/>
+<text x="680" y="1779" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon API Gateway</text>
+<text x="680" y="1794" font-size="10" fill="#8a94a6" text-anchor="middle">$default · in-app tap</text>
+<use href="#i-lambda" x="272" y="1704" width="56" height="56"/>
+<rect x="269" y="1701" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<use href="#badge" x="264" y="1696" width="22" height="22"/><text x="275" y="1712" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">12</text>
+<rect x="308" y="1695" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="323.0" y="1708" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S2</text>
+<text x="300" y="1779" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AWS Lambda · pidge-verdict</text>
+<text x="300" y="1794" font-size="10" fill="#8a94a6" text-anchor="middle">conditional write · No beats Yes</text>
+<text x="300" y="1808" font-size="10" fill="#F59E0B" text-anchor="middle">handle_sync: ORG_ADMIN → requests + org</text>
+<text x="300" y="1822" font-size="10" fill="#F59E0B" text-anchor="middle">CONFIRM branch explicit · NOT_ALLOWED default</text>
+<path d="M492 1732 H330" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M652 1732 H552" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<path d="M826 1524 V1719 H548" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M846 1524 V1747 H708" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<text x="818" y="1705" font-size="9.5" fill="#8a94a6" text-anchor="end">WhatsApp reply (WABA)</text>
+<text x="838" y="1763" font-size="9.5" fill="#8a94a6" text-anchor="end">in-app tap</text>
+<path d="M300 1826 V1857" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<text x="308" y="1845" font-size="9.5" fill="#3AA68E" text-anchor="start">verdict</text>
+<use href="#i-apigw" x="272" y="1859" width="56" height="56"/>
+<use href="#badge" x="264" y="1851" width="22" height="22"/><text x="275" y="1867" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">13</text>
+<text x="300" y="1934" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon API Gateway</text>
+<text x="300" y="1949" font-size="10" fill="#8a94a6" text-anchor="middle">verdict → the resident's PWA</text>
+<text x="300" y="1963" font-size="10" fill="#8a94a6" text-anchor="middle">unchanged</text>
+<rect x="380" y="1854" width="350" height="82" rx="8" fill="rgba(11,15,22,0.5)" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="6 4"/>
+<text x="392" y="1874" font-size="11" fill="#F59E0B" font-weight="800">S4 additions in the same handler</text>
+<text x="392" y="1892" font-size="10" fill="#e8ecf3">bc:&lt;orgId&gt;#&lt;id&gt;:&lt;AckAnswer&gt; parsed before the verdict branch</text>
+<text x="392" y="1905" font-size="10" fill="#e8ecf3">the verdict branch refuses ids without req-</text>
+<text x="392" y="1918" font-size="10" fill="#e8ecf3">statuses → one parser → WAMSG# → RECIPIENT# state</text>
+<text x="392" y="1931" font-size="10" fill="#e8ecf3">confirmed is written by pidge_release, never here</text>
+<text x="70" y="1854" text-anchor="middle" font-size="34">👵</text>
+<text x="70" y="1888" font-size="12.5" fill="#e8ecf3" font-weight="700" text-anchor="middle">Resident</text>
+<text x="70" y="1904" font-size="10.5" fill="#8a94a6" text-anchor="middle">held → warned / released</text>
+<text x="70" y="1919" font-size="10.5" fill="#8a94a6" text-anchor="middle">unchanged</text>
+<text x="70" y="1938" font-size="11" fill="#EF4444" font-weight="700" text-anchor="middle">“Not the office”</text>
+<path d="M272 1887 H128" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<rect x="150" y="2010" width="600" height="225" rx="12" fill="rgba(1,168,141,0.09)" stroke="rgba(1,168,141,0.45)" stroke-dasharray="6 4"/>
+<text x="170" y="2037" font-size="13" fill="#5EC4AA" font-weight="800">Case · Amazon Bedrock AgentCore — after the verdict · unchanged</text>
+<use href="#i-lambda" x="232" y="2060" width="56" height="56"/>
+<use href="#badge" x="224" y="2052" width="22" height="22"/><text x="235" y="2068" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">16</text>
+<text x="260" y="2135" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AWS Lambda · pidge-dispatch</text>
+<text x="260" y="2150" font-size="10" fill="#8a94a6" text-anchor="middle">DynamoDB Streams · reader 1 of 2</text>
+<text x="260" y="2164" font-size="10" fill="#8a94a6" text-anchor="middle">Bedrock Guardrails on chat input first</text>
+<use href="#i-agentcore" x="442" y="2060" width="56" height="56"/>
+<use href="#badge" x="434" y="2052" width="22" height="22"/><text x="445" y="2068" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">17</text>
+<text x="470" y="2135" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AgentCore Runtime</text>
+<text x="470" y="2150" font-size="10" fill="#8a94a6" text-anchor="middle">Strands case agent · read-only tools</text>
+<text x="470" y="2164" font-size="10" fill="#8a94a6" text-anchor="middle">one session per case</text>
+<use href="#i-memory" x="632" y="2060" width="56" height="56"/>
+<use href="#badge" x="624" y="2052" width="22" height="22"/><text x="635" y="2068" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">18</text>
+<text x="660" y="2135" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AgentCore Memory</text>
+<text x="660" y="2150" font-size="10" fill="#8a94a6" text-anchor="middle">facts per family</text>
+<path d="M288 2088 H440" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M498 2088 H630" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="450" y="2210" font-size="9.5" fill="#8a94a6" text-anchor="middle">CASE# open / closed and a NOTE# recovery pack become org events only when the resident chose alerts_and_cases (S3)</text>
+<path d="M272 1732 H160 V2334" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="5 4"/>
+<path d="M160 2088 H228" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<path d="M160 2334 H195" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<text x="168" y="2000" font-size="9.5" fill="#8a94a6" text-anchor="start">verdict row → table stream</text>
+<text x="168" y="2251" font-size="9.5" fill="#8a94a6" text-anchor="start">the same stream · reader 2</text>
+<rect x="150" y="2261" width="600" height="455" rx="12" fill="rgba(1,168,141,0.09)" stroke="rgba(1,168,141,0.45)"/>
+<text x="170" y="2288" font-size="13" fill="#5EC4AA" font-weight="800">Read side · DynamoDB Streams → pidge_org_projection — reader 2 of 2</text>
+<use href="#i-stream" x="197" y="2306" width="56" height="56"/>
+<rect x="194" y="2303" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="187" y="2297" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="202.0" y="2310" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<text x="225" y="2381" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">DynamoDB Streams</text>
+<text x="225" y="2396" font-size="10" fill="#8a94a6" text-anchor="middle">the same table stream</text>
+<text x="225" y="2410" font-size="10" fill="#8a94a6" text-anchor="middle">filter REQUEST# EMAIL# CASE#</text>
+<text x="225" y="2424" font-size="10" fill="#8a94a6" text-anchor="middle">NOTE# CONTACTREQ# BROADCAST#</text>
+<use href="#i-lambda" x="422" y="2306" width="56" height="56"/>
+<rect x="419" y="2303" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="412" y="2297" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="427.0" y="2310" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<text x="450" y="2381" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AWS Lambda · pidge_org_projection</text>
+<text x="450" y="2396" font-size="10" fill="#8a94a6" text-anchor="middle">orgVisibility filter lives only here</text>
+<text x="450" y="2410" font-size="10" fill="#8a94a6" text-anchor="middle">absent | none → writes nothing</text>
+<text x="450" y="2424" font-size="10" fill="#8a94a6" text-anchor="middle">one TransactWriteItems per event</text>
+<use href="#i-ddb" x="632" y="2306" width="56" height="56"/>
+<rect x="629" y="2303" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="622" y="2297" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="637.0" y="2310" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<text x="660" y="2381" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">ORGLOG# + ORGSTAT#</text>
+<text x="660" y="2396" font-size="10" fill="#8a94a6" text-anchor="middle">conditional Put + ADD</text>
+<text x="660" y="2410" font-size="10" fill="#8a94a6" text-anchor="middle">a retry is a failed condition</text>
+<text x="660" y="2424" font-size="10" fill="#8a94a6" text-anchor="middle">lastProjectedAt → “updated as of”</text>
+<path d="M253 2334 H420" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M478 2334 H630" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<use href="#full-sqs" x="197" y="2466" width="56" height="56"/>
+<rect x="194" y="2463" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="187" y="2457" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="202.0" y="2470" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<text x="225" y="2541" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon SQS · DLQ</text>
+<text x="225" y="2556" font-size="10" fill="#8a94a6" text-anchor="middle">batch item failure → bisect</text>
+<text x="225" y="2570" font-size="10" fill="#8a94a6" text-anchor="middle">then the record lands here</text>
+<use href="#i-cloudwatch" x="372" y="2466" width="56" height="56"/>
+<rect x="369" y="2463" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="362" y="2457" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="377.0" y="2470" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<text x="400" y="2541" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">CloudWatch alarm</text>
+<text x="400" y="2556" font-size="10" fill="#8a94a6" text-anchor="middle">tells Nestuary ops</text>
+<text x="400" y="2570" font-size="10" fill="#8a94a6" text-anchor="middle">dashboard amber at 15 min</text>
+<path d="M450 2428 V2446 H225 V2464" fill="none" stroke="#EF4444" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M253 2494 H370" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="480" y="2436" width="255" height="193" rx="8" fill="rgba(11,15,22,0.5)" stroke="#3AA68E" stroke-opacity="0.6"/>
+<text x="490" y="2454" font-size="10.5" fill="#3AA68E" font-weight="800">OrgEvent mapping (S3)</text>
+<text x="490" y="2472" font-size="9.5" fill="#e8ecf3">REQUEST# pending → message_held</text>
+<text x="490" y="2487" font-size="9.5" fill="#e8ecf3">confirmed (release) → contact_confirmed_yes</text>
+<text x="490" y="2502" font-size="9.5" fill="#e8ecf3">denied → contact_confirmed_not_me</text>
+<text x="490" y="2517" font-size="9.5" fill="#e8ecf3">reversed_no → answer_reversed</text>
+<text x="490" y="2532" font-size="9.5" fill="#e8ecf3">timeout → ask_timed_out</text>
+<text x="490" y="2547" font-size="9.5" fill="#e8ecf3">askCapped → ask_capped</text>
+<text x="490" y="2562" font-size="9.5" fill="#e8ecf3">EMAIL# warn UNREACHABLE → contact_unreachable</text>
+<text x="490" y="2577" font-size="9.5" fill="#e8ecf3">CASE# → wrong_payment_reported · case_closed</text>
+<text x="490" y="2592" font-size="9.5" fill="#e8ecf3">NOTE# pack → recovery_pack_drafted</text>
+<text x="490" y="2607" font-size="9.5" fill="#e8ecf3">CONTACTREQ# → contact_request (E3)</text>
+<text x="490" y="2622" font-size="9.5" fill="#e8ecf3">BROADCAST# → sent · acked · help_requested</text>
+<rect x="170" y="2586" width="295" height="95" rx="8" fill="rgba(239,68,68,0.07)" stroke="#EF4444" stroke-width="1.3"/>
+<text x="182" y="2606" font-size="11" fill="#EF4444" font-weight="800">Privacy rule, by construction</text>
+<text x="182" y="2624" font-size="9.8" fill="#e8ecf3">org sees: state · resident name · time · channel · ids</text>
+<text x="182" y="2637" font-size="9.8" fill="#e8ecf3">never: subject, body, summary, sender address,</text>
+<text x="182" y="2650" font-size="9.8" fill="#e8ecf3">contact names, amount, chat, notes, recovery pack</text>
+<text x="182" y="2663" font-size="9.8" fill="#e8ecf3">exception: the asked-contact card, never logged</text>
+<text x="182" y="2676" font-size="9.8" fill="#e8ecf3">setting none deletes the member's ORGLOG# rows</text>
+<path d="M607 2629 V2740" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="598" y="2732" font-size="9.5" fill="#8a94a6" text-anchor="end">the dashboard reads ORGLOG# · ORGSTAT# only</text>
+<rect x="150" y="2742" width="600" height="470" rx="12" fill="rgba(231,21,123,0.09)" stroke="rgba(231,21,123,0.45)"/>
+<text x="170" y="2769" font-size="13" fill="#ff7ab8" font-weight="800">Org dashboard · the same PWA · Amazon API Gateway WebSocket (S3, S2b)</text>
+<use href="#i-apigw" x="222" y="2792" width="56" height="56"/>
+<rect x="219" y="2789" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="212" y="2783" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="227.0" y="2796" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<text x="250" y="2867" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon API Gateway</text>
+<text x="250" y="2882" font-size="10" fill="#8a94a6" text-anchor="middle">ORG_* actions · require_org_admin first</text>
+<text x="250" y="2896" font-size="10" fill="#8a94a6" text-anchor="middle">orgId from the profile row, never the body</text>
+<text x="250" y="2910" font-size="10" fill="#8a94a6" text-anchor="middle">reads keyed by ORG#&lt;orgId&gt; · Query</text>
+<use href="#i-browser" x="632" y="2792" width="56" height="56"/>
+<rect x="629" y="2789" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="622" y="2783" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="637.0" y="2796" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<text x="660" y="2867" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">org-view.js · dashboard</text>
+<text x="660" y="2882" font-size="10" fill="#8a94a6" text-anchor="middle">Members · Alerts · Events · Outreach</text>
+<text x="660" y="2896" font-size="10" fill="#8a94a6" text-anchor="middle">Reminders · Settings</text>
+<text x="660" y="2910" font-size="10" fill="#8a94a6" text-anchor="middle">SYNC_STATE.org = projection only</text>
+<path d="M278 2820 H630" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="450" y="2814" font-size="9.5" fill="#8a94a6" text-anchor="middle">SYNC_STATE.org · ORG_* actions</text>
+<rect x="170" y="2937" width="360" height="178" rx="8" fill="rgba(11,15,22,0.6)" stroke="rgba(231,21,123,0.45)"/>
+<text x="178" y="2954" font-size="10.5" fill="#ff7ab8" font-weight="800">Members tab · MemberSafetyState</text>
+<rect x="178" y="2963" width="344" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="2978" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">state</tspan>  nothing_open · held · held_no_answer · confirmed_not_me</text>
+<rect x="178" y="2988" width="344" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3003" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">state</tspan>  warned · case_open · contact_unreachable</text>
+<rect x="178" y="3013" width="344" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3028" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">zero open</tspan>  reads “Nothing open”, never “Clear”</text>
+<rect x="178" y="3038" width="344" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3053" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">actionable</tspan>  ask_capped · ask_timed_out · unreachable · help</text>
+<rect x="178" y="3063" width="344" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3078" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">coverage</tspan>  enrolled · verified contact · visibility · PWA 7 d</text>
+<rect x="178" y="3088" width="344" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3103" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">call list</tspan>  residents with no device or no consent</text>
+<use href="#i-ddb" x="622" y="2942" width="56" height="56"/>
+<rect x="619" y="2939" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="612" y="2933" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="627.0" y="2946" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<text x="650" y="3017" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">ORGAUDIT#&lt;orgId&gt;</text>
+<text x="650" y="3032" font-size="10" fill="#8a94a6" text-anchor="middle">every send, answer, member view</text>
+<text x="650" y="3046" font-size="10" fill="#8a94a6" text-anchor="middle">insert-only · no delete · 1 y (E7)</text>
+<path d="M660 2914 V2940" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<text x="668" y="2927" font-size="9.5" fill="#8a94a6" text-anchor="start">writes</text>
+<text x="650" y="3111" text-anchor="middle" font-size="34">👵</text>
+<rect x="619" y="3064" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="612" y="3058" width="36" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="630.0" y="3071" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S2b</text>
+<text x="650" y="3142" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Resident Settings</text>
+<text x="650" y="3157" font-size="10" fill="#8a94a6" text-anchor="middle">“What my community can see”</text>
+<text x="650" y="3171" font-size="10" fill="#8a94a6" text-anchor="middle">alerts_only | alerts_and_cases | none</text>
+<text x="650" y="3185" font-size="10" fill="#8a94a6" text-anchor="middle">ORGPREF# · resident action only</text>
+<text x="835" y="2802" text-anchor="middle" font-size="34">💻</text>
+<text x="835" y="2836" font-size="12.5" fill="#e8ecf3" font-weight="700" text-anchor="middle">Admin at the dashboard</text>
+<text x="835" y="2852" font-size="10.5" fill="#8a94a6" text-anchor="middle">passkey session (13)</text>
+<text x="835" y="2867" font-size="10.5" fill="#8a94a6" text-anchor="middle">sees states, never content</text>
+<text x="835" y="2886" font-size="11" fill="#E7157B" font-weight="700" text-anchor="middle">compose · invite · remind</text>
+<path d="M688 2820 H788" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<rect x="150" y="3238" width="600" height="650" rx="12" fill="rgba(237,113,0,0.09)" stroke="rgba(237,113,0,0.45)"/>
+<text x="170" y="3265" font-size="13" fill="#ffb366" font-weight="800">Write side · pidge_broadcast → Amazon SQS → pidge_broadcast_send (S4)</text>
+<use href="#i-lambda" x="222" y="3288" width="56" height="56"/>
+<rect x="219" y="3285" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="212" y="3279" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="227.0" y="3292" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<text x="250" y="3363" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AWS Lambda · pidge_broadcast</text>
+<text x="250" y="3378" font-size="10" fill="#8a94a6" text-anchor="middle">ORG_BROADCAST_SEND or Scheduler</text>
+<text x="250" y="3392" font-size="10" fill="#8a94a6" text-anchor="middle">BROADCASTRATE# slot, fail closed</text>
+<text x="250" y="3406" font-size="10" fill="#8a94a6" text-anchor="middle">RECIPIENT# rows before any send</text>
+<use href="#full-sqs" x="427" y="3288" width="56" height="56"/>
+<rect x="424" y="3285" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="417" y="3279" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="432.0" y="3292" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<text x="455" y="3363" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon SQS</text>
+<text x="455" y="3378" font-size="10" fill="#8a94a6" text-anchor="middle">one message per queued recipient</text>
+<text x="455" y="3392" font-size="10" fill="#8a94a6" text-anchor="middle">DLQ + CloudWatch alarm</text>
+<use href="#i-lambda" x="622" y="3288" width="56" height="56"/>
+<rect x="619" y="3285" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="612" y="3279" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="627.0" y="3292" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<text x="650" y="3363" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Lambda · pidge_broadcast_send</text>
+<text x="650" y="3378" font-size="10" fill="#8a94a6" text-anchor="middle">batch 10 · concurrency 2</text>
+<text x="650" y="3392" font-size="10" fill="#8a94a6" text-anchor="middle">claim queued → sending first</text>
+<text x="650" y="3406" font-size="10" fill="#8a94a6" text-anchor="middle">ORGSENDRATE# day + week slots</text>
+<path d="M278 3316 H425" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M483 3316 H620" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="352" y="3310" font-size="9.5" fill="#8a94a6" text-anchor="middle">queued rows</text>
+<text x="551" y="3310" font-size="9.5" fill="#8a94a6" text-anchor="middle">batch of 10</text>
+<path d="M222 2820 H160 V3316 H220" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="168" y="3228" font-size="9.5" fill="#8a94a6" text-anchor="start">ORG_BROADCAST_SEND · passkey session</text>
+<rect x="170" y="3433" width="335" height="228" rx="8" fill="rgba(11,15,22,0.6)" stroke="rgba(237,113,0,0.45)"/>
+<text x="178" y="3450" font-size="10.5" fill="#ffb366" font-weight="800">Decided in code, before any send</text>
+<rect x="178" y="3459" width="319" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3474" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">kind → category</tspan>  in code, never typed</text>
+<rect x="178" y="3484" width="319" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3499" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">MARKETING</tspan>  never over WhatsApp in v1 (131049)</text>
+<rect x="178" y="3509" width="319" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3524" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">WATIER#</tspan>  unique recipients + audience ≤ tier</text>
+<rect x="178" y="3534" width="319" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3549" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">channel</tspan>  preferred if opted in, else no_consent</text>
+<rect x="178" y="3559" width="319" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3574" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">quiet hours</tspan>  deferred · Scheduler re-enqueue</text>
+<rect x="178" y="3584" width="319" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3599" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">safety_alert</tspan>  in-app row at once, rest deferred</text>
+<rect x="178" y="3609" width="319" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3624" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">template</tspan>  fixed text · ≤ 2 bounded variables</text>
+<rect x="178" y="3634" width="319" height="22" rx="5" fill="rgba(245,158,11,0.08)" stroke="#F59E0B" stroke-width="1.1" stroke-dasharray="3 2"/><text x="186" y="3649" font-size="10" fill="#e8ecf3"><tspan font-weight="700" fill="#F59E0B">validator</tspan>  no URLs, numbers, money words · all</text>
+<use href="#i-scheduler" x="612" y="3433" width="56" height="56"/>
+<rect x="609" y="3430" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="602" y="3424" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="617.0" y="3437" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<text x="640" y="3508" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">EventBridge Scheduler</text>
+<text x="640" y="3523" font-size="10" fill="#8a94a6" text-anchor="middle">scheduledAt sends</text>
+<text x="640" y="3537" font-size="10" fill="#8a94a6" text-anchor="middle">quiet-hours re-enqueue</text>
+<use href="#i-sns" x="612" y="3548" width="56" height="56"/>
+<rect x="609" y="3545" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="602" y="3539" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="617.0" y="3552" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<text x="640" y="3623" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">SNS → pidge-verdict</text>
+<text x="640" y="3638" font-size="10" fill="#8a94a6" text-anchor="middle">statuses → WAMSG# → RECIPIENT#</text>
+<text x="640" y="3652" font-size="10" fill="#8a94a6" text-anchor="middle">bc: tap → got_it | need_help</text>
+<text x="640" y="3666" font-size="10" fill="#8a94a6" text-anchor="middle">need_help → push every admin</text>
+<path d="M622 3333 H552 V3690 H250" fill="none" stroke="#8a94a6" stroke-width="1.6"/>
+<path d="M250 3690 V3705" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M450 3690 V3705" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M650 3690 V3705" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="170" y="3684" font-size="9.5" fill="#8a94a6" text-anchor="start">send through the existing adapters · sending → sent + WAMSG#</text>
+<use href="#i-eum" x="222" y="3708" width="56" height="56"/>
+<rect x="219" y="3705" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="212" y="3699" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="227.0" y="3712" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<text x="250" y="3783" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AWS End User Messaging Social</text>
+<text x="250" y="3798" font-size="10" fill="#8a94a6" text-anchor="middle">WhatsApp UTILITY template</text>
+<text x="250" y="3812" font-size="10" fill="#8a94a6" text-anchor="middle">Got it / Need help buttons</text>
+<use href="#i-ses" x="422" y="3708" width="56" height="56"/>
+<rect x="419" y="3705" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="412" y="3699" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="427.0" y="3712" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<text x="450" y="3783" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon SES</text>
+<text x="450" y="3798" font-size="10" fill="#8a94a6" text-anchor="middle">email · CAN-SPAM footer</text>
+<text x="450" y="3812" font-size="10" fill="#8a94a6" text-anchor="middle">List-Unsubscribe → consent row</text>
+<use href="#i-apigw" x="622" y="3708" width="56" height="56"/>
+<rect x="619" y="3705" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="612" y="3699" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="627.0" y="3712" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S4</text>
+<text x="650" y="3783" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">API Gateway + Web Push</text>
+<text x="650" y="3798" font-size="10" fill="#8a94a6" text-anchor="middle">in-app notice row, pushed directly</text>
+<text x="650" y="3812" font-size="10" fill="#8a94a6" text-anchor="middle">never SES → Mail Manager → Reader</text>
+<text x="70" y="3718" text-anchor="middle" font-size="34">👵</text>
+<text x="70" y="3752" font-size="12.5" fill="#e8ecf3" font-weight="700" text-anchor="middle">Residents</text>
+<text x="70" y="3768" font-size="10.5" fill="#8a94a6" text-anchor="middle">WhatsApp · email · in-app</text>
+<text x="70" y="3783" font-size="10.5" fill="#8a94a6" text-anchor="middle">tap Got it / Need help</text>
+<path d="M222 3736 H128" fill="none" stroke="#E7157B" stroke-width="1.6" marker-end="url(#ahP)"/>
+<use href="#full-shield" x="178" y="3833" width="34" height="34"/>
+<rect x="168" y="3825" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="183.0" y="3838" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">13</text>
+<text x="222" y="3847" font-size="10.5" fill="#e8ecf3" font-weight="700">Slice 13 · passkeys for admins — precondition of S4</text>
+<text x="222" y="3862" font-size="9.5" fill="#8a94a6">a failed check refuses, never a token fallback · a pre-provisioned token serves only a no-send demo</text>
+<rect x="150" y="3914" width="600" height="220" rx="12" fill="rgba(59,72,204,0.09)" stroke="rgba(59,72,204,0.45)"/>
+<text x="170" y="3941" font-size="13" fill="#9aa5ff" font-weight="800">Events and reminders · Amazon EventBridge Scheduler (S5, S6)</text>
+<use href="#i-ddb" x="227" y="3964" width="56" height="56"/>
+<rect x="224" y="3961" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="217" y="3955" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="232.0" y="3968" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S5</text>
+<text x="255" y="4039" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">EVENT#&lt;orgId&gt;#&lt;id&gt; + RSVP#</text>
+<text x="255" y="4054" font-size="10" fill="#8a94a6" text-anchor="middle">invitation = kind event_invitation</text>
+<text x="255" y="4068" font-size="10" fill="#8a94a6" text-anchor="middle">RSVP yes | no | maybe · ClientAction.RSVP</text>
+<text x="255" y="4082" font-size="10" fill="#8a94a6" text-anchor="middle">participation = accepted / invited</text>
+<use href="#i-scheduler" x="442" y="3964" width="56" height="56"/>
+<rect x="439" y="3961" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="432" y="3955" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="447.0" y="3968" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S5</text>
+<text x="470" y="4039" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">EventBridge Scheduler</text>
+<text x="470" y="4054" font-size="10" fill="#8a94a6" text-anchor="middle">event_reminder at reminderAt</text>
+<text x="470" y="4068" font-size="10" fill="#8a94a6" text-anchor="middle">one schedule group per org</text>
+<use href="#i-ddb" x="642" y="3964" width="56" height="56"/>
+<rect x="639" y="3961" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="632" y="3955" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="647.0" y="3968" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S6</text>
+<text x="670" y="4039" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">ORG# / REMINDER#&lt;id&gt;</text>
+<text x="670" y="4054" font-size="10" fill="#8a94a6" text-anchor="middle">one member · consent per reminder</text>
+<text x="670" y="4068" font-size="10" fill="#8a94a6" text-anchor="middle">medication: in-app only · flag off</text>
+<text x="670" y="4082" font-size="10" fill="#8a94a6" text-anchor="middle">lock-screen text is a constant</text>
+<path d="M283 3992 H440" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M498 3992 H640" fill="none" stroke="#8a94a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<text x="362" y="3986" font-size="9.5" fill="#8a94a6" text-anchor="middle">reminderAt</text>
+<text x="569" y="3986" font-size="9.5" fill="#8a94a6" text-anchor="middle">fires → RECIPIENT# row</text>
+<text x="450" y="4114" font-size="9.5" fill="#8a94a6" text-anchor="middle">Invitations and reminders are broadcasts of their kind: they enter pidge_broadcast and share its caps and channels.</text>
+<rect x="150" y="4160" width="600" height="475" rx="12" fill="rgba(1,168,141,0.09)" stroke="rgba(1,168,141,0.45)"/>
+<text x="170" y="4187" font-size="13" fill="#5EC4AA" font-weight="800">Command center · Amazon EventBridge cross-account bus → Nestuary (S7, S8)</text>
+<use href="#i-lambda" x="222" y="4210" width="56" height="56"/>
+<rect x="219" y="4207" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="212" y="4201" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="227.0" y="4214" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S7</text>
+<text x="250" y="4285" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">pidge_org_projection · PutEvents</text>
+<text x="250" y="4300" font-size="10" fill="#8a94a6" text-anchor="middle">after a successful transaction only</text>
+<text x="250" y="4314" font-size="10" fill="#8a94a6" text-anchor="middle">{orgId, day, OrgEvent, total}</text>
+<text x="250" y="4328" font-size="10" fill="#8a94a6" text-anchor="middle">+ one heartbeat per org per day</text>
+<use href="#full-bus" x="452" y="4210" width="56" height="56"/>
+<rect x="449" y="4207" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="442" y="4201" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="457.0" y="4214" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S7</text>
+<text x="480" y="4285" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Amazon EventBridge · bus</text>
+<text x="480" y="4300" font-size="10" fill="#8a94a6" text-anchor="middle">bus in Nestuary's account</text>
+<text x="480" y="4314" font-size="10" fill="#8a94a6" text-anchor="middle">policy scoped to the org's account id</text>
+<text x="480" y="4328" font-size="10" fill="#8a94a6" text-anchor="middle">aggregateFeedEnabled · off by default</text>
+<path d="M278 4238 H450" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="364" y="4232" font-size="9.5" fill="#8a94a6" text-anchor="middle">PutEvents · counts only</text>
+<rect x="170" y="4360" width="560" height="200" rx="10" fill="rgba(11,15,22,0.45)" stroke="#3AA68E" stroke-width="1.2" stroke-dasharray="6 4"/>
+<text x="186" y="4380" font-size="11" fill="#3AA68E" font-weight="800">Nestuary account · a separate small stack</text>
+<path d="M480 4332 V4358" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<path d="M480 4384 V4400 H272 V4408" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<use href="#i-lambda" x="237" y="4410" width="56" height="56"/>
+<rect x="234" y="4407" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="227" y="4401" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="242.0" y="4414" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S8</text>
+<text x="265" y="4485" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">AWS Lambda · ingest</text>
+<text x="265" y="4500" font-size="10" fill="#8a94a6" text-anchor="middle">source account → orgId (allow-list)</text>
+<text x="265" y="4514" font-size="10" fill="#8a94a6" text-anchor="middle">ignores detail.orgId, extra fields</text>
+<text x="265" y="4528" font-size="10" fill="#8a94a6" text-anchor="middle">stores a total only when higher</text>
+<use href="#i-ddb" x="437" y="4410" width="56" height="56"/>
+<rect x="434" y="4407" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="427" y="4401" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="442.0" y="4414" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S8</text>
+<text x="465" y="4485" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">CENTER#&lt;orgId&gt; / DAY#&lt;date&gt;</text>
+<text x="465" y="4500" font-size="10" fill="#8a94a6" text-anchor="middle">counts per OrgEvent · monotonic</text>
+<text x="465" y="4514" font-size="10" fill="#8a94a6" text-anchor="middle">7-day baseline · spike flag</text>
+<text x="465" y="4528" font-size="10" fill="#8a94a6" text-anchor="middle">“no data since” after 26 h</text>
+<use href="#full-page" x="617" y="4410" width="56" height="56"/>
+<rect x="614" y="4407" width="62" height="62" rx="10" fill="none" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="5 4"/>
+<rect x="607" y="4401" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="622.0" y="4414" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S8</text>
+<text x="645" y="4485" font-size="11" fill="#e8ecf3" font-weight="700" text-anchor="middle">Command center page</text>
+<text x="645" y="4500" font-size="10" fill="#8a94a6" text-anchor="middle">orgs × counts · 7-day sparklines</text>
+<text x="645" y="4514" font-size="10" fill="#8a94a6" text-anchor="middle">counts only · never names</text>
+<path d="M293 4438 H435" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<path d="M493 4438 H615" fill="none" stroke="#8a94a6" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="170" y="4588" font-size="9.5" fill="#8a94a6">Demo cut (E5): center stack in the same account, other orgs as rows labelled sample · per-org accounts later</text>
+<text x="170" y="4603" font-size="9.5" fill="#8a94a6">(per-org WABA verification and the bus allow-list registration are undefined today).</text>
+<text x="835" y="4410" text-anchor="middle" font-size="34">🧑‍💻</text>
+<text x="835" y="4444" font-size="12.5" fill="#e8ecf3" font-weight="700" text-anchor="middle">Nestuary ops</text>
+<text x="835" y="4460" font-size="10.5" fill="#8a94a6" text-anchor="middle">counts per org</text>
+<text x="835" y="4475" font-size="10.5" fill="#8a94a6" text-anchor="middle">spike + silence alerts</text>
+<path d="M673 4438 H788" fill="none" stroke="#3AA68E" stroke-width="1.6" marker-end="url(#ahA)"/>
+<rect x="150" y="4661" width="600" height="82" rx="8" fill="none" stroke="#8a94a6" stroke-dasharray="5 4"/>
+<text x="450" y="4681" font-size="9.5" fill="#8a94a6" text-anchor="middle">Flags, all false: orgEnabled · orgBroadcastEnabled · orgEventsEnabled · medicationRemindersEnabled</text>
+<text x="450" y="4698" font-size="9.5" fill="#8a94a6" text-anchor="middle">aggregateFeedEnabled · quiet hours seed 21:00–08:00 (the ORG# PROFILE row is the source)</text>
+<text x="450" y="4715" font-size="9.5" fill="#8a94a6" text-anchor="middle">Caps: 2 broadcasts / org / h · 1 / resident / day · 3 / week per TemplateCategory · WhatsApp portfolio tier 250</text>
+<text x="450" y="4732" font-size="9.5" fill="#8a94a6" text-anchor="middle">cdk synth throws on a cap ≤ 0 or orgEnabled without releaseSchedulerEnabled · AWS CDK v2 · one stack per org (E5)</text>
+<rect x="150" y="4757" width="600" height="65" rx="8" fill="rgba(85,94,110,0.10)" stroke="#555e6e"/>
+<text x="450" y="4777" font-size="9.5" fill="#aab3c2" text-anchor="middle">Blocked or counsel: social over WhatsApp to US residents · medication outside in-app · hospital patients (BAA)</text>
+<text x="450" y="4794" font-size="9.5" fill="#aab3c2" text-anchor="middle">alert as “emergency purposes” · per-org counts as PHI in small facilities · reporting duties on a confirmed fraud</text>
+<text x="450" y="4811" font-size="9.5" fill="#aab3c2" text-anchor="middle">the dashboard shows the event and a checklist link; it never files anything</text>
+<use href="#badge" x="150" y="4838" width="22" height="22"/><text x="161" y="4854" font-size="12" fill="#232f3e" font-weight="800" text-anchor="middle">n</text>
+<text x="178" y="4853" font-size="9.5" fill="#8a94a6">Core Journey step, unchanged</text>
+<rect x="340" y="4840" width="30" height="18" rx="5" fill="#0b0f16" stroke="#F59E0B" stroke-width="1.3" stroke-dasharray="3 2"/><text x="355.0" y="4853" font-size="10" fill="#F59E0B" font-weight="800" text-anchor="middle">S3</text>
+<text x="382" y="4853" font-size="9.5" fill="#8a94a6">stretch slice · not built, not scheduled</text>
+<text x="600" y="4853" font-size="9.5" fill="#8a94a6">spec.md › Stretch · checklist.md › Stretch slices</text>
+</svg>
+</div>
+<!-- ═══ /STRETCH OVERVIEW DIAGRAMS ═══ -->
 
 <h2>Open</h2>
 <div class="card card-warn">

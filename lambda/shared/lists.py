@@ -4,7 +4,6 @@ A hit is a reason, never a verdict. Rows in the POC are hand-written samples (so
 pidge-verdict writes on Confirm (source: pidge-confirmed). Real feed data never lives in the repo.
 """
 
-import hashlib
 import logging
 import re
 import unicodedata
@@ -76,14 +75,6 @@ def normalise_phone_e164(phone_text: str) -> str:
     if not re.fullmatch(r"\+\d{7,15}", digits):
         raise ValueError(f"not a phone number: {phone_text!r}")
     return digits
-
-
-def hash_account_with_salt(account_text: str, salt: str) -> str:
-    """Account numbers are stored hashed with a salt that comes from configuration, never from a seed file."""
-    if not salt:
-        raise ValueError("an account hash needs a salt")
-    digits = re.sub(r"\D", "", account_text)
-    return hashlib.sha256(f"{salt}:{digits}".encode()).hexdigest()
 
 
 def confusable_skeleton(text: str) -> str:

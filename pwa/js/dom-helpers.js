@@ -1,7 +1,7 @@
 // DOM and time helpers shared by every view. Server text goes in through textContent only.
 
 const PIDGE_ICON_PATH = "assets/pidge-icon.png";
-const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
 export function createElementWithText(tagName, className, textContent) {
   const element = document.createElement(tagName);

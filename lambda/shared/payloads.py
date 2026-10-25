@@ -2,6 +2,7 @@
 
 import logging
 
+from shared import graph
 from shared.enums import CaseEvent, Channel, Friction, PushMessageType, RequestState, VerifiedVia
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ def request_timing(request_row: dict) -> dict:
 
 def request_for_receiver(request_row: dict, contact_name: str, status: RequestState) -> dict:
     return {
-        "requestId": request_row["PK"].removeprefix("REQUEST#"),
+        "requestId": graph.request_id_of(request_row),
         "emailId": request_row["emailId"],
         "contactName": contact_name,
         "intent": request_row["verdict"]["intent"],
@@ -50,7 +51,7 @@ def email_state_message(email_row: dict, request_row: dict | None, contact_name:
 def card_for_contact(request_row: dict, email_row: dict | None, receiver_name: str, status: RequestState) -> dict:
     """Jimin's card: the summary plus the sender address and subject so an impersonator's address is on the card."""
     return {
-        "requestId": request_row["PK"].removeprefix("REQUEST#"),
+        "requestId": graph.request_id_of(request_row),
         "summary": request_row["verdict"]["summary"],
         "senderAddress": (email_row or {}).get("senderAddress", ""),
         "subject": (email_row or {}).get("subject", ""),
@@ -69,7 +70,7 @@ def request_state_message(request_row: dict, status: RequestState, contact_name:
     return {
         "type": PushMessageType.REQUEST_STATE,
         "request": {
-            "requestId": request_row["PK"].removeprefix("REQUEST#"),
+            "requestId": graph.request_id_of(request_row),
             "emailId": request_row["emailId"],
             "status": status,
             "contactName": contact_name,
@@ -82,7 +83,7 @@ def request_state_message(request_row: dict, status: RequestState, contact_name:
 def note_for_receiver(note_row: dict) -> dict:
     return {
         "noteId": note_row["SK"],
-        "requestId": note_row["PK"].removeprefix("REQUEST#"),
+        "requestId": graph.request_id_of(note_row),
         "writtenAt": note_row["writtenAt"],
         "noteText": note_row["noteText"],
         "recoveryPack": note_row.get("recoveryPack"),
@@ -100,7 +101,7 @@ CASE_FIELDS_FOR_PWA = ("requestId", "jurisdiction", "paymentRail", "bank", "amou
 def case_for_receiver(case_row: dict, reply_rows: list[dict]) -> dict:
     """The case and the bank's replies as quoted text. The reply token and the mock mailbox stay server-side."""
     return {
-        "caseId": case_row["PK"].removeprefix("CASE#"),
+        "caseId": graph.case_id_of(case_row),
         **{field: (str(case_row[field]) if field == "amount" else case_row.get(field)) for field in CASE_FIELDS_FOR_PWA},
         "replies": [{"from": reply["from"], "receivedAt": reply["receivedAt"], "textContent": reply["textContent"]} for reply in reply_rows],
     }

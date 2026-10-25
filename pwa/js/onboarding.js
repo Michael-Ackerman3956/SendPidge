@@ -6,7 +6,7 @@ import { listCircleEntries } from "./circle-view.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
 
-const DEMO_CONTACT_CODE = "4821"; // CONTACT_VERIFICATION_MOCK_CODE on the server; a real code would travel over RCS or the app
+const DEMO_CONTACT_CODE = "4821"; // DEFAULT_CONTACT_VERIFICATION_MOCK_CODE on the server; a real code would travel over RCS or the app
 const STEP_COUNT = 5;
 
 const ONBOARDING_STEP = Object.freeze({

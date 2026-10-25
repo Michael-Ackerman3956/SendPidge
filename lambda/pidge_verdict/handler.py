@@ -40,7 +40,7 @@ SYNC_EMAIL_LIMIT = 20
 SYNC_REQUEST_LIMIT = 10
 SYNC_NOTE_LIMIT = 20
 SYNC_CHAT_LIMIT = 20
-DEFAULT_CONTACT_VERIFICATION_MOCK_CODE = "4821"
+DEFAULT_CONTACT_VERIFICATION_MOCK_CODE = "4821"  # the PWA plays the reply with this code (onboarding.js); a real code is never configured here
 HANDLED = {"statusCode": 200}
 FORBIDDEN = {"statusCode": 403}
 ANSWER_FOR_ACTION = {ClientAction.UNDO: VerdictAnswer.UNDO, ClientAction.REVERSE: VerdictAnswer.REVERSE}
@@ -83,13 +83,11 @@ def handle(event, context):
         handle_ask_pidge(connection_id, user_id, body)
     elif action is ClientAction.VERIFY_CONTACT:
         handle_verify_contact(connection_id, user_id, body)
-    else:
+    elif action is ClientAction.CONFIRM:
         handle_confirm(connection_id, user_id, body)
+    else:
+        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)  # a member nobody routed: never fall through to a write
     return HANDLED
-
-
-def now_timestamp() -> str:
-    return graph.iso_timestamp(datetime.now(timezone.utc))
 
 
 def reject(connection_id: str, request_id: str | None, outcome: ActionOutcome) -> None:
@@ -105,7 +103,7 @@ def contact_name_for(request_row: dict) -> str:
 
 def handle_sync(connection_id: str, user_id: str) -> None:
     """Reconnect or reload: the role and the rows this user should see right now (a past releaseAt reads as confirmed)."""
-    now = now_timestamp()
+    now = graph.now_timestamp()
     if user_id == RECEIVER_USER_ID:
         emails = []
         for email_row in graph.list_recent_rows(user_id, graph.EMAIL_ROW_KIND, SYNC_EMAIL_LIMIT):
@@ -117,7 +115,7 @@ def handle_sync(connection_id: str, user_id: str) -> None:
             emails.append(payloads.email_for_receiver(email_row, request_row, contact_name, status))
         notes = [payloads.note_for_receiver(note_row) for note_row in graph.list_recent_rows(user_id, graph.NOTE_ROW_KIND, SYNC_NOTE_LIMIT)]
         case_rows = graph.list_recent_rows(user_id, graph.CASE_ROW_KIND, SYNC_CASE_LIMIT)
-        case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(case_row["PK"].removeprefix("CASE#"))) for case_row in case_rows]
+        case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(graph.case_id_of(case_row))) for case_row in case_rows]
         chat_messages = [chat.chat_message_for_sync(message_row) for message_row in chat.list_recent_messages(user_id, SYNC_CHAT_LIMIT)]
         circle = [payloads.circle_entry_for_receiver(contact_row) for contact_row in graph.list_contact_rows(RECEIVER_ADDRESS)]
         message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "emails": emails, "notes": notes, "cases": case_cards,
@@ -146,7 +144,7 @@ def handle_answer(connection_id: str, user_id: str, body: dict, websocket_messag
         reject(connection_id, request_id if isinstance(request_id, str) else None, ActionOutcome.BAD_MESSAGE)
         return
     sender = verdict.SenderIdentity(Channel.INAPP, user_id)
-    result = verdict.record_answer(request_id, answer, sender, f"inapp:{websocket_message_id}", now_timestamp())
+    result = verdict.record_answer(request_id, answer, sender, f"inapp:{websocket_message_id}", graph.now_timestamp())
     if result.outcome is not ActionOutcome.RECORDED:
         reject(connection_id, request_id, result.outcome)
         return
@@ -191,6 +189,9 @@ def parse_phone_reply(record: dict) -> tuple[Channel, verdict.SenderIdentity, st
     if topic_arn == WHATSAPP_TOPIC_ARN:
         reply = whatsapp.parse_inbound_reply(sns_message)
         if reply is None:
+            failed_status = whatsapp.parse_failed_status(sns_message)
+            if failed_status is not None:  # Meta could not deliver our ask; the hold still counts down as if it was sent
+                logger.warning("WhatsApp message %s failed with Meta error %s", failed_status.message_id, failed_status.error_code)
             return None
         sender = verdict.SenderIdentity(Channel.WHATSAPP, reply.sender_number)
         return Channel.WHATSAPP, sender, reply.request_id, reply.answer, f"whatsapp:{reply.message_id}"
@@ -209,7 +210,7 @@ def handle_sns_records(records: list) -> None:
         if parsed is None:
             continue
         channel, sender, request_id, answer, inbound_message_id = parsed
-        result = verdict.record_answer(request_id, answer, sender, inbound_message_id, now_timestamp())
+        result = verdict.record_answer(request_id, answer, sender, inbound_message_id, graph.now_timestamp())
         if result.outcome is not ActionOutcome.RECORDED:
             logger.info("%s answer on %s not recorded: %s", channel, request_id, result.outcome)
             continue
@@ -321,13 +322,12 @@ def handle_verify_contact(connection_id: str, user_id: str, body: dict) -> None:
     if not isinstance(contact_user_id, str) or not isinstance(code, str):
         reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
         return
-    expected_code = os.environ.get("CONTACT_VERIFICATION_MOCK_CODE", DEFAULT_CONTACT_VERIFICATION_MOCK_CODE)
     contact_row = graph.find_contact_row_for_user(RECEIVER_ADDRESS, contact_user_id)
-    if contact_row is None or not hmac.compare_digest(code.encode(), expected_code.encode()):
+    if contact_row is None or not hmac.compare_digest(code.encode(), DEFAULT_CONTACT_VERIFICATION_MOCK_CODE.encode()):
         logger.info("contact verification refused for %s: %s", user_id, "unknown contact" if contact_row is None else "wrong code")
         reject(connection_id, None, ActionOutcome.NOT_APPLIED)
         return
-    if not graph.mark_contact_verified(RECEIVER_ADDRESS, contact_row["SK"], VerifiedVia.MOCK, now_timestamp()):
+    if not graph.mark_contact_verified(RECEIVER_ADDRESS, contact_row["SK"], VerifiedVia.MOCK, graph.now_timestamp()):
         reject(connection_id, None, ActionOutcome.NOT_APPLIED)  # the row vanished between the lookup and the update
         return
     logger.info("contact %s verified via %s", contact_row["SK"], VerifiedVia.MOCK)

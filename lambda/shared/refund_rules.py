@@ -89,7 +89,7 @@ def rule_row_from_seed(seed_rule: dict) -> dict:
 def build_recovery_pack(case_row: dict, rule: RefundRule | None) -> dict:
     """Facts for Grandma's recovery pack: the case's rail and the rule's steps. No model output goes in here."""
     return {
-        "caseId": case_row["PK"].removeprefix("CASE#"),
+        "caseId": graph.case_id_of(case_row),
         "paymentRail": case_row["paymentRail"],
         "jurisdiction": case_row["jurisdiction"],
         "ruleKey": rule.rule_key if rule else None,

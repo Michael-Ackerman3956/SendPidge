@@ -1,4 +1,5 @@
-"""DynamoDB Streams → the case agent. A final REQUEST# status or a new CASE# row becomes one case note pushed to Grandma;
+"""DynamoDB Streams → the case agent. A final REQUEST# status (denied, confirmed, reversed_no, timeout), a new CASE# row
+or a closed one becomes one case note pushed to Grandma;
 a new question row under CHAT# becomes one Pidge reply (guardrail first), pushed to her or, for a question she
 emailed to pidge@, mailed back to her real mailbox."""
 
@@ -66,7 +67,7 @@ def deserialize(image: dict | None) -> dict:
 
 
 def scope_for_record(record: dict) -> case_agent.CaseScope | None:
-    """Only a REQUEST# META reaching a final state, or a CASE# META insert, wakes the agent."""
+    """A REQUEST# META reaching a final state, a CASE# META insert or a CASE# META turning closed wakes the agent."""
     keys = deserialize(record["dynamodb"].get("Keys"))
     new_image = deserialize(record["dynamodb"].get("NewImage"))
     old_image = deserialize(record["dynamodb"].get("OldImage"))
@@ -76,11 +77,11 @@ def scope_for_record(record: dict) -> case_agent.CaseScope | None:
         new_status, old_status = new_image.get("status"), old_image.get("status")
         if new_status not in NOTE_WORTHY_STATES or new_status == old_status:
             return None
-        return case_agent.CaseScope(RECEIVER_USER_ID, keys["PK"].removeprefix("REQUEST#"), CaseTrigger.VERDICT)
+        return case_agent.CaseScope(RECEIVER_USER_ID, graph.request_id_of(keys), CaseTrigger.VERDICT)
     if keys["PK"].startswith("CASE#") and record["eventName"] == "INSERT":
-        return case_agent.CaseScope(RECEIVER_USER_ID, new_image["requestId"], CaseTrigger.CASE, keys["PK"].removeprefix("CASE#"))
+        return case_agent.CaseScope(RECEIVER_USER_ID, new_image["requestId"], CaseTrigger.CASE, graph.case_id_of(keys))
     if keys["PK"].startswith("CASE#") and new_image.get("status") == CaseState.CLOSED and old_image.get("status") != CaseState.CLOSED:
-        return case_agent.CaseScope(RECEIVER_USER_ID, new_image["requestId"], CaseTrigger.CASE_CLOSED, keys["PK"].removeprefix("CASE#"))
+        return case_agent.CaseScope(RECEIVER_USER_ID, new_image["requestId"], CaseTrigger.CASE_CLOSED, graph.case_id_of(keys))
     return None
 
 

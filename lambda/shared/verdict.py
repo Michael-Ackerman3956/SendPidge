@@ -7,7 +7,9 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from shared import graph, refund_rules
-from shared.enums import FINAL_REQUEST_STATES, ActionOutcome, Channel, Jurisdiction, PaymentRail, RequestState, VerdictAnswer
+from shared.enums import (
+    FINAL_REQUEST_STATES, PHONE_CHANNEL_ANSWERS, ActionOutcome, Channel, Jurisdiction, PaymentRail, RequestState, VerdictAnswer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,16 @@ class ActionResult:
     contact_row: dict | None = None
     email_row: dict | None = None
     status: RequestState | None = None
+
+
+def parse_phone_answer(postback_text: str, separator: str) -> tuple[str, VerdictAnswer] | None:
+    """'<request id><separator><answer>' from an RCS chip or WhatsApp button; None for undo and reverse (PWA only).
+
+    Raises ValueError on an unknown answer, which the channel parsers treat as "not a tap".
+    """
+    request_id, answer_value = postback_text.rsplit(separator, 1)
+    answer = VerdictAnswer(answer_value)
+    return (request_id, answer) if answer in PHONE_CHANNEL_ANSWERS else None
 
 
 def parse_timestamp(iso_text: str) -> datetime:

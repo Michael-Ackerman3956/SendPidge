@@ -14,7 +14,6 @@ logger.setLevel(logging.INFO)
 RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
 RECEIVER_NAME = os.environ["RECEIVER_NAME"]
 RE_ASK_DELAY_SECONDS = int(os.environ["RE_ASK_DELAY_SECONDS"])
-FIRST_ATTEMPT = 1
 LAST_ATTEMPT = 2
 
 
@@ -62,7 +61,7 @@ def mark_timeout(request_row: dict) -> None:
         "ConditionExpression": "#status = :pending",
         "ExpressionAttributeNames": {"#status": "status"},
         "ExpressionAttributeValues": {":timeout": str(RequestState.TIMEOUT), ":pending": str(RequestState.PENDING),
-                                      ":now": graph.iso_timestamp(datetime.now(timezone.utc))},
+                                      ":now": graph.now_timestamp()},
     })
     if not applied:
         return

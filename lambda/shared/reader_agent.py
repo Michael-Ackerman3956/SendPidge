@@ -9,9 +9,9 @@ from strands.models import BedrockModel
 
 from shared.email_parse import ParsedEmail
 from shared.enums import Intent, ReaderModelChoice
+from shared.sanitize import SUMMARY_MAX_LENGTH
 
 BEDROCK_REGION = "us-east-1"
-SUMMARY_MAX_LENGTH = 140
 MODEL_MAX_OUTPUT_TOKENS = 400  # a verdict is a few lines; an unset maximum reserves the model's full quota per call
 
 BEDROCK_MODEL_IDS: dict[ReaderModelChoice, str] = {
@@ -49,9 +49,7 @@ Cues count the same in English and Korean: 돈, 송금, 입금, 급해, 오늘�
 
 
 def build_bedrock_model(model_choice: ReaderModelChoice, boto_session: boto3.Session | None = None) -> BedrockModel:
-    """One place that knows the Bedrock model ids; raises on a choice this build does not support."""
-    if model_choice is ReaderModelChoice.GEMMA_4_E2B:
-        raise NotImplementedError("gemma-4-e2b runs on bedrock-mantle, not Converse; not wired in this build")
+    """One place that knows the Bedrock model ids."""
     session = boto_session or boto3.Session(region_name=BEDROCK_REGION)
     return BedrockModel(model_id=BEDROCK_MODEL_IDS[model_choice], boto_session=session, max_tokens=MODEL_MAX_OUTPUT_TOKENS)
 

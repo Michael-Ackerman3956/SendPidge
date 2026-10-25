@@ -5,7 +5,6 @@ import logging
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from shared import graph, refund_rules
 from shared.enums import ActionOutcome, CaseState, Jurisdiction, PaymentRail, ReasonCode
@@ -25,10 +24,6 @@ OPEN_OR_REPORTED = (CaseState.OPEN, CaseState.REPORTED)
 class CaseActionResult:
     outcome: ActionOutcome
     case_row: dict | None = None
-
-
-def now_timestamp() -> str:
-    return graph.iso_timestamp(datetime.now(timezone.utc))
 
 
 def report_subject(reply_token: str) -> str:
@@ -81,23 +76,24 @@ def send_report(case_id: str, user_id: str, receiver_user_id: str, receiver_name
         return CaseActionResult(ActionOutcome.NOT_APPLIED, case_row)
     reply_token = case_row.get("replyToken") or secrets.token_urlsafe(REPLY_TOKEN_BYTES)
     graph.write_case_token(reply_token, case_id)
+    report_body = build_report_body(case_row, receiver_name)
     graph.update_case(case_id, {
         "UpdateExpression": "SET replyToken = :token, reportDraft = :draft",
-        "ExpressionAttributeValues": {":token": reply_token, ":draft": build_report_body(case_row, receiver_name)},
+        "ExpressionAttributeValues": {":token": reply_token, ":draft": report_body},
     })
     ses_client.send_email(
         FromEmailAddress=sender_address,
         Destination={"ToAddresses": [mock_bank_mailbox]},
         ReplyToAddresses=[reply_to_address],
         Content={"Simple": {"Subject": {"Data": report_subject(reply_token)},
-                            "Body": {"Text": {"Data": build_report_body(case_row, receiver_name)}}}},
+                            "Body": {"Text": {"Data": report_body}}}},
     )
     applied = graph.update_case(case_id, {
         "UpdateExpression": "SET #status = :reported, reportSentAt = :now, reportedTo = :to, replyCount = :zero",
         "ConditionExpression": "#status = :open",
         "ExpressionAttributeNames": {"#status": "status"},
         "ExpressionAttributeValues": {":reported": str(CaseState.REPORTED), ":open": str(CaseState.OPEN),
-                                      ":now": now_timestamp(), ":to": mock_bank_mailbox.casefold(), ":zero": 0},
+                                      ":now": graph.now_timestamp(), ":to": mock_bank_mailbox.casefold(), ":zero": 0},
     })
     if not applied:
         logger.warning("case %s: report sent but the status write was refused; the token still matches the reply", case_id)
@@ -113,7 +109,7 @@ def send_follow_up(case_id: str, ses_client, sender_address: str, reply_to_addre
         "UpdateExpression": "SET followUpSentAt = :now",
         "ConditionExpression": "#status = :reported AND attribute_not_exists(bankRepliedAt) AND attribute_not_exists(followUpSentAt)",
         "ExpressionAttributeNames": {"#status": "status"},
-        "ExpressionAttributeValues": {":reported": str(CaseState.REPORTED), ":now": now_timestamp()},
+        "ExpressionAttributeValues": {":reported": str(CaseState.REPORTED), ":now": graph.now_timestamp()},
     })
     if not claimed:
         return CaseActionResult(ActionOutcome.NOT_APPLIED, case_row)
@@ -150,7 +146,7 @@ def record_bank_reply(reply: InboundCaseReply) -> CaseActionResult:
         return CaseActionResult(ActionOutcome.WRONG_SENDER, case_row)
     if not hmac.compare_digest(reply.sender_address.casefold(), str(case_row.get("reportedTo", "")).casefold()):
         return CaseActionResult(ActionOutcome.WRONG_SENDER, case_row)
-    received_at = now_timestamp()
+    received_at = graph.now_timestamp()
     stored = graph.write_case_reply(case_id, reply.s3_key, {
         "from": reply.sender_address, "receivedAt": received_at,
         "textContent": reply.text_body[:REPLY_TEXT_MAX_CHARACTERS], "auth": [str(reason) for reason in reply.auth_reasons],
@@ -175,7 +171,7 @@ def close_case(case_id: str, user_id: str, receiver_user_id: str) -> CaseActionR
         "UpdateExpression": "SET #status = :closed, closedAt = :now",
         "ConditionExpression": "#status = :reported",
         "ExpressionAttributeNames": {"#status": "status"},
-        "ExpressionAttributeValues": {":closed": str(CaseState.CLOSED), ":reported": str(CaseState.REPORTED), ":now": now_timestamp()},
+        "ExpressionAttributeValues": {":closed": str(CaseState.CLOSED), ":reported": str(CaseState.REPORTED), ":now": graph.now_timestamp()},
     })
     if not applied:
         return CaseActionResult(ActionOutcome.NOT_APPLIED, case_row)

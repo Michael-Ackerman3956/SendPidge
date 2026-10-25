@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 from shared import graph, lists
 from shared.enums import Friction, IndicatorKind, ListSource, PolicyDecision, ReasonCode, RequestState, WarnReason
 from shared.lists import (
-    DynamoListStore, ListLookupFailed, SeedListStore, confusable_skeleton, hash_account_with_salt, is_lookalike_name,
+    DynamoListStore, ListLookupFailed, SeedListStore, confusable_skeleton, is_lookalike_name,
     list_row_from_seed, lookup_sender_reasons, normalise_phone_e164, normalise_registrable_domain, parse_list_row,
     sender_reasons_or_lookup_failure,
 )
@@ -40,10 +40,6 @@ def test_normalisers():
     assert normalise_phone_e164("0082 10 0000 0001") == "+821000000001"
     with pytest.raises(ValueError):
         normalise_phone_e164("call me")
-    assert hash_account_with_salt("3333-01-1234567", "salt") == hash_account_with_salt("3333011234567", "salt")
-    assert hash_account_with_salt("1", "a") != hash_account_with_salt("1", "b")
-    with pytest.raises(ValueError):
-        hash_account_with_salt("1", "")
 
 
 def test_skeleton_and_lookalike_names():

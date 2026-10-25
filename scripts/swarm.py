@@ -28,6 +28,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "lambda"))
 
+from shared import graph  # noqa: E402
 from shared.enums import PolicyDecision, WarnReason  # noqa: E402
 
 TABLE_NAME = "sendpidge"
@@ -165,7 +166,7 @@ class SwarmResult:
 def wait_for_email_row(table, object_key: str, wait_seconds: int) -> dict | None:
     deadline = time.monotonic() + wait_seconds
     while time.monotonic() < deadline:
-        row = table.get_item(Key={"PK": f"EMAIL#{object_key}", "SK": "META"}).get("Item")
+        row = table.get_item(Key={"PK": f"EMAIL#{object_key}", "SK": graph.METADATA_SORT_KEY}).get("Item")
         if row is not None and row.get("state"):
             return row
         time.sleep(3)
@@ -211,7 +212,7 @@ def run_live(templates: list[SwarmEmail], arguments) -> int:
         if email_row is not None:
             result.state, result.warn_reason = email_row.get("state"), email_row.get("warnReason")
             result.reasons = list(email_row.get("reasons", []))
-            request_row = table.get_item(Key={"PK": f"REQUEST#{email_row['requestId']}", "SK": "META"}).get("Item") if email_row.get("requestId") else None
+            request_row = table.get_item(Key={"PK": f"REQUEST#{email_row['requestId']}", "SK": graph.METADATA_SORT_KEY}).get("Item") if email_row.get("requestId") else None
             if request_row is not None:
                 result.friction = request_row.get("friction")
                 result.channels_sent = list(request_row.get("channelsSent", []))

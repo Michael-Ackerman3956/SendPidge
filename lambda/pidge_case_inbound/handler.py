@@ -1,6 +1,5 @@
 """S3 cases/ → a bank reply. Matched by the subject token, stored verbatim, shown to Grandma (in-app + Web Push), Jimin nudged. Never the Reader."""
 
-import json
 import logging
 import os
 from urllib.parse import unquote_plus
@@ -8,6 +7,7 @@ from urllib.parse import unquote_plus
 import boto3
 
 from shared import cases, channels, graph, payloads, web_push
+from shared.metrics import emit_count_metric
 from shared.auth import authentication_reasons
 from shared.email_parse import parse_eml
 from shared.enums import ActionOutcome, CaseEvent, PushNotice
@@ -30,12 +30,7 @@ def handle(event, context):
 
 
 def emit_rejected_metric(outcome: ActionOutcome) -> None:
-    """CloudWatch embedded metric format: a count per rejection reason, no extra permissions needed."""
-    print(json.dumps({
-        "_aws": {"Timestamp": int(__import__("time").time() * 1000), "CloudWatchMetrics": [
-            {"Namespace": "SendPidge", "Dimensions": [["Outcome"]], "Metrics": [{"Name": REJECTED_METRIC_NAME, "Unit": "Count"}]}]},
-        "Outcome": str(outcome), REJECTED_METRIC_NAME: 1,
-    }))
+    emit_count_metric(REJECTED_METRIC_NAME, "Outcome", str(outcome))
 
 
 def handle_case_reply_object(bucket_name: str, object_key: str) -> None:
@@ -50,7 +45,7 @@ def handle_case_reply_object(bucket_name: str, object_key: str) -> None:
         logger.warning("case reply %s dropped: %s", object_key, result.outcome)
         emit_rejected_metric(result.outcome)
         return
-    case_id = result.case_row["PK"].removeprefix("CASE#")
+    case_id = graph.case_id_of(result.case_row)
     channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.BANK_REPLIED))
     notified_count = web_push.send_notice(RECEIVER_USER_ID, PushNotice.BANK_REPLIED)  # lock-screen notice; fixed text
     logger.info("bank reply on %s: web push accepted by %d browser(s)", case_id, notified_count)

@@ -29,7 +29,7 @@ HOUR_SORT_KEY_PREFIX = "HOUR#"
 CONDITIONAL_CHECK_FAILED = "ConditionalCheckFailedException"
 logger = logging.getLogger(__name__)
 METADATA_SORT_KEY = "META"
-# UserIndex (GSI): "<userId>#EMAIL" or "<userId>#REQUEST" → rows newest first, for the PWA's sync.
+# UserIndex (GSI): "<userId>#EMAIL", "#REQUEST", "#NOTE" or "#CASE" → rows newest first, for the PWA's sync.
 USER_INDEX_NAME = "UserIndex"
 USER_INDEX_PARTITION_KEY = "userIndexPK"
 USER_INDEX_SORT_KEY = "userIndexSK"
@@ -59,6 +59,10 @@ def hash_access_token(access_token: str) -> str:
 
 def retention_epoch(retention_seconds: int) -> int:
     return int(time.time()) + retention_seconds
+
+
+def now_timestamp() -> str:
+    return iso_timestamp(datetime.now(timezone.utc))
 
 
 def iso_timestamp(moment: datetime) -> str:
@@ -121,16 +125,11 @@ def contact_from_row(item: dict) -> Contact:
     )
 
 
-def find_contact(receiver_address: str, person_name: str | None) -> Contact | None:
-    """Exact name match (case and spacing ignored) against the receiver's own contacts.
+def find_contact_among(contacts: list[Contact], person_name: str | None) -> Contact | None:
+    """Exact name match (case and spacing ignored) over the receiver's contacts, fetched once per email.
 
     Called with the sender's display name for gate 1 and with the Reader's claimed_person for gate 2.
     """
-    return find_contact_among(list_contacts(receiver_address), person_name)
-
-
-def find_contact_among(contacts: list[Contact], person_name: str | None) -> Contact | None:
-    """The same rule over an already-fetched contact list, so one email costs one contacts query."""
     if not person_name:
         return None
     wanted_name = " ".join(person_name.split()).casefold()
@@ -170,12 +169,8 @@ def mark_contact_verified(receiver_address: str, contact_sort_key: str, verified
         raise
 
 
-def contact_domains(receiver_address: str) -> frozenset[str]:
-    """The domains the family writes from (from every contact's knownAddresses); link lookalikes are judged against these."""
-    return domains_of(list_contacts(receiver_address))
-
-
 def domains_of(contacts: list[Contact]) -> frozenset[str]:
+    """The domains the family writes from (every contact's knownAddresses); link lookalikes are judged against these."""
     return frozenset(address.rpartition("@")[2] for contact in contacts for address in contact.known_addresses if "@" in address)
 
 
@@ -289,6 +284,10 @@ def request_id_of(request_row: dict) -> str:
     return request_row["PK"].removeprefix("REQUEST#")
 
 
+def case_id_of(case_row: dict) -> str:
+    return case_row["PK"].removeprefix("CASE#")
+
+
 def record_channels_sent(request_id: str, channels_sent: list[Channel]) -> None:
     get_table().update_item(
         Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY},
@@ -332,7 +331,7 @@ def get_contact_row(receiver_address: str, contact_key: str) -> dict | None:
 
 
 def list_recent_rows(user_id: str, row_kind: str, limit: int) -> list[dict]:
-    """Newest-first EMAIL or REQUEST rows that belong to one PWA user (via UserIndex), then the full rows."""
+    """Newest-first rows of one kind (EMAIL, REQUEST, NOTE or CASE) that belong to one PWA user (via UserIndex), then the full rows."""
     response = get_table().query(
         IndexName=USER_INDEX_NAME,
         KeyConditionExpression=Key(USER_INDEX_PARTITION_KEY).eq(user_index_partition(user_id, row_kind)),

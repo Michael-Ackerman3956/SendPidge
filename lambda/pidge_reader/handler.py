@@ -31,7 +31,6 @@ RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
 RECEIVER_NAME = os.environ["RECEIVER_NAME"]
 ESCALATION_ENABLED = os.environ.get("ESCALATION_ENABLED") == "true"
 RETRY_SCHEDULER_ENABLED = os.environ.get("RETRY_SCHEDULER_ENABLED") == "true"
-RE_ASK_DELAY_SECONDS = int(os.environ.get("RE_ASK_DELAY_SECONDS", "600"))
 RETRY_FUNCTION_ARN = os.environ.get("RETRY_FUNCTION_ARN", "")
 ASKS_PER_CONTACT_PER_HOUR = int(os.environ.get("ASKS_PER_CONTACT_PER_HOUR", "3"))  # the ask cap; past it the hold stays silent
 
@@ -97,7 +96,7 @@ def review_hold(
     facts = EscalationFacts(
         gate_fired=outcome.gate,
         display_name_matches_contact=outcome.gate is not None and outcome.contact is not None
-        and " ".join(parsed_email.sender_name.split()).casefold() == " ".join(outcome.contact.contact_name.split()).casefold(),
+        and graph.find_contact_among([outcome.contact], parsed_email.sender_name) is not None,
         address_known=outcome.is_address_known,
         authentication="; ".join(parsed_email.pidge_auth_header_values) or "none",
         reasons=tuple(reasons),
@@ -153,14 +152,14 @@ def schedule_re_ask(request_id: str) -> None:
     if not RETRY_SCHEDULER_ENABLED:
         return
     try:
-        fire_at = datetime.now(timezone.utc) + timedelta(seconds=RE_ASK_DELAY_SECONDS)
+        fire_at = datetime.now(timezone.utc) + timedelta(seconds=graph.HOLD_DURATION_SECONDS)
         schedules.schedule_one_time_invocation(f"retry-{request_id}-1", fire_at, RETRY_FUNCTION_ARN, {"requestId": request_id, "attempt": 1})
     except Exception:
         logger.exception("re-ask schedule for %s failed; the hold stays without a retry", request_id)
 
 
 def build_email_row(object_key: str, parsed_email: ParsedEmail, link_assessments: list[link_checks.LinkAssessment]) -> dict:
-    received_at = graph.iso_timestamp(datetime.now(timezone.utc))
+    received_at = graph.now_timestamp()
     return {
         "s3Key": object_key,
         "senderName": parsed_email.sender_name,

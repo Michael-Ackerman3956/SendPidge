@@ -3,13 +3,13 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
 
 import boto3
 from py_vapid import Vapid
 from pywebpush import WebPushException, webpush
 
 from shared import push_subscriptions
+from shared.metrics import emit_count_metric
 from shared.enums import PushNotice
 
 logger = logging.getLogger()
@@ -41,11 +41,7 @@ def get_vapid_signer() -> Vapid:
 
 
 def emit_failed_metric(notice: PushNotice) -> None:
-    print(json.dumps({
-        "_aws": {"Timestamp": int(datetime.now(timezone.utc).timestamp() * 1000), "CloudWatchMetrics": [
-            {"Namespace": "SendPidge", "Dimensions": [["Notice"]], "Metrics": [{"Name": FAILED_METRIC_NAME, "Unit": "Count"}]}]},
-        "Notice": str(notice), FAILED_METRIC_NAME: 1,
-    }))
+    emit_count_metric(FAILED_METRIC_NAME, "Notice", str(notice))
 
 
 def send_to_subscription(row: dict, payload: str) -> None:

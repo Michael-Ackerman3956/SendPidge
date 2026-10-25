@@ -34,7 +34,7 @@ class WarnReason(StrEnum):
 
 
 class ReasonCode(StrEnum):
-    """Machine reasons attached to an email. Lookup tables add more in a later slice."""
+    """Machine reasons attached to an email."""
 
     AUTH_MISSING = "auth_missing"      # no X-Pidge-Auth header at all
     AUTH_TAMPERED = "auth_tampered"    # more than one X-Pidge-Auth header
@@ -68,8 +68,8 @@ class IndicatorKind(StrEnum):
     ADDRESS = "address"      # a full sender address, lower-cased
     DOMAIN = "domain"        # a registrable domain
     LOOKALIKE = "lookalike"  # the confusable skeleton of a contact's name
-    PHONE = "phone"          # E.164 (slice 12)
-    URL = "url"              # a registrable domain or full URL (slice 12)
+    PHONE = "phone"          # E.164 (seeded, not yet queried)
+    URL = "url"              # a registrable domain or full URL (seeded, not yet queried)
 
 
 class ListCategory(StrEnum):
@@ -199,7 +199,6 @@ class ReaderModelChoice(StrEnum):
     HAIKU_5_5 = "haiku-5.5"
     HAIKU_4_5 = "haiku-4.5"
     NOVA_MICRO = "nova-micro"
-    GEMMA_4_E2B = "gemma-4-e2b"
     OPUS_4_5 = "opus-4.5"  # the escalation reviewer, never the Reader (the only Opus this account can call, 2026-10-24)
     OPUS_5_5 = "opus-5.5"  # the escalation reviewer once the account is granted access
 
@@ -257,7 +256,7 @@ class ChatRole(StrEnum):
 
 
 class ChatVia(StrEnum):
-    """How the receiver's question arrived (email is slice 8 stage 6b)."""
+    """How the receiver's question arrived."""
 
     WINDOW = "window"
     EMAIL = "email"
