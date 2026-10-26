@@ -4,12 +4,13 @@ import asyncio
 import json
 import logging
 import os
+import time
 from decimal import Decimal
 
 import boto3
 from botocore.exceptions import ClientError
 
-from shared import graph, payloads, rcs, whatsapp
+from shared import ask_link, email_ask, graph, payloads, rcs, verdict, whatsapp
 from shared.enums import Channel, RequestState
 
 logger = logging.getLogger(__name__)
@@ -17,9 +18,11 @@ logger = logging.getLogger(__name__)
 _management_client = None
 _rcs_client = None
 _whatsapp_client = None
+_ses_client = None
 
 RCS_ENABLED = os.environ.get("RCS_ENABLED") == "true"
 WHATSAPP_ENABLED = os.environ.get("WHATSAPP_ENABLED") == "true"
+EMAIL_ASK_ENABLED = os.environ.get("EMAIL_ASK_ENABLED") == "true"
 
 
 def get_management_client():
@@ -118,6 +121,42 @@ def ask_on_whatsapp(request_row: dict, contact: graph.Contact, receiver_name: st
     return Channel.WHATSAPP
 
 
+def get_ses_client():
+    global _ses_client
+    if _ses_client is None:
+        _ses_client = boto3.client("sesv2")
+    return _ses_client
+
+
+def ask_on_email(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
+    """Amazon SES to the contact's own address, from pidge@ so a reply lands under asks/. Only a No can come back."""
+    request_id = graph.request_id_of(request_row)
+    app_url = os.environ["ASK_LINK_BASE_URL"]
+    no_link = ask_link.build_no_link(app_url, request_id, int(time.time()))
+    response = get_ses_client().send_email(
+        FromEmailAddress=os.environ["RECEIPT_SENDER"],
+        Destination={"ToAddresses": [contact.contact_email]},
+        Content={"Simple": {
+            "Subject": {"Data": email_ask.ask_subject(request_id)},
+            "Body": {"Text": {"Data": email_ask.ask_body(request_row["verdict"]["summary"], receiver_name, no_link, app_url)}},
+        }},
+    )
+    logger.info("email ask %s sent as %s", request_id, response["MessageId"])
+    return Channel.EMAIL
+
+
+def announce_recorded_answer(result: verdict.ActionResult, receiver_user_id: str, receiver_name: str, receipt_sender: str,
+                             ses_client) -> None:
+    """Both PWAs learn the new status; a final state emails the contact the receipt (a failed receipt is logged, never blocking)."""
+    message = payloads.request_state_message(result.request_row, result.status, result.contact_row["contactName"], False)
+    push_to_user(receiver_user_id, message)
+    push_to_user(result.contact_row["contactPwaUserId"], message)
+    try:  # the verdict already reached the receiver
+        verdict.send_receipt(ses_client, receipt_sender, result.contact_row, result.status, receiver_name)
+    except Exception:
+        logger.exception("receipt for %s failed", graph.request_id_of(result.request_row))
+
+
 def push_to_connection(connection_id: str, message: dict) -> None:
     """Reply to the one socket that sent a client action."""
     get_management_client().post_to_connection(ConnectionId=connection_id, Data=encode_push_message(message))
@@ -130,6 +169,8 @@ async def ask_on_every_channel(request_row: dict, contact: graph.Contact, receiv
         channel_senders.append(ask_on_rcs)
     if WHATSAPP_ENABLED and contact.contact_whatsapp:
         channel_senders.append(ask_on_whatsapp)
+    if EMAIL_ASK_ENABLED and contact.contact_email:
+        channel_senders.append(ask_on_email)
     outcomes = await asyncio.gather(
         *(asyncio.to_thread(send, request_row, contact, receiver_name) for send in channel_senders),
         return_exceptions=True,

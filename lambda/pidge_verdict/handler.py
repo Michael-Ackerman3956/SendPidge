@@ -1,5 +1,6 @@
 """WebSocket $default: sync, the contact's Yes / No / Undo / Reverse, the receiver's Confirm, case actions and questions
-to Pidge, a browser's Web Push subscription, the receiver's contact verification code; SNS: phone-channel taps.
+to Pidge, a browser's Web Push subscription, the receiver's contact verification code; SNS: phone-channel taps;
+S3 asks/: a contact's reply to the ask by email.
 
 The user comes from the connection row, never from the message body.
 """
@@ -9,14 +10,16 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote_plus
 
 import boto3
 
-from shared import cases, channels, chat, graph, payloads, push_subscriptions, rcs, schedules, verdict, whatsapp
+from shared import cases, channels, chat, email_ask, graph, payloads, push_subscriptions, rcs, schedules, verdict, whatsapp
 from shared.enums import (
-    ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, PushMessageType, RequestState, UserRole, VerdictAnswer,
-    VerifiedVia,
+    ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, EmailedAnswerOutcome, PushMessageType, RequestState,
+    UserRole, VerdictAnswer, VerifiedVia,
 )
+from shared.metrics import emit_count_metric
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -44,6 +47,7 @@ DEFAULT_CONTACT_VERIFICATION_MOCK_CODE = "4821"  # the PWA plays the reply with 
 HANDLED = {"statusCode": 200}
 FORBIDDEN = {"statusCode": 403}
 ANSWER_FOR_ACTION = {ClientAction.UNDO: VerdictAnswer.UNDO, ClientAction.REVERSE: VerdictAnswer.REVERSE}
+EMAILED_ANSWER_DROPPED_METRIC_NAME = "EmailedAnswerDropped"
 
 s3_client = boto3.client("s3")
 ses_client = boto3.client("sesv2")
@@ -51,7 +55,10 @@ ses_client = boto3.client("sesv2")
 
 def handle(event, context):
     if "Records" in event:
-        handle_sns_records(event["Records"])
+        if event["Records"] and "s3" in event["Records"][0]:
+            handle_emailed_answer_records(event["Records"])
+        else:
+            handle_sns_records(event["Records"])
         return HANDLED
     request_context = event["requestContext"]
     connection_id = request_context["connectionId"]
@@ -152,16 +159,10 @@ def handle_answer(connection_id: str, user_id: str, body: dict, websocket_messag
 
 
 def announce_recorded_answer(request_id: str, result: verdict.ActionResult) -> None:
-    """Both PWAs learn the new status; a Yes starts the release timer; a final state emails Jimin the receipt."""
-    message = payloads.request_state_message(result.request_row, result.status, result.contact_row["contactName"], False)
-    channels.push_to_user(RECEIVER_USER_ID, message)
-    channels.push_to_user(result.contact_row["contactPwaUserId"], message)
+    """Both PWAs learn the new status and Jimin gets the receipt (shared with the ask link); a Yes starts the release timer."""
+    channels.announce_recorded_answer(result, RECEIVER_USER_ID, RECEIVER_NAME, RECEIPT_SENDER, ses_client)
     if result.status is RequestState.CONFIRMED_PENDING:
         schedule_release(request_id, result.request_row["releaseAt"])
-    try:  # the verdict already reached the receiver; a failed receipt is logged, never blocking
-        verdict.send_receipt(ses_client, RECEIPT_SENDER, result.contact_row, result.status, RECEIVER_NAME)
-    except Exception:
-        logger.exception("receipt for %s failed", request_id)
 
 
 def schedule_release(request_id: str, release_at: str) -> None:
@@ -215,6 +216,31 @@ def handle_sns_records(records: list) -> None:
             logger.info("%s answer on %s not recorded: %s", channel, request_id, result.outcome)
             continue
         announce_recorded_answer(request_id, result)
+
+
+def handle_emailed_answer_records(records: list) -> None:
+    """A contact's reply to the ask by email, stored by Mail Manager under asks/. Every drop is logged and counted."""
+    for record in records:
+        handle_emailed_answer_object(record["s3"]["bucket"]["name"], unquote_plus(record["s3"]["object"]["key"]))
+
+
+def handle_emailed_answer_object(bucket_name: str, object_key: str) -> None:
+    raw_email = s3_client.get_object(Bucket=bucket_name, Key=object_key)["Body"].read()
+    emailed_answer = email_ask.read_emailed_answer(raw_email)
+    if emailed_answer.outcome is not EmailedAnswerOutcome.ACCEPTED:
+        logger.warning("emailed answer %s dropped: %s", object_key, emailed_answer.outcome)
+        emit_count_metric(EMAILED_ANSWER_DROPPED_METRIC_NAME, "Outcome", str(emailed_answer.outcome))
+        return
+    sender = verdict.SenderIdentity(Channel.EMAIL, emailed_answer.sender_address)
+    inbound_message_id = f"email:{emailed_answer.message_id or object_key}"
+    result = verdict.record_answer(
+        emailed_answer.request_id, emailed_answer.answer, sender, inbound_message_id, graph.now_timestamp()
+    )
+    if result.outcome is not ActionOutcome.RECORDED:
+        logger.info("email answer on %s not recorded: %s", emailed_answer.request_id, result.outcome)
+        emit_count_metric(EMAILED_ANSWER_DROPPED_METRIC_NAME, "Outcome", str(result.outcome))
+        return
+    announce_recorded_answer(emailed_answer.request_id, result)
 
 
 def handle_confirm(connection_id: str, user_id: str, body: dict) -> None:

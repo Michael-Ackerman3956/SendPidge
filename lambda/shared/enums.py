@@ -139,11 +139,31 @@ FINAL_REQUEST_STATES = (RequestState.DENIED, RequestState.CONFIRMED, RequestStat
 
 
 class Channel(StrEnum):
-    """Where a 'Was this you?' ask can be sent."""
+    """Where a 'Was this you?' ask can be sent, and where the suspicious message came in (REQUEST#.inboundChannel)."""
 
     RCS = "rcs"
     WHATSAPP = "whatsapp"
     INAPP = "inapp"
+    EMAIL = "email"  # the ask goes out through SES; only a No may come back this way (verdict.record_answer)
+
+
+class AskLinkOutcome(StrEnum):
+    """What ask_link.verify_no_link found; only VALID may reach record_answer."""
+
+    VALID = "valid"
+    MALFORMED = "malformed"
+    EXPIRED = "expired"
+    BAD_SIGNATURE = "bad_signature"
+
+
+class EmailedAnswerOutcome(StrEnum):
+    """What happened to one reply mailed to pidge@ under asks/: only ACCEPTED reaches record_answer; the rest are dropped."""
+
+    ACCEPTED = "accepted"
+    NO_REQUEST_ID = "no_request_id"
+    DKIM_NOT_PASSED = "dkim_not_passed"
+    DKIM_NOT_ALIGNED = "dkim_not_aligned"
+    NOT_AN_ANSWER = "not_an_answer"
 
 
 class RcsInboundMessageType(StrEnum):
@@ -305,6 +325,7 @@ class ActionOutcome(StrEnum):
     RECORDED = "recorded"
     UNKNOWN_REQUEST = "unknown_request"
     WRONG_SENDER = "wrong_sender"  # the reply did not come from the contact's own channel
+    WRONG_CHANNEL = "wrong_channel"  # a Yes on the channel the suspicious message arrived on (a hijacked mailbox could send it)
     NOT_APPLIED = "not_applied"    # duplicate, redelivered, or a Yes after the hold or after a No
     NOT_ALLOWED = "not_allowed"    # this user may not do this action
     BAD_MESSAGE = "bad_message"    # unparseable or missing fields

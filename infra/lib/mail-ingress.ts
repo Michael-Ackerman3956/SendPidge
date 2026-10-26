@@ -10,6 +10,10 @@ export const INBOX_PREFIX = "inbox/";
 export const CASES_PREFIX = "cases/";
 // Grandma's questions mailed to pidge@ land here (Mail Manager rule store-pidge-question); never the Reader.
 export const PIDGE_QUESTION_PREFIX = "pidge/";
+// A contact's reply to the ask by email lands here (Mail Manager rule store-ask-reply) and wakes pidge-verdict; never the Reader.
+export const ASKS_PREFIX = "asks/";
+// The subject of every ask by email carries "[req-<id>]" (lambda/shared/email_ask.py); a reply keeps it.
+const ASK_SUBJECT_MARKER = "[req-";
 // Stamped by Mail Manager at ingress; a sender-written copy is dropped before it can be trusted.
 const PIDGE_AUTH_HEADER_NAME = "X-Pidge-Auth";
 const MAXIMUM_INBOUND_MESSAGE_BYTES = 10 * 1024 * 1024;
@@ -36,6 +40,7 @@ export function buildMailIngress(stack: Stack, settings: StackSettings): MailIng
   emailBucket.grantPut(mailManagerWriteRole, `${INBOX_PREFIX}*`);
   emailBucket.grantPut(mailManagerWriteRole, `${CASES_PREFIX}*`);
   emailBucket.grantPut(mailManagerWriteRole, `${PIDGE_QUESTION_PREFIX}*`);
+  emailBucket.grantPut(mailManagerWriteRole, `${ASKS_PREFIX}*`);
 
   const writeToS3Action = (s3Prefix: string): CfnMailManagerRuleSet.RuleActionProperty => ({ writeToS3: {
     roleArn: mailManagerWriteRole.roleArn,
@@ -63,6 +68,16 @@ export function buildMailIngress(stack: Stack, settings: StackSettings): MailIng
         name: "store-case-reply",
         conditions: [{ stringExpression: { evaluate: { attribute: "RECIPIENT" }, operator: "EQUALS", values: [settings.casesAddress] } }],
         actions: [writeToS3Action(CASES_PREFIX)],
+      },
+      // A reply to the ask by email: to pidge@ with the request marker in the subject. pidge-verdict proves the sender
+      // (DKIM pass + aligned signature, the contact's own address) before anything is recorded.
+      {
+        name: "store-ask-reply",
+        conditions: [
+          { stringExpression: { evaluate: { attribute: "RECIPIENT" }, operator: "EQUALS", values: [settings.receiptSender] } },
+          { stringExpression: { evaluate: { attribute: "SUBJECT" }, operator: "CONTAINS", values: [ASK_SUBJECT_MARKER] } },
+        ],
+        actions: [writeToS3Action(ASKS_PREFIX)],
       },
       // A question to pidge@ that names her mailbox in From (the header may carry a display name, hence CONTAINS);
       // pidge-question-inbound still checks the exact address and DKIM alignment before anything is stored.

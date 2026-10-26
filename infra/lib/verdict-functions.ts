@@ -1,16 +1,19 @@
 import { Duration, Stack } from "aws-cdk-lib";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { Effect, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
-import { Function } from "aws-cdk-lib/aws-lambda";
+import { Function, FunctionUrl, FunctionUrlAuthType } from "aws-cdk-lib/aws-lambda";
+import { ISecret } from "aws-cdk-lib/aws-secretsmanager";
+import { EventType } from "aws-cdk-lib/aws-s3";
+import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
 import { Topic } from "aws-cdk-lib/aws-sns";
 import { LambdaSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
-import { INBOX_PREFIX } from "./mail-ingress.js";
+import { ASKS_PREFIX, INBOX_PREFIX } from "./mail-ingress.js";
 import { buildPythonFunction, buildSendEmailStatement, grantRcsSendIfConfigured, grantWhatsAppSendIfConfigured } from "./python-function.js";
 import { SharedResources } from "./realtime.js";
 import { StackSettings, flagEnvironmentValue } from "./stack-settings.js";
 
 // The re-ask timer: at +reAskDelay an unanswered ask is re-sent once; a second silence is marked timeout.
-export function buildRetryFunction(stack: Stack, settings: StackSettings, shared: SharedResources): Function {
+export function buildRetryFunction(stack: Stack, settings: StackSettings, shared: SharedResources, askLinkSecret: ISecret): Function {
   const retryFunction = buildPythonFunction(stack, "Retry", shared.lambdaCode, {
     handler: "pidge_retry.handler.handle",
     memorySize: 512,
@@ -29,10 +32,16 @@ export function buildRetryFunction(stack: Stack, settings: StackSettings, shared
       WHATSAPP_PHONE_NUMBER_ID: settings.whatsappPhoneNumberId,
       WHATSAPP_META_API_VERSION: settings.whatsappMetaApiVersion,
       WHATSAPP_TEMPLATE_NAME: settings.whatsappTemplateName,
+      EMAIL_ASK_ENABLED: flagEnvironmentValue(settings.emailAskEnabled),
+      RECEIPT_SENDER: settings.receiptSender,
+      ASK_LINK_BASE_URL: `https://${settings.pwaDomain}`,
+      ASK_LINK_SECRET_NAME: askLinkSecret.secretName,
       PIDGE_IMAGE_URL: `https://${settings.pwaDomain}/assets/pidge-icon.png`,
     },
   });
   shared.table.grantReadWriteData(retryFunction);
+  retryFunction.addToRolePolicy(buildSendEmailStatement(stack, settings.sendingDomain));
+  askLinkSecret.grantRead(retryFunction);
   shared.webSocketStage.grantManagementApiAccess(retryFunction);
   shared.scheduleGroup.grantWriteSchedules(retryFunction);
   shared.schedulerRole.grantPassRole(retryFunction.grantPrincipal);
@@ -148,7 +157,31 @@ export interface VerdictDependencies {
   callReminderFunction: Function;
 }
 
-// pidge-verdict: every client action on the socket ($default) and every phone-channel answer (both topics).
+// pidge-ask-link: the signed "No, that wasn't me" link in the ask by email, reached through the PWA's CloudFront (/no/*).
+// GET shows the button, POST records the No; the HMAC in the link is the only credential (lambda/shared/ask_link.py).
+export function buildAskLinkFunction(stack: Stack, settings: StackSettings, shared: SharedResources, askLinkSecret: ISecret): FunctionUrl {
+  const askLinkFunction = buildPythonFunction(stack, "AskLink", shared.lambdaCode, {
+    handler: "pidge_ask_link.handler.handle",
+    memorySize: 256,
+    timeout: Duration.seconds(10),
+    environment: {
+      TABLE_NAME: shared.table.tableName,
+      RECEIVER_USER_ID: settings.receiverUserId,
+      RECEIVER_NAME: settings.receiverName,
+      RECEIPT_SENDER: settings.receiptSender,
+      WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,
+      ASK_LINK_SECRET_NAME: askLinkSecret.secretName,
+    },
+  });
+  shared.table.grantReadWriteData(askLinkFunction);
+  shared.webSocketStage.grantManagementApiAccess(askLinkFunction);
+  askLinkFunction.addToRolePolicy(buildSendEmailStatement(stack, settings.sendingDomain));
+  askLinkSecret.grantRead(askLinkFunction);
+  return askLinkFunction.addFunctionUrl({ authType: FunctionUrlAuthType.NONE });
+}
+
+// pidge-verdict: every client action on the socket ($default), every phone-channel answer (both topics) and every reply
+// to the ask by email (S3 asks/).
 export function buildVerdictFunction(stack: Stack, settings: StackSettings, shared: SharedResources, dependencies: VerdictDependencies): Function {
   const verdictFunction = buildPythonFunction(stack, "Verdict", shared.lambdaCode, {
     handler: "pidge_verdict.handler.handle",
@@ -193,6 +226,8 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
     }),
   );
   verdictFunction.addToRolePolicy(buildSendEmailStatement(stack, settings.sendingDomain));
+  shared.emailBucket.grantRead(verdictFunction, `${ASKS_PREFIX}*`);
+  shared.emailBucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(verdictFunction), { prefix: ASKS_PREFIX });
   shared.scheduleGroup.grantWriteSchedules(verdictFunction);
   shared.schedulerRole.grantPassRole(verdictFunction.grantPrincipal);
   grantWhatsAppSendIfConfigured(verdictFunction, settings.whatsappPhoneNumberArn);

@@ -92,7 +92,8 @@ Source: `scope.md > The Unique Kernel`.
 - Format: "Grandma received an email claiming to be you asking for money — was this you?"
 - Two buttons: Yes / No.
 - After he taps, Jimin gets a short email receipt saying his answer was recorded and whether the email to Grandma stays held or was released.
-- **POC channels (built):** Email inbound via SES, WhatsApp to Jimin via AWS End User Messaging, in-app messages within SendPidge.
+- **POC channels (built):** Email inbound via SES, WhatsApp to Jimin via AWS End User Messaging, in-app messages within SendPidge, and the same question by email to Jimin's own address with a one-tap "No" link (added 2026-10-26).
+- **Cross-channel rule (2026-10-26):** a Yes never counts on the channel the suspicious message came in on (a hijacked mailbox could send it); a No counts from any channel. So an emailed reply can keep a hold but never lift one.
 - **Other channels:** hardcoded/stubbed/configured for demo (SMS, notifications). The multi-channel approach is deliberate — AWS CDS hackathon scores Technical Execution (40%) on using multiple CDS services together (SES + EUM WhatsApp + EUM SMS/RCS).
 
 ### Verdict and Resolution

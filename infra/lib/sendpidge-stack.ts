@@ -1,4 +1,6 @@
 import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from "aws-cdk-lib";
+import { AllowedMethods, CachePolicy, OriginRequestPolicy, ResponseHeadersPolicy, ViewerProtocolPolicy } from "aws-cdk-lib/aws-cloudfront";
+import { FunctionUrlOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
 import { Alarm, ComparisonOperator, TreatMissingData } from "aws-cdk-lib/aws-cloudwatch";
 import { AttributeType, BillingMode, StreamViewType, Table } from "aws-cdk-lib/aws-dynamodb";
 import { Architecture, Code, LayerVersion, Runtime } from "aws-cdk-lib/aws-lambda";
@@ -13,10 +15,13 @@ import { SharedResources, buildScheduler, buildWebSocketApi } from "./realtime.j
 import { readStackSettings } from "./stack-settings.js";
 import { buildStaticSite } from "./static-site.js";
 import {
-  buildCallReminderFunction, buildCaseFollowUpFunction, buildInboundTopics, buildReleaseFunction, buildRetryFunction, buildVerdictFunction,
+  buildAskLinkFunction, buildCallReminderFunction, buildCaseFollowUpFunction, buildInboundTopics, buildReleaseFunction, buildRetryFunction,
+  buildVerdictFunction,
 } from "./verdict-functions.js";
 
 const LAMBDA_SOURCE_DIRECTORY = "../lambda";
+// The "No, that wasn't me" link in the ask by email lives under the PWA domain (lambda/shared/ask_link.py LINK_PATH_PREFIX).
+const ASK_LINK_PATH_PATTERN = "/no/*";
 
 // CDK stack: the declaration of every AWS resource SendPidge deploys (`cdk deploy` turns this into CloudFormation).
 // The whole SendPidge deployment, in the order the mail flows: ingress → table → the Lambdas → the case agent → outputs.
@@ -67,16 +72,29 @@ export class SendPidgeStack extends Stack {
     const { scheduleGroup, schedulerRole } = buildScheduler(this);
     const shared: SharedResources = { table, emailBucket, lambdaCode, dependencyLayer, webSocketApi, webSocketStage, scheduleGroup, schedulerRole };
 
-    const retryFunction = buildRetryFunction(this, settings, shared);
+    // HMAC key for the signed No link; generated here, read by pidge-reader, pidge-retry (sign) and pidge-ask-link (verify).
+    const askLinkSecret = new Secret(this, "AskLinkSecret", {
+      description: "SendPidge: HMAC key for the No link in the ask by email",
+      generateSecretString: { passwordLength: 64, excludePunctuation: true },
+    });
+    const retryFunction = buildRetryFunction(this, settings, shared, askLinkSecret);
     const caseFollowUpFunction = buildCaseFollowUpFunction(this, settings, shared);
     const vapidSecret = Secret.fromSecretNameV2(this, "VapidPrivateKey", settings.vapidSecretName);
     buildCaseInboundFunction(this, settings, shared, vapidSecret);
     buildQuestionInboundFunction(this, settings, shared);
-    const { readerDeadLetterQueue } = buildReaderFunction(this, settings, shared, retryFunction);
+    const { readerDeadLetterQueue } = buildReaderFunction(this, settings, shared, retryFunction, askLinkSecret);
     const topics = buildInboundTopics(this);
     const releaseFunction = buildReleaseFunction(this, settings, shared);
     const callReminderFunction = buildCallReminderFunction(this, settings, shared);
     buildVerdictFunction(this, settings, shared, { topics, releaseFunction, caseFollowUpFunction, callReminderFunction });
+    const askLinkUrl = buildAskLinkFunction(this, settings, shared, askLinkSecret);
+    pwaDistribution.addBehavior(ASK_LINK_PATH_PATTERN, new FunctionUrlOrigin(askLinkUrl), {
+      allowedMethods: AllowedMethods.ALLOW_ALL,  // the button is a POST
+      cachePolicy: CachePolicy.CACHING_DISABLED,
+      originRequestPolicy: OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,  // exp and sig travel in the query string
+      viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      responseHeadersPolicy: ResponseHeadersPolicy.SECURITY_HEADERS,
+    });
 
     const caseAgent = buildCaseAgent(this, settings, table);
     const guardrail = buildChatGuardrail(this);

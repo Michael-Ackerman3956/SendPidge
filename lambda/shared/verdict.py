@@ -1,4 +1,5 @@
-"""A contact's Yes / No / Undo / Reverse and the receiver's Confirm. No beats Yes; the first valid tap wins. Never reads the email."""
+"""A contact's Yes / No / Undo / Reverse and the receiver's Confirm. No beats Yes; the first valid tap wins; a Yes never counts
+on the channel the suspicious message arrived on (today: email). Never reads the email."""
 
 import hmac
 import logging
@@ -23,6 +24,7 @@ CONTACT_FIELD_FOR_CHANNEL = {
     Channel.INAPP: "contactPwaUserId",
     Channel.WHATSAPP: "contactWhatsApp",
     Channel.RCS: "contactRcs",
+    Channel.EMAIL: "contactEmail",
 }
 STATUS_FOR_ANSWER = {
     VerdictAnswer.YES: RequestState.CONFIRMED_PENDING,
@@ -118,8 +120,18 @@ def build_answer_update(answer: VerdictAnswer, sender: SenderIdentity, inbound_m
 
 
 def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool:
+    """The contact's own address on that channel, exactly; an email address compares case-insensitively."""
     expected_value = (contact_row or {}).get(CONTACT_FIELD_FOR_CHANNEL[sender.channel])
-    return bool(expected_value) and hmac.compare_digest(str(expected_value), sender.value)
+    if not expected_value:
+        return False
+    if sender.channel is Channel.EMAIL:
+        return hmac.compare_digest(str(expected_value).casefold(), sender.value.casefold())
+    return hmac.compare_digest(str(expected_value), sender.value)
+
+
+def inbound_channel_of(request_row: dict) -> Channel:
+    """Rows written before 2026-10-26 carry no inboundChannel; email was the only inbound channel then."""
+    return Channel(request_row.get("inboundChannel", Channel.EMAIL))
 
 
 def record_answer(
@@ -133,6 +145,9 @@ def record_answer(
     if not is_expected_sender(contact_row, sender):
         logger.warning("answer on %s from an unexpected %s sender", request_id, sender.channel)
         return ActionResult(ActionOutcome.WRONG_SENDER, request_row)
+    if answer is VerdictAnswer.YES and sender.channel is inbound_channel_of(request_row):
+        logger.warning("a Yes on %s by %s, the channel the message came in on, is refused", request_id, sender.channel)
+        return ActionResult(ActionOutcome.WRONG_CHANNEL, request_row, contact_row)
     if not graph.write_answer(request_id, build_answer_update(answer, sender, inbound_message_id, now)):
         logger.info("answer %s on %s not applied (duplicate, late, or wrong state)", answer, request_id)
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row, contact_row)

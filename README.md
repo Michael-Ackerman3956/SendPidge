@@ -9,8 +9,8 @@ Measured on the deployed pipeline on 2026-10-25 by `scripts/swarm.py` (10 emails
 
 1. Mail arrives at Amazon SES Mail Manager and lands in S3.
 2. `pidge-reader` (Lambda, Strands Agents on Amazon Bedrock, Claude Haiku with Claude Opus escalation) reads the email with no tools, returns a typed verdict, and the policy in code decides HOLD, WARN or PASS.
-3. A HOLD writes a request row in DynamoDB and asks the contact at the same moment: in-app over an API Gateway WebSocket, WhatsApp through AWS End User Messaging Social (approved utility template, Yes / No buttons). RCS is a stub behind a flag (see below).
-4. The contact's answer lands as a verdict. No stays held and can be reported; Yes opens the email after a ten-second undo window. A late No still lands; a late Yes does not.
+3. A HOLD writes a request row in DynamoDB and asks the contact at the same moment: in-app over an API Gateway WebSocket, WhatsApp through AWS End User Messaging Social (approved utility template, Yes / No buttons), and email through Amazon SES to the contact's own address (a signed one-tap "No" link served under app.sendpidge.com, or a reply of NO that comes back through Mail Manager). RCS is a stub behind a flag (see below).
+4. The contact's answer lands as a verdict. No stays held and can be reported; Yes opens the email after a ten-second undo window. A late No still lands; a late Yes does not. A Yes never counts on the channel the suspicious message came in on (email today), because a hijacked mailbox could send it; a No counts from anywhere.
 5. After a No, the case agent on Amazon Bedrock AgentCore remembers the family, writes the case note and drafts the recovery steps from a rule table; Grandma can ask Pidge about it in the chat window, behind a Bedrock Guardrail prompt-attack check.
 
 The PWA at `pwa/` is one static site on S3 + CloudFront. The access token in the link decides the role: Grandma (receiver) or Jimin (contact).
@@ -46,7 +46,8 @@ Context flags live in `infra/cdk.json` (`chatEnabled`, `asksPerContactPerHour`, 
 
 ## What is real and what is a demo
 
-- The email pipeline, the hold, the WhatsApp ask and the in-app ask run on AWS for real.
+- The email pipeline, the hold, the WhatsApp ask, the in-app ask and the ask by email run on AWS for real.
+- Plain SMS is not built: it needs an origination number in AWS End User Messaging SMS.
 - RCS is a stub: the send path, the two-way SNS topic and the reply parser are in the code behind `rcsEnabled: false`, but we had no US number to receive the sandbox agent (a Korean SIM cannot), so the card was never tested end to end on a phone. The inbound parser is covered by pytest only.
 - The bank in the recovery flow is simulated: "Send to my bank" emails a mailbox we control.
 - Onboarding's code step is a demo: the contact's reply is played by a labelled button, and the server (`contactVerificationMock`) marks the seeded contact verified without sending anything.

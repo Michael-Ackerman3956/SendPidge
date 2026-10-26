@@ -1,0 +1,77 @@
+"""Function URL behind the PWA's CloudFront (/no/*): the 'No, that wasn't me' link from the ask by email.
+
+GET shows one button; POST records the No through the same verdict.record_answer as every other channel. The signed
+link is the proof that the contact's own mailbox received the ask; nothing here reads the email or takes a Yes.
+"""
+
+import html
+import logging
+import os
+import time
+
+import boto3
+
+from shared import ask_link, channels, graph, verdict
+from shared.enums import ActionOutcome, AskLinkOutcome, Channel, VerdictAnswer
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
+RECEIVER_NAME = os.environ["RECEIVER_NAME"]
+RECEIPT_SENDER = os.environ["RECEIPT_SENDER"]
+HTML_HEADERS = {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}
+PAGE_STYLE = ("body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0d1117;color:#e6edf3;"
+              "font:17px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;text-align:center;padding:24px}"
+              "button{font:inherit;font-weight:700;padding:14px 28px;border-radius:12px;border:0;background:#e5484d;color:#fff}")
+
+ses_client = boto3.client("sesv2")
+
+
+def handle(event, context):
+    method = event["requestContext"]["http"]["method"]
+    check = ask_link.verify_no_link(event.get("rawPath", ""), event.get("queryStringParameters"), int(time.time()))
+    if check.outcome is AskLinkOutcome.EXPIRED:
+        return page(410, "This link has expired.", "Reply NO to Pidge's email, or answer in the SendPidge app.")
+    if check.outcome is not AskLinkOutcome.VALID:
+        logger.warning("ask link refused: %s", check.outcome)
+        return page(404, "This link is not valid.")
+    if method in ("GET", "HEAD"):
+        return confirm_page(check.request_id)
+    if method != "POST":
+        return page(405, "This link is not valid.")
+    return record_no(check)
+
+
+def record_no(check: ask_link.LinkCheck):
+    request_row = graph.get_request(check.request_id)
+    if request_row is None:
+        return page(404, "This link is not valid.")
+    contact_row = graph.get_contact_row(request_row["receiverEmail"], request_row["contactSK"])
+    sender = verdict.SenderIdentity(Channel.EMAIL, str((contact_row or {}).get("contactEmail", "")))
+    inbound_message_id = f"link:no:{check.signature[:ask_link.SIGNATURE_PREFIX_LENGTH]}"
+    result = verdict.record_answer(check.request_id, VerdictAnswer.NO, sender, inbound_message_id, graph.now_timestamp())
+    if result.outcome is ActionOutcome.RECORDED:
+        channels.announce_recorded_answer(result, RECEIVER_USER_ID, RECEIVER_NAME, RECEIPT_SENDER, ses_client)
+        return page(200, "Recorded.", f"The email to {RECEIVER_NAME} stays held.")
+    if result.outcome is ActionOutcome.NOT_APPLIED:
+        return page(200, "Already recorded.", f"The email to {RECEIVER_NAME} stays held.")
+    logger.warning("ask link No on %s not recorded: %s", check.request_id, result.outcome)
+    return page(404, "This link is not valid.")
+
+
+def confirm_page(request_id: str):
+    body = (f"<p>{html.escape(RECEIVER_NAME)} received an email that claims to come from you.</p>"
+            '<form method="post"><button type="submit">No, that wasn\'t me</button></form>'
+            "<p>If you did send it, answer Yes in the SendPidge app or on WhatsApp.</p>")
+    return {"statusCode": 200, "headers": HTML_HEADERS, "body": document("Was this you?", body)}
+
+
+def page(status_code: int, title: str, detail: str = ""):
+    body = f"<h1>{html.escape(title)}</h1>" + (f"<p>{html.escape(detail)}</p>" if detail else "")
+    return {"statusCode": status_code, "headers": HTML_HEADERS, "body": document(title, body)}
+
+
+def document(title: str, body: str) -> str:
+    return (f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            f"<title>Pidge: {html.escape(title)}</title><style>{PAGE_STYLE}</style></head><body><main>{body}</main></body></html>")

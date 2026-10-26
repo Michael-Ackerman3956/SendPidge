@@ -17,6 +17,7 @@ export interface StackSettings {
   rcsAgentId: string;
   rcsAgentArn: string;
   whatsappEnabled: boolean;
+  emailAskEnabled: boolean;
   whatsappPhoneNumberId: string;
   whatsappPhoneNumberArn: string;
   whatsappMetaApiVersion: string;
@@ -92,6 +93,7 @@ export function readStackSettings(stack: Stack): StackSettings {
     rcsAgentId: stack.node.getContext("rcsAgentId"),
     rcsAgentArn: stack.node.getContext("rcsAgentArn"),
     whatsappEnabled: stack.node.getContext("whatsappEnabled") === true,
+    emailAskEnabled: stack.node.getContext("emailAskEnabled") === true,
     whatsappPhoneNumberId: stack.node.getContext("whatsappPhoneNumberId"),
     whatsappPhoneNumberArn: stack.node.getContext("whatsappPhoneNumberArn"),
     whatsappMetaApiVersion: stack.node.getContext("whatsappMetaApiVersion"),

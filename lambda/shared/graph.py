@@ -81,6 +81,7 @@ class Contact:
     contact_pwa_user_id: str
     contact_rcs: str | None = None  # E.164, exactly as RCS reports originationNumber
     contact_whatsapp: str | None = None  # E.164 with "+"; whatsapp.parse_inbound_reply adds the "+" Meta omits
+    contact_email: str | None = None  # CONTACT#.contactEmail: the ask by email and the receipt go here, never to the monitored address
     known_addresses: tuple[str, ...] = ()  # CONTACT#.knownAddresses, lower-cased; gate 1 compares the sender address here
 
     def is_known_address(self, sender_address: str) -> bool:
@@ -121,7 +122,7 @@ def list_connection_ids(user_id: str) -> list[str]:
 def contact_from_row(item: dict) -> Contact:
     return Contact(
         item["SK"], item["contactName"], item["contactPwaUserId"], item.get("contactRcs"), item.get("contactWhatsApp"),
-        tuple(str(address).casefold() for address in item.get("knownAddresses", [])),
+        item.get("contactEmail"), tuple(str(address).casefold() for address in item.get("knownAddresses", [])),
     )
 
 
@@ -270,6 +271,7 @@ def create_request(
         "friction": str(friction),
         "escalation": decimal_fields(escalation_fields) if escalation_fields else None,
         "status": str(RequestState.PENDING), "channelsSent": [], "inboundMessageIds": [],
+        "inboundChannel": str(Channel.EMAIL),  # only email comes in today; a Yes on this channel is refused (verdict.record_answer)
         "createdAt": iso_timestamp(created_at),
         "expiresAt": iso_timestamp(created_at + timedelta(seconds=HOLD_DURATION_SECONDS)),
         USER_INDEX_PARTITION_KEY: user_index_partition(contact.contact_pwa_user_id, REQUEST_ROW_KIND),

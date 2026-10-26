@@ -8,7 +8,8 @@ import { ISecret } from "aws-cdk-lib/aws-secretsmanager";
 import { Queue } from "aws-cdk-lib/aws-sqs";
 import { CASES_PREFIX, INBOX_PREFIX, PIDGE_QUESTION_PREFIX } from "./mail-ingress.js";
 import {
-  BEDROCK_INVOKE_ACTIONS, buildPythonFunction, claudeModelResourceArns, grantRcsSendIfConfigured, grantWhatsAppSendIfConfigured,
+  BEDROCK_INVOKE_ACTIONS, buildPythonFunction, buildSendEmailStatement, claudeModelResourceArns, grantRcsSendIfConfigured,
+  grantWhatsAppSendIfConfigured,
 } from "./python-function.js";
 import { SharedResources } from "./realtime.js";
 import { StackSettings, flagEnvironmentValue } from "./stack-settings.js";
@@ -57,7 +58,9 @@ export function buildQuestionInboundFunction(stack: Stack, settings: StackSettin
 }
 
 // pidge-reader on every new object under inbox/: the Reader agent, the policy, the hold and the first ask.
-export function buildReaderFunction(stack: Stack, settings: StackSettings, shared: SharedResources, retryFunction: Function): { readerFunction: Function; readerDeadLetterQueue: Queue } {
+export function buildReaderFunction(
+  stack: Stack, settings: StackSettings, shared: SharedResources, retryFunction: Function, askLinkSecret: ISecret,
+): { readerFunction: Function; readerDeadLetterQueue: Queue } {
   const readerDeadLetterQueue = new Queue(stack, "ReaderDeadLetterQueue", {
     retentionPeriod: Duration.days(14),
     enforceSSL: true,
@@ -92,10 +95,16 @@ export function buildReaderFunction(stack: Stack, settings: StackSettings, share
       WHATSAPP_PHONE_NUMBER_ID: settings.whatsappPhoneNumberId,
       WHATSAPP_META_API_VERSION: settings.whatsappMetaApiVersion,
       WHATSAPP_TEMPLATE_NAME: settings.whatsappTemplateName,
+      EMAIL_ASK_ENABLED: flagEnvironmentValue(settings.emailAskEnabled),
+      RECEIPT_SENDER: settings.receiptSender,
+      ASK_LINK_BASE_URL: `https://${settings.pwaDomain}`,
+      ASK_LINK_SECRET_NAME: askLinkSecret.secretName,
       PIDGE_IMAGE_URL: `https://${settings.pwaDomain}/assets/pidge-icon.png`,
     },
   });
   shared.emailBucket.grantRead(readerFunction);
+  readerFunction.addToRolePolicy(buildSendEmailStatement(stack, settings.sendingDomain));
+  askLinkSecret.grantRead(readerFunction);
   shared.table.grantReadWriteData(readerFunction);
   shared.scheduleGroup.grantWriteSchedules(readerFunction);
   shared.schedulerRole.grantPassRole(readerFunction.grantPrincipal);
