@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SendPidge app map</title>
+<style>
+  :root { --ink: #1f2430; --muted: #5b6372; --line: #d9dde5; --bg: #ffffff; --tint: #f3f5f9; --accent: #c2410c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #e7eaf0; --muted: #a2a9b6; --line: #3a4150; --bg: #14171d; --tint: #1d2129; --accent: #f59e6b; } }
+  body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 860px; margin-inline: auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 28px 0 8px; }
+  p { margin: 6px 0; } .muted { color: var(--muted); }
+  code { font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; background: var(--tint); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--tint); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 13px; }
+  ol, ul { padding-left: 22px; } li { margin: 4px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; } th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 6px 8px; vertical-align: top; }
+  svg { width: 100%; height: auto; display: block; margin: 8px 0 4px; }
+  svg text { font: 12px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--ink); } svg .sub { font-size: 10.5px; fill: var(--muted); }
+  svg rect { fill: var(--tint); stroke: var(--line); } svg path, svg line { stroke: var(--muted); fill: none; stroke-width: 1.4; }
+  details { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin: 8px 0; } summary { cursor: pointer; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<h1>SendPidge — app map</h1>
+<p class="muted">Snapshot of commit <code>7d33a7f</code> (2026-10-26). Code moves; paths and symbols below were checked against that commit and can drift.</p>
+
+<h2>What it is</h2>
+<p>An inbox that asks the real person. When an email to Grandma claims to be from someone in her circle and asks for money, a code or an urgent action, Pidge holds it and asks that person (Jimin) on a channel only he controls: the SendPidge app or WhatsApp. His answer, not a score, decides what Grandma sees.</p>
+<p>Four pieces: <strong>mail in</strong> (Amazon SES Mail Manager writes each email to S3), <strong>the Reader</strong> (a Lambda runs a tool-less Strands agent on Claude through Amazon Bedrock, then a policy written in code decides hold / warn / pass), <strong>the ask and the answer</strong> (DynamoDB rows, an API Gateway WebSocket to both PWAs, WhatsApp through AWS End User Messaging Social), and <strong>Pidge the case agent</strong> (Amazon Bedrock AgentCore, woken by a DynamoDB stream after a verdict to write the case note). Everything is declared in one AWS CDK stack.</p>
+
+<h2>One action, followed through</h2>
+<p>The scam scene: a fake "Jimin" email arrives, Grandma sees a hold, Jimin taps No, Grandma sees "Not from Jimin".</p>
+<svg viewBox="0 0 860 150" role="img" aria-label="Email to S3, Reader Lambda decides HOLD and asks Jimin, verdict Lambda records No, both PWAs update">
+  <rect x="8" y="40" width="150" height="56" rx="8"/><text x="83" y="63" text-anchor="middle">Email → S3</text><text x="83" y="80" text-anchor="middle" class="sub">SES Mail Manager</text>
+  <rect x="222" y="40" width="170" height="56" rx="8"/><text x="307" y="63" text-anchor="middle">Reader decides HOLD</text><text x="307" y="80" text-anchor="middle" class="sub">pidge_reader → policy.decide</text>
+  <rect x="456" y="40" width="170" height="56" rx="8"/><text x="541" y="63" text-anchor="middle">Jimin taps No</text><text x="541" y="80" text-anchor="middle" class="sub">pidge_verdict → record_answer</text>
+  <rect x="690" y="40" width="160" height="56" rx="8"/><text x="770" y="63" text-anchor="middle">Grandma's screen</text><text x="770" y="80" text-anchor="middle" class="sub">verdict-view.js</text>
+  <path d="M158 68 H222"/><path d="M392 68 H456"/><path d="M626 68 H690"/>
+  <text x="307" y="118" text-anchor="middle" class="sub">Reader: writes EMAIL# and REQUEST# rows, pushes {state: hold}, asks on app + WhatsApp</text>
+  <text x="541" y="138" text-anchor="middle" class="sub">Verdict: No beats Yes · 10 s undo · only the named contact may answer</text>
+</svg>
+
+<h2>Route (reference, three stops)</h2>
+<p class="muted">Toured in chat on 2026-10-26 as one-sentence explanations of the files below, not by clicking through a running editor.</p>
+<ol>
+  <li><strong>Entry:</strong> <code>lambda/pidge_reader/handler.py</code>, function <code>process_email_object</code>. Reads the S3 object, runs the Reader, then <code>policy.decide</code> (in <code>lambda/shared/policy.py</code>) turns the Reader's verdict plus the contact lookup into HOLD, WARN or PASS. A HOLD calls <code>hold_and_ask</code>, which writes the request row and asks Jimin.</li>
+  <li><strong>Logic:</strong> <code>lambda/pidge_verdict/handler.py</code>, function <code>handle</code>. Every tap from either PWA (WebSocket) or from WhatsApp (SNS) lands here and is routed by the <code>ClientAction</code> enum to <code>record_answer</code> in <code>lambda/shared/verdict.py</code>. The user is taken from the connection row, never from the message body; the rules (No beats Yes, undo window, expected sender only) live in <code>verdict.py</code> and are proven by <code>lambda/tests/test_verdict.py</code>.</li>
+  <li><strong>Result:</strong> <code>pwa/js/verdict-view.js</code>, functions <code>deriveEmailDisplayState</code> and <code>buildRowStatusChipElement</code>. The pushed request state becomes the chip Grandma reads ("Held · checking with Jimin", "Not from Jimin", "Jimin confirmed") and <code>showDeniedVerdictOverlay</code> is the press-and-hold Confirm sheet.</li>
+</ol>
+
+<h2>To change this, start here</h2>
+<table>
+  <tr><th>Change</th><th>Start at</th></tr>
+  <tr><td>What counts as a hold</td><td><code>lambda/shared/policy.py</code> → <code>decide</code>; the table is tested in <code>lambda/tests/test_policy.py</code></td></tr>
+  <tr><td>The wording Grandma sees</td><td><code>pwa/js/verdict-view.js</code> chip and banner builders; constants in <code>pwa/js/constants.js</code></td></tr>
+  <tr><td>Who may answer, undo window, release delay</td><td><code>lambda/shared/verdict.py</code> → <code>is_expected_sender</code>, <code>answer_condition</code>, <code>release_time_for</code></td></tr>
+  <tr><td>What Pidge writes after a verdict</td><td><code>agent/pidge_case/main.py</code> (the AgentCore agent) and <code>lambda/pidge_dispatch/handler.py</code> (what wakes it)</td></tr>
+  <tr><td>An AWS resource, flag or env var</td><td><code>infra/lib/sendpidge-stack.ts</code> (order of pieces) → the builder file it names; flags in <code>infra/cdk.json</code></td></tr>
+  <tr><td>The kept tiny edit from the wrap-up</td><td>One comment line at the top of <code>infra/lib/sendpidge-stack.ts</code> saying it is the CDK stack, added because the file read as "a deployment script" on first open</td></tr>
+</table>
+
+<h2>A practice to reuse</h2>
+<p>State the expected outcome of a check before running it, in a form the run itself can judge. <code>scripts/swarm.py</code> asserts, per email, "held or warned" versus "wrongly held" against the deployed pipeline. Its first live run (2026-10-25, run <code>b7bffe</code>) reported a false FAIL on the gift control: a hold past the ask cap is stored as <code>warn ask_capped</code>, and the checker had not been told that a capped hold is still a hold. The fix was in the checker (<code>lambda/tests/test_swarm.py</code>, <code>test_a_capped_hold_is_stored_as_warn_ask_capped_and_still_counts_as_a_hold</code>), and the second run passed 8 of 8 attacks held or warned, 0 of 2 controls wrongly held. The same move works on any project: write the sentence the result must satisfy, make the run print pass or fail against it, and treat a surprising FAIL as a question about either the code or the sentence, not as noise.</p>
+
+<h2>Run it again</h2>
+<pre>cd lambda &amp;&amp; ../.venv/bin/python -m pytest -q          # 206 tests at 7d33a7f
+bash infra/scripts/build_case_agent.sh &amp;&amp; cd infra &amp;&amp; npx cdk deploy --require-approval never
+# then send an email to the receiver address in infra/cdk.json and open the PWA URL printed by the deploy</pre>
+<details><summary>Flags that change the demo</summary>
+<ul>
+  <li><code>whatsappEnabled</code>, <code>rcsEnabled</code> (RCS is a stub, untested on a phone), <code>escalationEnabled</code>, <code>chatEnabled</code>, <code>contactVerificationMock</code>, <code>asksPerContactPerHour</code>, all in <code>infra/cdk.json</code>.</li>
+</ul>
+</details>
+<p class="muted">Reopen: <code>open devpost/app-map.html</code> from the repo root, or double-click the file. No scripts, no network.</p>
+</body>
+</html>

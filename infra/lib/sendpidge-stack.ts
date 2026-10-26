@@ -18,6 +18,7 @@ import {
 
 const LAMBDA_SOURCE_DIRECTORY = "../lambda";
 
+// CDK stack: the declaration of every AWS resource SendPidge deploys (`cdk deploy` turns this into CloudFormation).
 // The whole SendPidge deployment, in the order the mail flows: ingress → table → the Lambdas → the case agent → outputs.
 // Each piece is built by a plain function in its own file with this stack as the construct scope, so construct ids
 // (and therefore CloudFormation logical ids) stay where they were when this was one file.
