@@ -12,6 +12,8 @@ const SUGGESTION_CHIPS = Object.freeze(["Was that Jimin?", "What did it say?", "
 const KNOWN_CHAT_ROLES = new Set(Object.values(CHAT_ROLE));
 
 const pageElements = {
+  topbarTitle: document.getElementById("topbar-title"),
+  pidgeScreen: document.getElementById("pidge-screen"),
   chatThread: document.getElementById("pidge-chat-thread"),
   chatForm: document.getElementById("pidge-chat-form"),
   chatInput: document.getElementById("pidge-chat-input"),
@@ -82,6 +84,15 @@ function handleUserTappedMic() {
     pageElements.micButton.classList.remove("is-listening");
   });
   recognizer.start();
+}
+
+export function showPidgeView() {
+  pageElements.topbarTitle.textContent = "Pidge";
+  pageElements.pidgeScreen.hidden = false;
+}
+
+export function hidePidgeView() {
+  pageElements.pidgeScreen.hidden = true;
 }
 
 export function startPidgeChat() {

@@ -14,22 +14,15 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="topbar">
-      <button id="back-button" class="topbar-back-button" type="button" aria-label="Back" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
-      </button>
-      <h1 id="topbar-title" class="topbar-title">SendPidge</h1>
-      <span class="topbar-pidge-wrap">
-        <img class="topbar-pidge" src="assets/pidge-icon.png" alt="">
-        <span id="connection-dot" class="connection-dot" role="status">
-          <span id="connection-label" class="visually-hidden">Reconnecting</span>
-        </span>
-      </span>
-    </header>
     <nav id="receiver-tabs" class="receiver-tabs" aria-label="Screens" hidden>
+      <div class="rail-brand"><span class="rail-brand-pidge-wrap"><img src="assets/pidge-icon.png" alt=""><span class="connection-dot"></span></span><span>SendPidge<small>Safest trust layer</small></span></div>
       <button id="tab-inbox" class="receiver-tab is-active" type="button" aria-pressed="true">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"/></svg>
         <span>Inbox</span><i id="tab-inbox-dot" class="receiver-tab-dot" hidden></i>
+      </button>
+      <button id="tab-cases" class="receiver-tab" type="button" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+        <span>Cases</span><i id="tab-cases-count" class="receiver-tab-count" hidden></i>
       </button>
       <button id="tab-circle" class="receiver-tab" type="button" aria-pressed="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -39,14 +32,27 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>
         <span>Pidge</span>
       </button>
+      <div class="rail-me"><span id="rail-me-initial" class="rail-me-avatar"></span><span id="rail-me-name"></span></div>
     </nav>
+    <header class="topbar">
+      <button id="back-button" class="topbar-back-button" type="button" aria-label="Back" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
+      </button>
+      <h1 id="topbar-title" class="topbar-title">SendPidge</h1>
+      <div id="pane-tools" class="pane-tools"></div>
+      <span class="topbar-pidge-wrap">
+        <img class="topbar-pidge" src="assets/pidge-icon.png" alt="">
+        <span id="connection-dot" class="connection-dot" role="status">
+          <span id="connection-label" class="visually-hidden">Reconnecting</span>
+        </span>
+      </span>
+    </header>
     <main class="screen-body">
       <p id="token-error" class="token-error" role="alert" hidden>Open the link with your access token.</p>
       <p id="loading-state" class="loading-state" role="status" hidden>Loading…</p>
       <p id="action-status" class="action-status" aria-live="polite"></p>
       <div id="reading-pane" class="reading-pane">
         <section id="inbox-screen" class="inbox-screen" aria-label="Inbox" hidden>
-          <div id="pane-tools" class="pane-tools"></div>
           <ul id="inbox-list" class="inbox-list"></ul>
         </section>
         <section id="detail-screen" class="detail-screen" hidden>
@@ -81,10 +87,13 @@
             </button>
           </form>
         </section>
+      </section>
+      <section id="cases-screen" aria-label="Cases" hidden>
+        <div id="cases-subtabs" class="subtabs" role="tablist"></div>
         <div id="pidge-report-host"></div>
         <ul id="pidge-case-list" class="pidge-note-list"></ul>
         <ul id="pidge-note-list" class="pidge-note-list"></ul>
-        <p id="pidge-empty-message" class="contact-empty-message" hidden>No notes yet.</p>
+        <p id="pidge-empty-message" class="contact-empty-message" hidden>Nothing here.</p>
       </section>
     </main>
   </div>

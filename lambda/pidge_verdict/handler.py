@@ -118,8 +118,8 @@ def handle_sync(connection_id: str, user_id: str) -> None:
         case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(graph.case_id_of(case_row))) for case_row in case_rows]
         chat_messages = [chat.chat_message_for_sync(message_row) for message_row in chat.list_recent_messages(user_id, SYNC_CHAT_LIMIT)]
         circle = [payloads.circle_entry_for_receiver(contact_row) for contact_row in graph.list_contact_rows(RECEIVER_ADDRESS)]
-        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "emails": emails, "notes": notes, "cases": case_cards,
-                   "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages, "circle": circle}
+        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "receiverName": RECEIVER_NAME, "emails": emails,
+                   "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages, "circle": circle}
     else:
         cards = []
         for request_row in graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT):

@@ -179,3 +179,37 @@ Source: `scope.md > The Unique Kernel`.
 - ~~Pidge character design~~ **Decided:** Reuse MailPidge's logo/icon (`MailPidge/ce/assets/logo/`). Hackathon; custom logo later.
 - **AI-generated celebration animation** — scope and feasibility for the POC timeline. Could be a static illustration with simple animation vs. fully generated.
 - **PWA install experience on iPhone** — Safari "Add to Home Screen" flow, or is there a smoother path? Technical detail for `4-spec`.
+
+## Stretch goal: Organisation dashboard and command center (roadmap 4–5)
+
+> **STRETCH GOAL. Not in the Oct 28 build, not built, not scheduled.** Added 2026-10-26 so the stretch slices have a PRD to point at. Source: `scope.md` roadmap 4–5 and the requirements in `devpost/research/org-dashboard/06-architect-requirements.md > A` (gitignored). Technical design: `spec.md > Stretch: Organisation dashboard and command center`. Slices: `checklist.md > Stretch slices`. The hold-and-ask kernel above is unchanged.
+
+### Stretch: Org journey
+1. The home's admin signs in to the same PWA as an organisation admin and sees a dashboard. They never see a resident's inbox. In the demo, a pre-issued sign-in link opens the dashboard but can never send; every send needs a passkey.
+2. A resident adds the home to their own circle and picks what the home may see: nothing, alerts, or alerts and cases. Until they pick, the home sees nothing.
+3. An email pretending to be the home is held. The office is asked "Was this you?" the way Jimin is, in the PWA or on the on-duty staff phone.
+4. The dashboard shows each sharing resident's current state and an action list: held with nobody asked, held with no answer, contact unreachable, "Need help". Staff follow up in person, then mark the row resolved; that leaves an audit row.
+5. The admin sends a safety alert, an event invitation or a reminder from fixed templates. Residents tap "Got it" / "Need help" or answer the RSVP. The admin sees a report per recipient.
+6. Nestuary's command center sees only day totals per event type per home, and "no data since" when a home goes quiet.
+
+### Stretch: Org behaviours
+- The home sees event, resident name, time, channel and id. Never subject, body, summary, sender, contact names, amount, bank, chat, case notes or recovery-pack text.
+- A sharing resident with nothing open reads "Nothing open"; a resident who shares nothing reads "Not shared". Never "safe" or "clear".
+- Every open state has an exit: answered, reversed, case closed, or resolved by staff.
+- Only the resident sets visibility, consent and the home as a contact. Choosing "nothing" removes the home's event rows about them. A "Need help" tap still reaches the home, because the resident is answering the home directly.
+- Every admin send, answer and member view leaves an audit row naming the admin.
+- Sends are capped per home per hour and per resident per day and week. A capped send goes nowhere and the admin sees why. A reminder never uses up a safety alert's slot.
+- Quiet hours hold the phone channels; a safety alert still appears in the app at once.
+- Birthdays and riddles go by email and in the app, never WhatsApp to US numbers. Medication reminders are per resident, in the app only, with a generic lock-screen text, off until counsel rules.
+- Residents with no device or no consent appear on a staff call list.
+- The home's own messages are never held as impersonation of itself.
+
+### Stretch: Org roles and states
+- Admin roles: viewer (dashboard only) and sender (can also send). Staff sign in with a passkey and then send without another check; a new staff member sets up a passkey before their first send (ruling E11); a sign-in link alone never sends.
+- Resident states: Not shared, Nothing open, Held, Held with no answer, Not me, Warned, Case open, Contact unreachable.
+- The dashboard shows "updated as of" and turns amber when it is 15 minutes behind.
+
+### Stretch: Org boundary
+- In: one home and its residents, the dashboard, safety alerts, events with RSVP, reminders, and a demo-grade command center where other homes are labelled sample rows.
+- Later: hospital patients (counsel and a BAA), SMS and RCS, WhatsApp Flow RSVP, per-home templates, one ask per impersonation wave (if ruled), hosted sign-up for many homes on one deployment (revisit after submission).
+- Never: the dashboard files a report with police or a bank; the home reads message content; anyone but the resident sets visibility.

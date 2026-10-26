@@ -1,6 +1,6 @@
 # SendPidge
 
-An inbox that asks the real person. When an email claims to be from someone in Grandma's circle and asks for money, a code or an urgent action, Pidge holds it and asks that person on a channel only they control (the SendPidge app, WhatsApp, or RCS). The answer, not a score, decides what Grandma sees.
+An inbox that asks the real person. When an email claims to be from someone in Grandma's circle and asks for money, a code or an urgent action, Pidge holds it and asks that person on a channel only they control (the SendPidge app or WhatsApp). The answer, not a score, decides what Grandma sees.
 
 Measured on the deployed pipeline on 2026-10-25 by `scripts/swarm.py` (10 emails dropped into the real bucket, not a mock):
 8 of 8 attack emails held or warned, 0 of 2 benign controls wrongly held, 0 outbound summaries carrying a URL, number or account from the email.
@@ -9,7 +9,7 @@ Measured on the deployed pipeline on 2026-10-25 by `scripts/swarm.py` (10 emails
 
 1. Mail arrives at Amazon SES Mail Manager and lands in S3.
 2. `pidge-reader` (Lambda, Strands Agents on Amazon Bedrock, Claude Haiku with Claude Opus escalation) reads the email with no tools, returns a typed verdict, and the policy in code decides HOLD, WARN or PASS.
-3. A HOLD writes a request row in DynamoDB and asks the contact at the same moment: in-app over an API Gateway WebSocket, WhatsApp through AWS End User Messaging Social (approved utility template, Yes / No buttons), RCS when the carrier allows it.
+3. A HOLD writes a request row in DynamoDB and asks the contact at the same moment: in-app over an API Gateway WebSocket, WhatsApp through AWS End User Messaging Social (approved utility template, Yes / No buttons). RCS is a stub behind a flag (see below).
 4. The contact's answer lands as a verdict. No stays held and can be reported; Yes opens the email after a ten-second undo window. A late No still lands; a late Yes does not.
 5. After a No, the case agent on Amazon Bedrock AgentCore remembers the family, writes the case note and drafts the recovery steps from a rule table; Grandma can ask Pidge about it in the chat window, behind a Bedrock Guardrail prompt-attack check.
 

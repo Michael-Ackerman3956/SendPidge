@@ -12,8 +12,8 @@ import {
   applyContactSyncState, handleContactActionRejected, handleContactRequestStatePush, handleVerificationCardPush,
   hideContactView, showContactView,
 } from "./contact-view.js";
-import { applyChatSyncState, handlePidgeReplyPush, startPidgeChat } from "./pidge-chat.js";
-import { applyPidgeSyncState, handleCaseNotePush, handleCaseStatePush, handlePidgeActionRejected, hidePidgeView, showPidgeView } from "./pidge-view.js";
+import { applyChatSyncState, handlePidgeReplyPush, hidePidgeView, showPidgeView, startPidgeChat } from "./pidge-chat.js";
+import { applyPidgeSyncState, handleCaseNotePush, handleCaseStatePush, handlePidgeActionRejected, hideCasesView, showCasesView } from "./cases-view.js";
 import { applyCircleSyncState, hideCircleView, showCircleView, startCircleView } from "./circle-view.js";
 import { ONBOARDING_START, handleCircleSyncDuringOnboarding, handleOnboardingActionRejected, hideOnboarding, startOnboarding } from "./onboarding.js";
 import { startReadingPane } from "./reading-pane.js";
@@ -24,26 +24,30 @@ const KNOWN_ACTION_REJECTED_REASONS = new Set(Object.values(ACTION_REJECTED_REAS
 
 let activeUserRole = null;
 
-const RECEIVER_TAB = Object.freeze({ INBOX: "inbox", CIRCLE: "circle", PIDGE: "pidge" });
+const RECEIVER_TAB = Object.freeze({ INBOX: "inbox", CASES: "cases", CIRCLE: "circle", PIDGE: "pidge" });
 let activeReceiverTab = RECEIVER_TAB.INBOX;
 let isOnboardingOpen = false;
 let hasUnseenHold = false;
 
 const pageElements = {
-  connectionDot: document.getElementById("connection-dot"),
+  connectionDots: document.querySelectorAll(".connection-dot"), // one in the top bar (phone), one on the desktop rail
   connectionLabel: document.getElementById("connection-label"),
   tokenError: document.getElementById("token-error"),
   loadingState: document.getElementById("loading-state"),
   receiverTabs: document.getElementById("receiver-tabs"),
   inboxTabDot: document.getElementById("tab-inbox-dot"),
+  railMeInitial: document.getElementById("rail-me-initial"),
+  railMeName: document.getElementById("rail-me-name"),
 };
 const tabButtons = Object.freeze({
   [RECEIVER_TAB.INBOX]: document.getElementById("tab-inbox"),
+  [RECEIVER_TAB.CASES]: document.getElementById("tab-cases"),
   [RECEIVER_TAB.CIRCLE]: document.getElementById("tab-circle"),
   [RECEIVER_TAB.PIDGE]: document.getElementById("tab-pidge"),
 });
 const tabViews = Object.freeze({
   [RECEIVER_TAB.INBOX]: { show: showReceiverView, hide: hideReceiverView },
+  [RECEIVER_TAB.CASES]: { show: showCasesView, hide: hideCasesView },
   [RECEIVER_TAB.CIRCLE]: { show: showCircleView, hide: hideCircleView },
   [RECEIVER_TAB.PIDGE]: { show: showPidgeView, hide: hidePidgeView },
 });
@@ -105,6 +109,13 @@ function resolveAccessToken() {
   return readAccessTokenFromStorage();
 }
 
+// The signed-in receiver's name at the bottom of the desktop rail (receiverName is server-set, rendered via textContent only).
+function showReceiverNameInRail(receiverName) {
+  if (typeof receiverName !== "string" || receiverName.length === 0) return;
+  pageElements.railMeInitial.textContent = receiverName[0].toUpperCase();
+  pageElements.railMeName.textContent = receiverName;
+}
+
 function handleSyncStatePush(pushMessage) {
   switch (pushMessage.role) {
     case USER_ROLE.RECEIVER:
@@ -113,6 +124,7 @@ function handleSyncStatePush(pushMessage) {
       pageElements.loadingState.hidden = true;
       pageElements.receiverTabs.hidden = isOnboardingOpen;
       if (activeReceiverTab === RECEIVER_TAB.INBOX && !isOnboardingOpen) showReceiverView();
+      showReceiverNameInRail(pushMessage.receiverName);
       applyCircleSyncState(pushMessage.circle);
       applyReceiverSyncState(pushMessage.emails);
       applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);
@@ -217,7 +229,7 @@ function handlePushMessage(pushMessage) {
 
 function updateConnectionDot(connectionStatus) {
   const isConnected = connectionStatus === CONNECTION_STATUS.CONNECTED;
-  pageElements.connectionDot.classList.toggle("is-connected", isConnected);
+  pageElements.connectionDots.forEach((dot) => dot.classList.toggle("is-connected", isConnected));
   pageElements.connectionLabel.textContent = isConnected ? "Connected" : "Reconnecting";
 }
 

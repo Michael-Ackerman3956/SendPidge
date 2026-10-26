@@ -62,7 +62,7 @@ Status to state: target account, not yet contacted (best-estimate record per hac
 Best-estimate record (hackathon FAQ): Erickson Senior Living is a target account, not yet contacted; details below are public facts and our estimate.
 Erickson Senior Living operates 20+ campus-style retirement communities serving 24,000+ residents across 11 US states, and already builds resident-facing applications on AWS. Its residents, their families and its staff receive impersonation messages that look like they come from a grandchild, a family member, the residence or a known supplier and ask for money, a code or a change of payment details. Content filters cannot tell a real request from a copied one, so the resident acts before anyone checks, and the operator carries the loss, the family complaint and the support cost. The need is a check that holds a suspect message before money moves and confirms with the real sender on a channel they control, plus a recovery flow that opens the case and drafts the bank report when fraud still lands.
 Proposed pilot: SendPidge deployed into Erickson's AWS account or run as a hosted service, for one community, using Amazon SES Mail Manager, Amazon Bedrock and AgentCore, and AWS End User Messaging (WhatsApp, RCS) to reach the real sender.
-First contact sent via Erickson's website contact form on 2026-10-24; no reply yet.
+First contact not yet sent; planned via Erickson's website contact form after the demo video, before submission.
 --- field: Partner solution description (only if the form asks) ---
  SendPidge, the trust layer that verifies who is really behind a message before anyone acts on it; preventive hold-and-ask plus agentic recovery, deployed in the customer's AWS account.
 --- field: Opportunity type ---

@@ -73,7 +73,7 @@ def test_the_right_code_marks_the_contact_verified_in_place_and_re_sends_the_cir
     unchanged_fields = ("contactWhatsApp", "knownAddresses", "contactEmail", "contactName", "contactPwaUserId")
     assert {field: verified_row[field] for field in unchanged_fields} == {field: seeded_row[field] for field in unchanged_fields}
     [sync_message] = pushed_messages
-    assert (sync_message["type"], sync_message["role"]) == ("sync_state", "receiver")
+    assert (sync_message["type"], sync_message["role"], sync_message["receiverName"]) == ("sync_state", "receiver", "Grandma")
     assert sync_message["circle"] == [{"contactUserId": "jimin", "contactName": "Jimin", "verifiedVia": "mock",
                                        "verifiedAt": verified_row["verifiedAt"],
                                        "reach": {"inapp": True, "rcs": False, "whatsapp": True}}]

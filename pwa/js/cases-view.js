@@ -1,6 +1,6 @@
-// Grandma's Pidge tab (RECEIVER): the case agent's notes newest first, each with its recovery pack, and "I already paid".
+// Grandma's Cases tab (RECEIVER): Open · Closed · Notes sub-tabs over the case cards, "I already paid" and the case agent's notes.
 // noteText and every pack field come from the server: rendered only through textContent / createElement.
-import { CASE_STATUS, CLIENT_ACTION, JURISDICTION, PAYMENT_RAIL, REQUEST_STATUS } from "./constants.js";
+import { CASES_TAB, CASE_STATUS, CLIENT_ACTION, JURISDICTION, PAYMENT_RAIL, REQUEST_STATUS } from "./constants.js";
 import { buildPidgeIconElement, createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { listReceiverRequests } from "./receiver-view.js";
 import { sendClientAction } from "./websocket.js";
@@ -14,16 +14,20 @@ const PAYMENT_RAIL_LABELS = Object.freeze({
   [PAYMENT_RAIL.GIFT_CARD]: "Gift card",
 });
 const DEFAULT_CURRENCY = "USD";
+const SUBTAB_LABELS = Object.freeze({ [CASES_TAB.OPEN]: "Open", [CASES_TAB.CLOSED]: "Closed", [CASES_TAB.NOTES]: "Notes" });
 
 const notesById = new Map();
 const casesById = new Map();
 const caseActionsInFlight = new Set(); // case ids with a Send or Done on the wire
 let isReportFormOpen = false;
 let isReportInFlight = false;
+let activeCasesTab = CASES_TAB.OPEN;
 
 const pageElements = {
   topbarTitle: document.getElementById("topbar-title"),
-  pidgeScreen: document.getElementById("pidge-screen"),
+  casesScreen: document.getElementById("cases-screen"),
+  subtabs: document.getElementById("cases-subtabs"),
+  casesTabCount: document.getElementById("tab-cases-count"),
   reportHost: document.getElementById("pidge-report-host"),
   caseList: document.getElementById("pidge-case-list"),
   noteList: document.getElementById("pidge-note-list"),
@@ -138,11 +142,50 @@ function buildCaseElement(caseRow) {
   return caseElement;
 }
 
+function isCaseOpen(caseRow) { return caseRow.status !== CASE_STATUS.CLOSED; }
+
+// Open shows open and reported cases; Closed the rest; Notes shows none.
+function listCasesForActiveTab() {
+  if (activeCasesTab === CASES_TAB.NOTES) return [];
+  return [...casesById.values()]
+    .filter((caseRow) => isCaseOpen(caseRow) === (activeCasesTab === CASES_TAB.OPEN))
+    .sort((first, second) => parseTimestampMilliseconds(second.createdAt) - parseTimestampMilliseconds(first.createdAt));
+}
+
 function renderCases() {
-  const caseElements = [...casesById.values()]
-    .sort((first, second) => parseTimestampMilliseconds(second.createdAt) - parseTimestampMilliseconds(first.createdAt))
-    .map(buildCaseElement);
-  pageElements.caseList.replaceChildren(...caseElements);
+  pageElements.caseList.replaceChildren(...listCasesForActiveTab().map(buildCaseElement));
+  renderSubtabs();
+  renderEmptyMessage();
+}
+
+function renderEmptyMessage() {
+  const isNotesTab = activeCasesTab === CASES_TAB.NOTES;
+  pageElements.emptyMessage.hidden = isNotesTab ? notesById.size > 0 : listCasesForActiveTab().length > 0 || (activeCasesTab === CASES_TAB.OPEN && listReportableRequests().length > 0);
+}
+
+function buildSubtabButton(tab) {
+  const button = createElementWithText("button", "subtab", SUBTAB_LABELS[tab]);
+  button.type = "button";
+  button.setAttribute("role", "tab");
+  button.setAttribute("aria-selected", String(tab === activeCasesTab));
+  if (tab === CASES_TAB.OPEN && openCaseCount() > 0) button.append(createElementWithText("i", "count-badge", String(openCaseCount())));
+  button.addEventListener("click", () => { activeCasesTab = tab; renderCasesScreen(); });
+  return button;
+}
+
+function openCaseCount() { return [...casesById.values()].filter(isCaseOpen).length; }
+
+function renderSubtabs() {
+  pageElements.subtabs.replaceChildren(...Object.values(CASES_TAB).map(buildSubtabButton));
+  pageElements.casesTabCount.textContent = String(openCaseCount());
+  pageElements.casesTabCount.hidden = openCaseCount() === 0;
+}
+
+// Everything on the Cases tab at once: the strip, the report button or form, the cards, the notes.
+function renderCasesScreen() {
+  renderCases();
+  renderReportArea();
+  renderNotes();
 }
 
 function buildSelect(name, options, selectedValue) {
@@ -220,7 +263,7 @@ function handleReportSubmitted(submitEvent) {
 
 function renderReportArea() {
   const reportableRequests = listReportableRequests();
-  if (reportableRequests.length === 0) {
+  if (reportableRequests.length === 0 || activeCasesTab !== CASES_TAB.OPEN) {
     pageElements.reportHost.replaceChildren();
     return;
   }
@@ -235,11 +278,11 @@ function renderReportArea() {
 }
 
 function renderNotes() {
-  const noteElements = [...notesById.values()]
+  const noteElements = activeCasesTab !== CASES_TAB.NOTES ? [] : [...notesById.values()]
     .sort((first, second) => parseTimestampMilliseconds(second.writtenAt) - parseTimestampMilliseconds(first.writtenAt))
     .map(buildNoteElement);
   pageElements.noteList.replaceChildren(...noteElements);
-  pageElements.emptyMessage.hidden = noteElements.length > 0;
+  renderEmptyMessage();
 }
 
 export function applyPidgeSyncState(notes, cases) {
@@ -252,9 +295,7 @@ export function applyPidgeSyncState(notes, cases) {
   casesById.clear();
   cases.filter(isValidCase).forEach((caseRow) => casesById.set(caseRow.caseId, caseRow));
   caseActionsInFlight.clear();
-  renderNotes();
-  renderCases();
-  renderReportArea();
+  renderCasesScreen();
 }
 
 export function handleCaseStatePush(caseRow) {
@@ -289,12 +330,12 @@ export function handlePidgeActionRejected() {
   renderReportArea();
 }
 
-export function showPidgeView() {
-  pageElements.topbarTitle.textContent = "Pidge";
-  pageElements.pidgeScreen.hidden = false;
-  renderReportArea();
+export function showCasesView() {
+  pageElements.topbarTitle.textContent = "Cases";
+  pageElements.casesScreen.hidden = false;
+  renderCasesScreen();
 }
 
-export function hidePidgeView() {
-  pageElements.pidgeScreen.hidden = true;
+export function hideCasesView() {
+  pageElements.casesScreen.hidden = true;
 }

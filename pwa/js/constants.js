@@ -40,6 +40,8 @@ export const VERIFIED_VIA = Object.freeze({
   MOCK: "mock",
 });
 
+export const CASES_TAB = Object.freeze({ OPEN: "open", CLOSED: "closed", NOTES: "notes" });
+
 export const CASE_STATUS = Object.freeze({
   OPEN: "open",
   REPORTED: "reported",
