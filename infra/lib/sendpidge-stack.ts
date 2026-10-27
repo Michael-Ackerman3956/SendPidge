@@ -88,7 +88,7 @@ export class SendPidgeStack extends Stack {
     const lambdaCode = Code.fromAsset(LAMBDA_SOURCE_DIRECTORY, {
       exclude: ["tests", "**/__pycache__", "requirements.txt"],
     });
-    const { webSocketApi, webSocketStage } = buildWebSocketApi(this, table, lambdaCode, passkeySignIn);
+    const { webSocketApi, webSocketStage } = buildWebSocketApi(this, table, lambdaCode, dependencyLayer, passkeySignIn);
     const { scheduleGroup, schedulerRole } = buildScheduler(this);
     const shared: SharedResources = { table, emailBucket, lambdaCode, dependencyLayer, webSocketApi, webSocketStage, scheduleGroup, schedulerRole };
 
@@ -163,7 +163,7 @@ export class SendPidgeStack extends Stack {
       treatMissingData: TreatMissingData.NOT_BREACHING,
     });
     new Alarm(this, "AgentOutputRefusedAlarm", {
-      alarmDescription: "an agent's text held a link, address, handle or long number and the gate refused it",
+      alarmDescription: "an agent's text held a link, address, handle, long number or a character outside the allow-list and the gate refused it",
       metric: new Metric({
         namespace: LAMBDA_METRIC_NAMESPACE, metricName: AGENT_OUTPUT_REFUSED_METRIC_NAME, statistic: Stats.SUM, period: Duration.minutes(5),
       }),

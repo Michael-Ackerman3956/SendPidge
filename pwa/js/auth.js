@@ -15,6 +15,9 @@ let sessionForThisVisit = null; // the session, also kept here when localStorage
 
 // A failure whose message names no token; any other error is logged by its name only.
 class SignInFailure extends Error {}
+// The token endpoint refused the grant (400: an invalid, expired or revoked code or refresh token); retrying cannot help.
+class TokenGrantRejected extends SignInFailure {}
+const TOKEN_GRANT_REJECTED_STATUS = 400;
 
 function describeFailure(error) {
   return error instanceof SignInFailure ? error.message : error.name;
@@ -112,6 +115,7 @@ async function requestTokens(signInConfig, formFields) {
     body: new URLSearchParams(formFields).toString(),
     cache: "no-store",
   });
+  if (response.status === TOKEN_GRANT_REJECTED_STATUS) throw new TokenGrantRejected("token endpoint refused the grant");
   if (!response.ok) throw new SignInFailure(`token endpoint answered ${response.status}`);
   const tokenResponse = await response.json();
   requireFilledText(tokenResponse.id_token, "id_token");
@@ -204,8 +208,10 @@ function isIdTokenExpiringSoon(idToken) {
   return expirySeconds === null || expirySeconds - Date.now() / 1000 < ID_TOKEN_REFRESH_MARGIN_SECONDS;
 }
 
-// The stored ID token, refreshed first when it expires within 5 minutes. null when there is no session or the refresh
-// fails (the session is then cleared, so the user signs in again).
+// The stored ID token, refreshed first when it expires within 5 minutes. null when there is no session or the endpoint
+// refuses the refresh token (the session is then cleared, so the user signs in again). Offline, a 5xx or a malformed
+// answer keeps the session and returns the stored token: the server refuses it if expired, and the socket's backoff
+// reconnect tries the refresh again.
 export async function resolveIdToken(signInConfig) {
   const session = readSignInSession();
   if (session === null) return null;
@@ -221,7 +227,11 @@ export async function resolveIdToken(signInConfig) {
     saveSignInSession({ idToken: tokenResponse.id_token, refreshToken });
     return tokenResponse.id_token;
   } catch (refreshError) {
-    console.error("SendPidge: sign-in refresh failed; signed out", describeFailure(refreshError));
+    if (!(refreshError instanceof TokenGrantRejected)) {
+      console.error("SendPidge: sign-in refresh failed; will retry", describeFailure(refreshError));
+      return session.idToken;
+    }
+    console.error("SendPidge: sign-in refresh refused; signed out", describeFailure(refreshError));
     clearSignInSession();
     return null;
   }

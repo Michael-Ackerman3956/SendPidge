@@ -26,9 +26,10 @@ export interface SharedResources {
 }
 
 // The PWA's push channel: ws_connect handles $connect/$disconnect; $default is routed to pidge-verdict later.
-// With passkey sign-in, $connect also verifies Cognito ID tokens against this pool's issuer and app client.
+// With passkey sign-in, $connect also verifies Cognito ID tokens against this pool's issuer and app client. ws_connect
+// imports PyJWT at load (sign-in on or off), so the function always carries the dependency layer.
 export function buildWebSocketApi(
-  stack: Stack, table: Table, lambdaCode: Code, passkeySignIn?: PasskeySignIn,
+  stack: Stack, table: Table, lambdaCode: Code, dependencyLayer: LayerVersion, passkeySignIn?: PasskeySignIn,
 ): { webSocketApi: WebSocketApi; webSocketStage: WebSocketStage } {
   const signInEnvironment: Record<string, string> = passkeySignIn === undefined ? {} : {
     COGNITO_ISSUER: `https://cognito-idp.${stack.region}.amazonaws.com/${passkeySignIn.userPool.userPoolId}`,
@@ -37,6 +38,7 @@ export function buildWebSocketApi(
   const webSocketConnectFunction = buildPythonFunction(stack, "WebSocketConnect", lambdaCode, {
     handler: "ws_connect.handler.handle",
     timeout: Duration.seconds(10),
+    layers: [dependencyLayer],
     environment: { TABLE_NAME: table.tableName, ...signInEnvironment },
   });
   table.grantReadWriteData(webSocketConnectFunction);

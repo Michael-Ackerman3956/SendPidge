@@ -63,12 +63,17 @@ EMAIL_ADDRESS_PATTERN = re.compile(r"[^\s@]+@\S*?" + TRAILING_PUNCTUATION_LOOKAH
 MESSENGER_HANDLE_PATTERN = re.compile(r"(?<![\w.@])@[A-Za-z0-9_][A-Za-z0-9_.]{2,}")  # "@refund_desk"
 NUMBER_PATTERN = re.compile(r"[+(]?\d(?:[\s,.\-()/]*\d)*\)?")  # phone numbers, amounts, codes, any digit run
 # 6+ digits joined by any run of non-word characters (":" and "_" join too), or by one "x"/"X" between groups of 3+
-# digits ("010x1234x5678"). A letter breaks the run. Clock times, dates and amounts are blanked first. Joiners never
-# match a digit, so the run is linear.
+# digits ("010x1234x5678"). A letter breaks the run. Dates, amounts and lone clock times are blanked first. Joiners
+# never match a digit, so the run is linear.
 LONG_NUMBER_PATTERN = re.compile(r"(?<!\d)\d(?:(?:[\W_]*|(?<=\d{3})[xX](?=\d{3}))\d){5,}")
-# A real clock time ("10:30": hours 0-23, minutes 00-59) becomes a space before the long-number check, so ":" can
-# join every other digit group ("010:1234:5678").
-CLOCK_TIME_PATTERN = re.compile(r"(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d(?!\d)")
+# A digit cluster (digits joined by non-word characters, linear for the same reason) is blanked only when the whole
+# cluster is one real clock time ("10:30": hours 0-23, minutes 00-59) or a dash-joined range of two ("9:00-16:00"), so
+# ":" still joins every other digit group ("010:1234:5678", "01:02 03:04 05:06").
+CLOCK_TIME = r"(?:[01]?\d|2[0-3]):[0-5]\d"
+DIGIT_CLUSTER_PATTERN = re.compile(r"\d(?:[\W_]*\d)*")
+LONE_CLOCK_TIME_PATTERN = re.compile(CLOCK_TIME + r"(?:\s?[-–—]\s?" + CLOCK_TIME + ")?")
+# "@" followed by more "@" or spaces before a handle ("@@refund_desk", "@ refund_desk") reads as one "@" in a summary.
+SPACED_HANDLE_SIGN_PATTERN = re.compile(r"@[@\s]*(?=[A-Za-z0-9_])")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 SPACE_BEFORE_PUNCTUATION_PATTERN = re.compile(r"\s+([,.;:!?])")
 
@@ -184,8 +189,14 @@ def replace_disallowed_characters(text: str) -> str:
     return "".join(character if is_allowed_character(character) else " " for character in text)
 
 
+def blank_lone_clock_time(match: re.Match) -> str:
+    return " " if LONE_CLOCK_TIME_PATTERN.fullmatch(match.group(0)) else match.group(0)
+
+
 def blank_clock_times(text: str) -> str:
-    return CLOCK_TIME_PATTERN.sub(" ", text)
+    """Blanks every digit cluster that is one clock time or one range of two; run after dates and amounts, whose tokens
+    break clusters."""
+    return DIGIT_CLUSTER_PATTERN.sub(blank_lone_clock_time, text)
 
 
 def is_real_date(year: str, month: str, day: str) -> bool:
@@ -238,16 +249,22 @@ def strip_links_and_addresses(text: str) -> str:
 
 
 def sanitize_summary(summary: str) -> str:
-    """Strips links, addresses and handles from the gate-normalised summary (whitespace is collapsed and "evil .com" joined
-    before any strip), replaces every character outside the allow-list with a space, strips every number, then links and
-    addresses again (a stripped digit can free a link: "evil.com1"), collapses whitespace and caps the length. If the gate
-    still finds a span in that output (a braille blank before ".com" leaves "evil .com"), logs the kinds, emits one
+    """Strips links, addresses and handles from the gate-normalised summary (whitespace is collapsed, "evil .com" joined
+    and "@@x" or "@ x" read as "@x" before any strip), replaces every character outside the allow-list with a space,
+    strips every number, then links and addresses again (a stripped digit can free a link: "evil.com1"), collapses
+    whitespace and caps the length. If the gate still finds a span in that output (a braille blank before ".com" leaves
+    "evil .com"), or a non-blank summary was stripped to nothing (all Thai, Cyrillic or emoji), logs why, emits one
     SummaryFallback count and returns SUMMARY_FALLBACK_TEXT."""
-    text = strip_links_and_addresses(normalize_for_gate(summary))
+    text = SPACED_HANDLE_SIGN_PATTERN.sub("@", normalize_for_gate(summary))
+    text = strip_links_and_addresses(text)
     text = replace_disallowed_characters(text)
     text = NUMBER_PATTERN.sub(" ", text)
     text = strip_links_and_addresses(text)
     capped_summary = WHITESPACE_PATTERN.sub(" ", text).strip()[:SUMMARY_MAX_LENGTH].rstrip()
+    if capped_summary == "" and summary.strip() != "":
+        emit_count_metric(SUMMARY_FALLBACK_METRIC_NAME)
+        logger.warning("summary fell back: nothing readable left")
+        return SUMMARY_FALLBACK_TEXT
     unsafe_kinds = find_unsafe_spans(capped_summary)
     if not unsafe_kinds:
         return capped_summary
@@ -268,7 +285,7 @@ def find_unsafe_spans(text: str) -> list[UnsafeTextKind]:
     """Each kind found, once, in enum order, matched on the gate-normalised text. Addresses are blanked before handles
     and handles before links (both can hold a domain), so one span is one kind. On what is left (dates still in it), any
     character outside the allow-list is DISALLOWED_CHARACTER ("a@b.co" is an address only, "@@refund_desk" is a
-    disallowed character); clock times, dates and amounts are then blanked before the long-number check."""
+    disallowed character); dates, amounts and lone clock times are then blanked before the long-number check."""
     found_kinds: set[UnsafeTextKind] = set()
     remaining_text = normalize_for_gate(text)
     for kind, pattern in ((UnsafeTextKind.EMAIL_ADDRESS, EMAIL_ADDRESS_PATTERN),
@@ -278,7 +295,7 @@ def find_unsafe_spans(text: str) -> list[UnsafeTextKind]:
             remaining_text = pattern.sub(" ", remaining_text)
     if has_disallowed_character(remaining_text):
         found_kinds.add(UnsafeTextKind.DISALLOWED_CHARACTER)
-    if LONG_NUMBER_PATTERN.search(blank_amounts(blank_dates(blank_clock_times(remaining_text)))):
+    if LONG_NUMBER_PATTERN.search(blank_clock_times(blank_amounts(blank_dates(remaining_text)))):
         found_kinds.add(UnsafeTextKind.LONG_NUMBER)
     return [kind for kind in UnsafeTextKind if kind in found_kinds]
 

@@ -197,10 +197,19 @@ def test_combining_marks_never_hide_a_span(agent_text, expected_kinds):
     assert find_unsafe_spans(agent_text) == expected_kinds
 
 
-@pytest.mark.parametrize("native_text", ["สวัสดีค่ะ", "नमस्ते"])
-def test_scripts_outside_latin_and_hangul_are_stripped_and_refused(native_text):
-    assert sanitize_summary(native_text) == ""
+@pytest.mark.parametrize("native_text", ["สวัสดีค่ะ", "नमस्ते", "Татьяна просит деньги", "山田さんから送金の依頼", "😀😀"])
+def test_scripts_outside_latin_and_hangul_fall_back_in_the_summary_and_are_refused(native_text, capsys):
+    capsys.readouterr()
+    assert sanitize_summary(native_text) == SUMMARY_FALLBACK_TEXT  # stripped to nothing: never an empty summary
+    [metric_line] = [line for line in capsys.readouterr().out.splitlines() if sanitize.SUMMARY_FALLBACK_METRIC_NAME in line]
+    assert json.loads(metric_line)[sanitize.SUMMARY_FALLBACK_METRIC_NAME] == 1
     assert find_unsafe_spans(native_text) == [UnsafeTextKind.DISALLOWED_CHARACTER]
+
+
+def test_a_blank_summary_stays_blank_without_a_fallback(capsys):
+    capsys.readouterr()
+    assert (sanitize_summary(""), sanitize_summary("   ")) == ("", "")
+    assert sanitize.SUMMARY_FALLBACK_METRIC_NAME not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
@@ -229,6 +238,12 @@ def test_any_short_separator_joins_a_phone_number(agent_text, expected_kinds):
         ("Open 09:00-17:30", []),
         ("Call 010:1234:5678 now", [UnsafeTextKind.LONG_NUMBER]),
         ("Code 48:29:13 now", [UnsafeTextKind.LONG_NUMBER]),  # no hour 48, so nothing is a clock time
+        *[(text, []) for text in ("at 10:30", "open 9:00 - 16:00", "from 9:00 – 17:30", "2026-10-28 10:30-11:45",
+                                  "Monday 10:30, Tuesday 11:45", "at 10:30, 2 forms", "(10:30)", "the 28.10.2026, 10:30 call")],
+        # A chain of clock times is a number written as times: only one time or one range of two is blanked.
+        *[(text, [UnsafeTextKind.LONG_NUMBER]) for text in (
+            "0:10:12:34:56:78", "01:02 03:04 05:06", "01:02:03:04:05:06", "01:01:23:45:67:8", "10:10 10:10 10:10",
+            "01:02-03:04-05:06", "Ref 1:23 4:56 7:59", "the code is 12:34:56", "02:12 34567")],
     ],
 )
 def test_clock_times_pass_and_colon_joined_numbers_do_not(agent_text, expected_kinds):
@@ -240,6 +255,20 @@ def test_messenger_handles_are_refused_and_stripped():
     assert sanitize_summary("Message @refund_desk on Telegram") == "Message on Telegram"
     assert find_unsafe_spans("email me at a@b.co") == [UnsafeTextKind.EMAIL_ADDRESS]
     assert find_unsafe_spans("Message @@refund_desk on Telegram") == [UnsafeTextKind.DISALLOWED_CHARACTER]
+    assert sanitize_summary("Message @@refund_desk on Telegram") == "Message on Telegram"  # the handle name never leaks
+    assert sanitize_summary("Telegram @ refund_desk") == "Telegram"
+
+
+def test_a_refusal_counts_once_without_a_dimension_and_once_per_kind(capsys):
+    capsys.readouterr()
+    with pytest.raises(sanitize.AgentOutputRefused):
+        sanitize.refuse_unsafe_agent_text("Call 010-1234-5678 or visit evil.com")
+    metric_lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()
+                    if sanitize.AGENT_OUTPUT_REFUSED_METRIC_NAME in line]
+    dimensionless_lines = [line for line in metric_lines if sanitize.UNSAFE_KIND_DIMENSION_NAME not in line]
+    assert len(dimensionless_lines) == 1  # AgentOutputRefusedAlarm reads this one
+    assert sorted(line[sanitize.UNSAFE_KIND_DIMENSION_NAME] for line in metric_lines if line not in dimensionless_lines) == [
+        str(UnsafeTextKind.LINK), str(UnsafeTextKind.LONG_NUMBER)]
 
 
 def test_summary_falls_back_when_its_own_output_is_unsafe(monkeypatch, capsys):

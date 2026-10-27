@@ -1,4 +1,5 @@
 """CDK assertions on the synthesised SendPidge template (no AWS credentials, no ../.env)."""
+import ast
 import fnmatch
 import json
 import os
@@ -304,6 +305,61 @@ def test_every_function_on_the_lambda_asset_has_its_handler_module(synthesized_t
     missing_modules = [handler for handler in handlers
                        if not (REPOSITORY_ROOT / "lambda" / (handler.rsplit(".", 1)[0].replace(".", "/") + ".py")).is_file()]
     assert missing_modules == []
+
+
+LAMBDA_DIRECTORY = REPOSITORY_ROOT / "lambda"
+RUNTIME_PROVIDED_MODULES = frozenset({"boto3", "botocore"})  # the Python 3.12 Lambda runtime ships these; the layer has the rest
+
+
+def find_lambda_module_path(module_name: str) -> Path | None:
+    module_path = LAMBDA_DIRECTORY / (module_name.replace(".", "/") + ".py")
+    if module_path.is_file():
+        return module_path
+    package_path = LAMBDA_DIRECTORY / module_name.replace(".", "/") / "__init__.py"
+    return package_path if package_path.is_file() else None
+
+
+def list_third_party_imports_of_module(module_name: str) -> set[str]:
+    """Top-level names of every non-stdlib, non-runtime package the module imports, following lambda/ modules
+    transitively (function-level imports included)."""
+    third_party_names: set[str] = set()
+    pending_modules, visited_modules = [module_name], set()
+    while pending_modules:
+        current_module = pending_modules.pop()
+        module_path = find_lambda_module_path(current_module)
+        if current_module in visited_modules or module_path is None:
+            continue
+        visited_modules.add(current_module)
+        for node in ast.walk(ast.parse(module_path.read_text())):
+            if isinstance(node, ast.Import):
+                imported_names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module is not None:
+                imported_names = [node.module] + [f"{node.module}.{alias.name}" for alias in node.names]
+            else:
+                continue
+            for imported_name in imported_names:
+                top_level_name = imported_name.split(".")[0]
+                if (LAMBDA_DIRECTORY / top_level_name).is_dir():
+                    pending_modules.append(imported_name)
+                elif top_level_name not in sys.stdlib_module_names and top_level_name not in RUNTIME_PROVIDED_MODULES:
+                    third_party_names.add(top_level_name)
+    return third_party_names
+
+
+def test_every_function_importing_a_layer_package_carries_the_dependency_layer(synthesized_template):
+    assert "jwt" in list_third_party_imports_of_module("ws_connect.handler")  # the walk sees through shared/ modules
+    _reader_logical_id, reader_function = find_function_by_handler(synthesized_template, "pidge_reader.handler.handle")
+    lambda_asset_code = reader_function["Properties"]["Code"]
+    missing_layer = []
+    for logical_id, function in resources_of_type(synthesized_template, "AWS::Lambda::Function").items():
+        properties = function["Properties"]
+        if properties["Code"] != lambda_asset_code:
+            continue
+        third_party_names = list_third_party_imports_of_module(properties["Handler"].rsplit(".", 1)[0])
+        layer_logical_ids = [layer["Ref"] for layer in properties.get("Layers", [])]
+        if third_party_names and not any(layer_id.startswith("DependencyLayer") for layer_id in layer_logical_ids):
+            missing_layer.append(f"{logical_id}: {sorted(third_party_names)}")
+    assert missing_layer == []
 
 
 def test_every_bucket_blocks_public_access_and_denies_non_tls(synthesized_template):

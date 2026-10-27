@@ -1,8 +1,11 @@
-"""Links or unlinks one PWA user to a Cognito user for passkey sign-in on the deployed stack (founder only). link creates the
-Cognito user (email verified; Cognito emails the temporary password) and, in one transaction, writes SUB#<sub>/META {userId}
-and cognitoSub on USER#<id>/PROFILE; if that transaction fails, the new Cognito user is deleted again. After link, that
-user's old ?token= link stops working: they sign in, set a password, then add a passkey. unlink removes cognitoSub and the
-SUB# row in one transaction, then deletes the Cognito user. Prints only the user id, never the email, sub or a password.
+"""Links or unlinks one PWA user to a Cognito user for passkey sign-in on the deployed stack (founder only). link checks the
+PROFILE row first (it exists and is not linked), creates the Cognito user (email verified; Cognito emails the temporary
+password) and, in one transaction, writes SUB#<sub>/META {userId} and cognitoSub on USER#<id>/PROFILE; if that transaction
+is cancelled, the new Cognito user is deleted again (any other error leaves it: check the rows, then unlink). After link,
+new connections with that user's old ?token= link are refused: they sign in, set a password, then add a passkey; sockets
+already open stay until API Gateway drops them (at most 2 h). unlink removes cognitoSub and the SUB# row in one
+transaction, then deletes the Cognito user; the TOKEN# row was never deleted, so the old link works again. Prints only the
+user id, never the email, sub or a password.
 Usage: AWS_PROFILE=sendpidge python scripts/seed_auth_users.py link --user-id grandma --email <address>
        AWS_PROFILE=sendpidge python scripts/seed_auth_users.py unlink --user-id grandma
 """
@@ -88,14 +91,24 @@ def remove_sub_link(user_id: str) -> str:
     return sub
 
 
+def require_unlinked_profile(user_id: str) -> None:
+    """Refuses before any Cognito call, so no temporary-password email goes out for a user that cannot be linked."""
+    profile_row = profiles.read_profile_row(f"USER#{user_id}")
+    if profile_row is None:
+        raise ValueError("the user has no PROFILE row")
+    if COGNITO_SUB_FIELD in profile_row:
+        raise ValueError("the user is already linked to a Cognito user")
+
+
 def run_link_command(cognito_client, user_pool_id: str, arguments: argparse.Namespace) -> None:
     user_id = require_user_id(arguments.user_id)
     email_address = circle.parse_email_address(arguments.email)
+    require_unlinked_profile(user_id)
     sub = create_cognito_user(cognito_client, user_pool_id, email_address)
     try:
         write_sub_link(user_id, sub)
-    except Exception:
-        cognito_client.admin_delete_user(UserPoolId=user_pool_id, Username=sub)  # no Cognito user without its SUB# row
+    except ValueError:  # the transaction was cancelled, so nothing was written: no Cognito user without its SUB# row
+        cognito_client.admin_delete_user(UserPoolId=user_pool_id, Username=sub)
         raise
     print(f"Linked {user_id}; Cognito emailed the temporary password")
 

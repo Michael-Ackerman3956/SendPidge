@@ -16,7 +16,7 @@ from shared import graph
 ISSUER_ENVIRONMENT_NAME = "COGNITO_ISSUER"
 APP_CLIENT_ID_ENVIRONMENT_NAME = "COGNITO_APP_CLIENT_ID"
 JWKS_PATH = "/.well-known/jwks.json"
-JWKS_FETCH_TIMEOUT_SECONDS = 4  # an unknown kid costs two fetches; both fit inside ws_connect's 10 s Lambda timeout
+JWKS_FETCH_TIMEOUT_SECONDS = 4  # an unknown kid refetches at most once per 30 s (PyJWT cooldown); fits ws_connect's 10 s
 SIGNING_ALGORITHMS = ["RS256"]
 REQUIRED_CLAIMS = ["exp", "iat", "iss", "aud", "sub", "token_use"]
 ID_TOKEN_USE = "id"
