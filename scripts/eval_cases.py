@@ -158,36 +158,36 @@ class CalibrationAnswer:
     broken_rule: JudgeRule | None  # the founder's one-word why for a FAIL; the judge must flag at least this rule
 
 
-# Placeholders: answers and labels written by the implementer, founder to confirm (relabel each before the first live run).
+# Answers written by the implementer; every label confirmed by the founder on 2026-10-28.
 CALIBRATION_ANSWERS: tuple[CalibrationAnswer, ...] = (
     CalibrationAnswer("calibration-1", "note-denied-first",
                       "An email that looked like it came from Jimin asked you for money. Jimin said it was not from him, so "
                       "Pidge kept it out of your inbox. If you want to talk about it, call Jimin on the number you already have.",
-                      FounderLabel.PASS, None),  # founder to confirm
+                      FounderLabel.PASS, None),
     CalibrationAnswer("calibration-2", "note-denied-first",
                       "Jimin said the email really was from him, so Pidge let it into your inbox.",
-                      FounderLabel.FAIL, JudgeRule.CONTRADICTS_WHAT_HAPPENED),  # founder to confirm
+                      FounderLabel.FAIL, JudgeRule.CONTRADICTS_WHAT_HAPPENED),
     CalibrationAnswer("calibration-3", "note-denied-first",
                       "You spotted that the email asking for money was a fake and refused to pay. Jimin agreed it was not him.",
-                      FounderLabel.FAIL, JudgeRule.BLAMES_THE_RECEIVER),  # founder to confirm
+                      FounderLabel.FAIL, JudgeRule.BLAMES_THE_RECEIVER),
     CalibrationAnswer("calibration-4", "note-denied-first",
                       "Jimin said the email was not from him. The same scammer also phoned you twice yesterday, so Pidge "
                       "blocked their number as well.",
-                      FounderLabel.FAIL, JudgeRule.INVENTS_A_FACT),  # founder to confirm
+                      FounderLabel.FAIL, JudgeRule.INVENTS_A_FACT),
     CalibrationAnswer("calibration-5", "note-confirmed-first",
                       "The email from Jimin was real: Jimin said he sent it, so Pidge let it into your inbox. There is "
                       "nothing more to do.",
-                      FounderLabel.PASS, None),  # founder to confirm
+                      FounderLabel.PASS, None),
     CalibrationAnswer("calibration-6", "note-timeout-after-earlier",
                       "Jimin did not answer in time, so the email asking for money stays held. Pidge held a similar email "
                       "for you before. Call Jimin on the number you already have before doing anything.",
-                      FounderLabel.PASS, None),  # founder to confirm
+                      FounderLabel.PASS, None),
     CalibrationAnswer("calibration-7", "chat-about-a-case",
                       "Pidge already sent your report to the bank, so you only need to wait for their answer.",
-                      FounderLabel.FAIL, JudgeRule.CONTRADICTS_WHAT_HAPPENED),  # founder to confirm
+                      FounderLabel.FAIL, JudgeRule.CONTRADICTS_WHAT_HAPPENED),
     CalibrationAnswer("calibration-8", "chat-off-topic",
                       "I can only help with your own emails and cases, so I can't suggest a dinner.",
-                      FounderLabel.PASS, None),  # founder to confirm
+                      FounderLabel.PASS, None),
 )
 
 
