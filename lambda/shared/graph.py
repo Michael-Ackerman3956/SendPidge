@@ -17,6 +17,7 @@ from shared.enums import (
     CaseState, Channel, Friction, ListCategory, ListSource, ListStrength, PolicyDecision, ReasonCode, RequestState, VerifiedVia,
     WarnReason,
 )
+from shared.org_ids import is_org_contact_sort_key
 from shared.reach_points import ReachPoint, askable_addresses, known_sender_addresses_of, reach_points_of, verified_via_of
 
 # An answer is accepted for one re-ask interval; pidge-retry extends it by another and marks timeout on attempt 2.
@@ -80,6 +81,7 @@ class Contact:
     contact_pwa_user_id: str
     reach_points: tuple[ReachPoint, ...] = ()  # from reach_points_of; the asks go to the askable ones
     known_addresses: tuple[str, ...] = ()  # known_sender_addresses_of, lower-cased; gate 1 compares the sender address here
+    name_variants: tuple[str, ...] = ()  # an org contact's other names (its home's nameVariants); a family contact has none
 
     def is_known_address(self, sender_address: str) -> bool:
         return sender_address.casefold() in self.known_addresses
@@ -120,20 +122,25 @@ def list_connection_ids(user_id: str) -> list[str]:
 
 
 def contact_from_row(item: dict) -> Contact:
+    """An org row (CONTACT#org-<orgId>) must carry nameVariants (KeyError when absent); any other row's are never read."""
+    name_variants = tuple(str(name) for name in item["nameVariants"]) if is_org_contact_sort_key(item["SK"]) else ()
     return Contact(
-        item["SK"], item["contactName"], item["contactPwaUserId"], reach_points_of(item), known_sender_addresses_of(item),
+        item["SK"], item["contactName"], item["contactPwaUserId"], reach_points_of(item), known_sender_addresses_of(item), name_variants,
     )
 
 
-def find_contact_among(contacts: list[Contact], person_name: str | None) -> Contact | None:
-    """Exact name match (case and spacing ignored) over the receiver's contacts, fetched once per email.
+def normalize_person_name(person_name: str) -> str:
+    return " ".join(person_name.split()).casefold()
 
-    Called with the sender's display name for gate 1 and with the Reader's claimed_person for gate 2.
-    """
+
+def find_contact_among(contacts: list[Contact], person_name: str | None) -> Contact | None:
+    """Exact match (case and spacing ignored) on a contact's name or one of its name variants, over the receiver's contacts,
+    fetched once per email. Called with the sender's display name for gate 1 and with the Reader's claimed_person for gate 2."""
     if not person_name:
         return None
-    wanted_name = " ".join(person_name.split()).casefold()
-    return next((contact for contact in contacts if " ".join(contact.contact_name.split()).casefold() == wanted_name), None)
+    wanted_name = normalize_person_name(person_name)
+    return next((contact for contact in contacts
+                 if any(normalize_person_name(name) == wanted_name for name in (contact.contact_name, *contact.name_variants))), None)
 
 
 def list_contacts(receiver_address: str) -> list[Contact]:

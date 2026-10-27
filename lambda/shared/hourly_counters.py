@@ -1,5 +1,5 @@
-"""Per-hour counters that fail closed: the ask cap per contact (pidge-reader) and the question cap (chat). One conditional
-increment per slot; a write failure counts as the cap being reached, never as a free pass."""
+"""Per-hour counters that fail closed: the ask cap per contact, per resident for an org contact (pidge-reader), and the
+question cap (chat). One conditional increment per slot; a write failure counts as the cap being reached, never as a free pass."""
 
 import logging
 from datetime import datetime, timezone
@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 from shared import graph
+from shared.org_ids import is_org_contact_sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,10 @@ def take_hourly_slot(partition_key: str, limit: int) -> bool:
         return False
 
 
-def take_ask_slot(contact_key: str, asks_per_hour_limit: int) -> bool:
-    """The ask cap: a contact is asked at most this many times an hour; past it the hold stays and nothing is sent."""
-    return take_hourly_slot(f"{ASK_COUNTER_PARTITION_PREFIX}{contact_key}", asks_per_hour_limit)
+def take_ask_slot(contact_key: str, receiver_address: str, asks_per_hour_limit: int) -> bool:
+    """The ask cap: a contact is asked at most this many times an hour; past it the hold stays and nothing is sent. An org
+    contact (one home's office, shared by its residents) is capped per resident: ASKRATE#<contactKey>#<receiverAddress>."""
+    partition_key = f"{ASK_COUNTER_PARTITION_PREFIX}{contact_key}"
+    if is_org_contact_sort_key(contact_key):
+        partition_key = f"{partition_key}#{receiver_address}"
+    return take_hourly_slot(partition_key, asks_per_hour_limit)

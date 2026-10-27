@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from strands import Agent
 from strands.types.exceptions import StructuredOutputException
 
-from shared.enums import AgentRunFailure
+from shared.agent_enums import AgentRunFailure
 
 AGENT_TURN_LIMIT = 8  # a case run takes at most 5 turns (four tools, then the output tool), a chat run at most 4
 TURN_LIMIT_STOP_REASON = "limit_turns"  # Strands 1.62 stops here with no output and raises nothing

@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from shared import graph, reach_points, refund_rules
+from shared import graph, orgs, reach_points, refund_rules
 from shared.enums import (
     FINAL_REQUEST_STATES, PHONE_CHANNEL_ANSWERS, ActionOutcome, Channel, Jurisdiction, PaymentRail, RequestState, VerdictAnswer,
 )
+from shared.org_ids import is_org_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +104,14 @@ def build_answer_update(answer: VerdictAnswer, sender: SenderIdentity, inbound_m
     if answer is VerdictAnswer.YES:
         values[":releaseAt"] = release_time_for(now)
         release_clause = ", releaseAt = :releaseAt"
+    answered_by_clause = ""
+    if sender.channel is Channel.INAPP:  # which PWA user answered: for an org contact, one of its admins
+        values[":answeredByUserId"] = sender.value
+        answered_by_clause = ", answeredByUserId = :answeredByUserId"
     return {
         "UpdateExpression": (
             "SET #status = :newStatus, #response = :answer, repliedVia = :channel, resolvedAt = :now, "
-            f"inboundMessageIds = list_append(inboundMessageIds, :messageIdList){release_clause}"
+            f"inboundMessageIds = list_append(inboundMessageIds, :messageIdList){release_clause}{answered_by_clause}"
         ),
         "ConditionExpression": f"attribute_exists(PK) AND {condition} AND NOT contains(inboundMessageIds, :messageId)",
         "ExpressionAttributeNames": {"#status": "status", "#response": "response"},
@@ -115,12 +120,15 @@ def build_answer_update(answer: VerdictAnswer, sender: SenderIdentity, inbound_m
 
 
 def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool:
-    """The contact's own PWA user, or one of the addresses Pidge may ask on that channel, exactly; an email address compares
-    case-insensitively."""
+    """The contact's own PWA user (for an org contact, an admin of that org: org-<orgId> itself never answers), or one of the
+    addresses Pidge may ask on that channel, exactly; an email address compares case-insensitively."""
     if contact_row is None:
         return False
     if sender.channel is Channel.INAPP:
-        return hmac.compare_digest(str(contact_row["contactPwaUserId"]), sender.value)
+        contact_user_id = str(contact_row["contactPwaUserId"])
+        if is_org_user_id(contact_user_id):
+            return orgs.is_admin_of_org_user(sender.value, contact_user_id)
+        return hmac.compare_digest(contact_user_id, sender.value)
     askable_addresses = reach_points.askable_addresses(reach_points.reach_points_of(contact_row), sender.channel)
     if sender.channel is Channel.EMAIL:
         return any(hmac.compare_digest(address.casefold(), sender.value.casefold()) for address in askable_addresses)

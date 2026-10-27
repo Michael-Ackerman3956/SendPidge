@@ -4,7 +4,7 @@ import re
 import pytest
 
 from shared import sanitize
-from shared.enums import UnsafeTextKind
+from shared.agent_enums import UnsafeTextKind
 from shared.sanitize import SUMMARY_FALLBACK_TEXT, SUMMARY_MAX_LENGTH, find_unsafe_spans, sanitize_summary
 
 

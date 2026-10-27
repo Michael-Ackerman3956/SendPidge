@@ -7,8 +7,8 @@ TEST_ORG_ID = "org-test"
 TEST_TIMEZONE = "America/New_York"
 
 
-def seed_resident(receiver_address: str, user_id: str, resident_name: str) -> None:
-    residents.write_resident_rows(ResidentEnrolment(receiver_address, user_id, resident_name, TEST_ORG_ID, TEST_TIMEZONE))
+def seed_resident(receiver_address: str, user_id: str, resident_name: str, org_id: str = TEST_ORG_ID) -> None:
+    residents.write_resident_rows(ResidentEnrolment(receiver_address, user_id, resident_name, org_id, TEST_TIMEZONE))
 
 
 def seed_contact_roles(receiver_address: str) -> list[str]:

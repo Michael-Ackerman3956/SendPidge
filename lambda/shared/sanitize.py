@@ -13,7 +13,7 @@ import logging
 import re
 import unicodedata
 
-from shared.enums import UnsafeTextKind
+from shared.agent_enums import UnsafeTextKind
 from shared.idn_tlds import INTERNATIONALISED_TOP_LEVEL_DOMAINS
 from shared.metrics import emit_count_metric
 

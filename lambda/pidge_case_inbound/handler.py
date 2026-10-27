@@ -11,6 +11,7 @@ from shared.metrics import emit_count_metric
 from shared.auth import authentication_reasons
 from shared.email_parse import parse_eml
 from shared.enums import ActionOutcome, CaseEvent, PushNotice
+from shared.org_ids import is_org_contact_sort_key
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -52,12 +53,13 @@ def handle_case_reply_object(bucket_name: str, object_key: str) -> None:
 
 
 def push_bank_reply(case_id: str, case_row: dict, resident: profiles.ReceiverProfile) -> None:
-    """The case's state to the resident's PWA, a lock-screen notice, and a fixed-text nudge to the request's contact."""
+    """The case's state to the resident's PWA, a lock-screen notice, and a fixed-text nudge to the request's contact unless
+    that contact is a home's office (an org contact): case news never reaches the org's admins."""
     channels.push_to_user(resident.receiver_user_id, payloads.case_state_message(case_row, graph.list_case_replies(case_id), CaseEvent.BANK_REPLIED))
     notified_count = web_push.send_notice(resident.receiver_user_id, PushNotice.BANK_REPLIED)  # lock-screen notice; fixed text
     logger.info("bank reply on %s: web push accepted by %d browser(s)", case_id, notified_count)
     request_row = graph.get_request(case_row["requestId"])
     contact_row = graph.get_contact_row(resident.receiver_address, request_row["contactSK"]) if request_row else None
-    if contact_row:
+    if contact_row and not is_org_contact_sort_key(contact_row["SK"]):
         nudge_text = CONTACT_NUDGE_TEMPLATE.format(resident_name=resident.resident_name)
         channels.push_to_user(contact_row["contactPwaUserId"], payloads.contact_notice_message(nudge_text))  # fixed text, never the reply

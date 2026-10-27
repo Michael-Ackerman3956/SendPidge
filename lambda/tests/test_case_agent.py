@@ -5,7 +5,8 @@ import logging
 from decimal import Decimal
 
 from shared import case_agent, graph, verdict
-from shared.enums import ActionOutcome, CaseTrigger, Jurisdiction, PaymentRail, ReaderModelChoice, UnsafeTextKind, VerdictAnswer
+from shared.agent_enums import UnsafeTextKind
+from shared.enums import ActionOutcome, CaseTrigger, Jurisdiction, PaymentRail, ReaderModelChoice, VerdictAnswer
 from tests.helpers.scripted_model import ScriptedModel, verdict_step
 from tests.test_refund_rules import seed_rules
 from tests.test_verdict import JIMIN, RECEIVER_ADDRESS, RECEIVER_USER_ID, aws, at, new_request  # noqa: F401

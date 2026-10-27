@@ -1,8 +1,9 @@
-"""WebSocket $default: sync, the contact's Yes / No / Undo / Reverse, the receiver's Confirm, case actions and questions
-to Pidge, a browser's Web Push subscription, the receiver's Add-someone form and demo code reply (circle_handlers);
-SNS: phone-channel taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's reply to the ask by email.
+"""WebSocket $default: sync (an org admin's in org_admin_handlers), the contact's Yes / No / Undo / Reverse, the receiver's
+Confirm, case actions and questions to Pidge, a browser's Web Push subscription, the receiver's Add-someone form and demo
+code reply (circle_handlers); SNS: phone-channel taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's
+reply to the ask by email.
 
-The user comes from the connection row, never from the message body; their role and resident come from their own
+The user comes from the connection row, never from the message body; their role and resident (or org) come from their own
 USER#<id>/PROFILE row, and an answer's resident from the REQUEST# row's receiverEmail.
 """
 
@@ -14,8 +15,8 @@ from urllib.parse import unquote_plus
 
 import boto3
 
-from pidge_verdict import circle_handlers
-from shared import cases, channels, chat, email_ask, graph, payloads, profiles, push_subscriptions, rcs, schedules, verdict, whatsapp
+from pidge_verdict import circle_handlers, org_admin_handlers
+from shared import cases, channels, chat, email_ask, graph, orgs, payloads, profiles, push_subscriptions, rcs, schedules, verdict, whatsapp
 from shared.enums import (
     ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, EmailedAnswerOutcome, PushMessageType, RequestState,
     UserRole, VerdictAnswer,
@@ -44,7 +45,6 @@ SYNC_NOTE_LIMIT = 20
 SYNC_CHAT_LIMIT = 20
 HANDLED = {"statusCode": 200}
 FORBIDDEN = {"statusCode": 403}
-ANSWER_FOR_ACTION = {ClientAction.UNDO: VerdictAnswer.UNDO, ClientAction.REVERSE: VerdictAnswer.REVERSE}
 EMAILED_ANSWER_DROPPED_METRIC_NAME = "EmailedAnswerDropped"
 
 s3_client = boto3.client("s3")
@@ -72,14 +72,8 @@ def handle(event, context):
         return HANDLED
     if action in RESIDENT_ACTION_HANDLERS:
         route_resident_action(connection_id, user_id, action, body)
-    elif action is ClientAction.SYNC:
-        handle_sync(connection_id, user_id)
-    elif action is ClientAction.ANSWER:
-        handle_answer(connection_id, user_id, body, request_context["messageId"], parse_answer(body))
-    elif action in ANSWER_FOR_ACTION:
-        handle_answer(connection_id, user_id, body, request_context["messageId"], ANSWER_FOR_ACTION[action])
-    elif action is ClientAction.SAVE_PUSH_SUBSCRIPTION:
-        handle_save_push_subscription(connection_id, user_id, body)
+    elif action in ACTION_ROUTES:
+        ACTION_ROUTES[action](connection_id, user_id, body, request_context["messageId"])
     else:
         channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)  # a member nobody routed: never fall through to a write
     return HANDLED
@@ -102,16 +96,29 @@ def contact_name_for(request_row: dict) -> str:
 
 def handle_sync(connection_id: str, user_id: str) -> None:
     """Reconnect or reload: the role from the caller's own PROFILE row and the rows that role should see right now (a past
-    releaseAt reads as confirmed). No PROFILE, an unknown role, an org admin or an unmatched resident: NOT_ALLOWED."""
+    releaseAt reads as confirmed). No PROFILE, an unknown role, an unmatched resident, an org admin without a complete
+    PROFILE + ORG#<orgId>/ADMIN# pair (orgs.require_org_admin) or whose org has no PROFILE: NOT_ALLOWED."""
+    sync_message = build_sync_message(user_id)
+    if sync_message is None:
+        channels.reject_action(connection_id, None, ActionOutcome.NOT_ALLOWED)
+        return
+    channels.push_to_connection(connection_id, sync_message)
+
+
+def build_sync_message(user_id: str) -> dict | None:
+    """The sync_state for the caller's own role; None when they may see nothing (each refusal is logged and counted where it
+    is found). An org admin's org comes from their PROFILE and ADMIN# rows, never from the message body."""
     user_profile = profiles.get_user_profile(user_id)
     role = user_profile.role if user_profile is not None else None
-    resident = profiles.require_resident_caller(user_id) if role is UserRole.RECEIVER else None
-    if resident is not None:
-        channels.push_to_connection(connection_id, receiver_sync_message(resident))
-    elif role is UserRole.CONTACT:
-        channels.push_to_connection(connection_id, contact_sync_message(user_id))
-    else:
-        channels.reject_action(connection_id, None, ActionOutcome.NOT_ALLOWED)
+    if role is UserRole.RECEIVER:
+        resident = profiles.require_resident_caller(user_id)
+        return receiver_sync_message(resident) if resident is not None else None
+    if role is UserRole.CONTACT:
+        return contact_sync_message(user_id)
+    if role is UserRole.ORG_ADMIN:
+        org_admin = orgs.require_org_admin(user_id)
+        return org_admin_handlers.org_admin_sync_message(org_admin) if org_admin is not None else None
+    return None  # no PROFILE or an unknown role: get_user_profile logged and counted it
 
 
 def receiver_sync_message(resident: ReceiverProfile) -> dict:
@@ -138,7 +145,12 @@ def receiver_sync_message(resident: ReceiverProfile) -> dict:
 
 
 def contact_sync_message(user_id: str) -> dict:
-    """The contact's cards, each named for its own resident; a card whose resident has no profile is skipped (and counted)."""
+    return {"type": PushMessageType.SYNC_STATE, "role": UserRole.CONTACT, "requests": contact_cards_for(user_id)}
+
+
+def contact_cards_for(user_id: str) -> list:
+    """The cards asked of this PWA user (a contact, or an org's org-<orgId> user), each named for its own resident; a card
+    whose resident has no profile is skipped (and counted)."""
     now = graph.now_timestamp()
     resident_names: dict[str, str] = {}
     cards = []
@@ -153,7 +165,7 @@ def contact_sync_message(user_id: str) -> dict:
         email_row = graph.get_email(request_row["emailId"])
         cards.append(payloads.card_for_contact(request_row, email_row, resident_names[receiver_address],
                                                verdict.effective_status(request_row, now)))
-    return {"type": PushMessageType.SYNC_STATE, "role": UserRole.CONTACT, "requests": cards}
+    return cards
 
 
 def parse_answer(body: dict) -> VerdictAnswer | None:
@@ -390,6 +402,26 @@ def handle_ask_pidge(connection_id: str, resident: ReceiverProfile, body: dict) 
     logger.info("question %s stored for %s (%d characters)", accepted.message_row["SK"], user_id, len(accepted.message_row["text"]))
 
 
+def route_sync(connection_id: str, user_id: str, _body: dict, _websocket_message_id: str) -> None:
+    handle_sync(connection_id, user_id)
+
+
+def route_answer(connection_id: str, user_id: str, body: dict, websocket_message_id: str) -> None:
+    handle_answer(connection_id, user_id, body, websocket_message_id, parse_answer(body))
+
+
+def route_undo(connection_id: str, user_id: str, body: dict, websocket_message_id: str) -> None:
+    handle_answer(connection_id, user_id, body, websocket_message_id, VerdictAnswer.UNDO)
+
+
+def route_reverse(connection_id: str, user_id: str, body: dict, websocket_message_id: str) -> None:
+    handle_answer(connection_id, user_id, body, websocket_message_id, VerdictAnswer.REVERSE)
+
+
+def route_save_push_subscription(connection_id: str, user_id: str, body: dict, _websocket_message_id: str) -> None:
+    handle_save_push_subscription(connection_id, user_id, body)
+
+
 RESIDENT_ACTION_HANDLERS = {  # each acts for the caller's own resident, resolved first by route_resident_action
     ClientAction.CONFIRM: handle_confirm,
     ClientAction.REPORT_PAYMENT: handle_report_payment,
@@ -400,3 +432,11 @@ RESIDENT_ACTION_HANDLERS = {  # each acts for the caller's own resident, resolve
     ClientAction.VERIFY_CONTACT: circle_handlers.handle_verify_contact,
     ClientAction.EDIT_CONTACT: circle_handlers.handle_edit_contact,
 }
+ACTION_ROUTES = {  # any role; the caller is the connection's user, never an id from the body
+    ClientAction.SYNC: route_sync,
+    ClientAction.ANSWER: route_answer,
+    ClientAction.UNDO: route_undo,
+    ClientAction.REVERSE: route_reverse,
+    ClientAction.SAVE_PUSH_SUBSCRIPTION: route_save_push_subscription,
+}
+ROUTED_ACTIONS = frozenset(ACTION_ROUTES) | frozenset(RESIDENT_ACTION_HANDLERS)

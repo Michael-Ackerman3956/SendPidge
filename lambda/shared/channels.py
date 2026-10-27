@@ -10,7 +10,7 @@ from decimal import Decimal
 import boto3
 from botocore.exceptions import ClientError
 
-from shared import ask_link, email_ask, graph, payloads, rcs, verdict, whatsapp
+from shared import ask_link, email_ask, graph, orgs, payloads, rcs, verdict, whatsapp
 from shared.enums import ActionOutcome, Channel, PushMessageType, RequestState
 
 logger = logging.getLogger(__name__)
@@ -44,19 +44,23 @@ def encode_push_message(message: dict) -> bytes:
     return json.dumps(message, default=json_value_for_push).encode()
 
 
-def push_to_user(user_id: str, message: dict) -> int:
-    """Pushes to every open connection of the user; returns how many received it. Stale connections are removed."""
+def push_to_user(user_id: str, message: dict, should_remove_gone_connections: bool = True) -> int:
+    """Pushes to every open connection of the user, and for an org user (org-<orgId>) of each of its admins instead; returns
+    how many received it. A gone connection is removed unless should_remove_gone_connections is False (a caller whose role
+    may not delete CONN#/USER# rows)."""
     client = get_management_client()
     message_bytes = encode_push_message(message)
     delivered_count = 0
-    for connection_id in graph.list_connection_ids(user_id):
-        try:
-            client.post_to_connection(ConnectionId=connection_id, Data=message_bytes)
-            delivered_count += 1
-        except client.exceptions.GoneException:
-            graph.remove_connection(connection_id)
-        except ClientError:
-            logger.exception("push to connection %s of %s failed", connection_id, user_id)
+    for recipient_user_id in orgs.recipient_user_ids_for(user_id):
+        for connection_id in graph.list_connection_ids(recipient_user_id):
+            try:
+                client.post_to_connection(ConnectionId=connection_id, Data=message_bytes)
+                delivered_count += 1
+            except client.exceptions.GoneException:
+                if should_remove_gone_connections:
+                    graph.remove_connection(connection_id)
+            except ClientError:
+                logger.exception("push to connection %s of %s failed", connection_id, recipient_user_id)
     return delivered_count
 
 

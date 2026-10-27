@@ -1,0 +1,16 @@
+/* An org admin's Home section (js/org-view.js); app.css is at its size limit, so every org rule lives here. */
+#org-screen { margin-top: 24px; }
+.org-name { font-size: 20px; font-weight: 800; margin: 0 4px 10px; overflow-wrap: anywhere; }
+.org-member-list { list-style: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); margin-bottom: 14px; }
+.org-member-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.org-member-row:last-child { border-bottom: none; }
+.org-member-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.org-member-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.org-member-tag { font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 5px; background: var(--surface-3); color: var(--text-secondary); }
+.org-empty-message { padding: 12px 4px; font-size: 15px; color: var(--text-secondary); }
+/* With the home below it, the office's empty card list sits at the top instead of a fifth of the screen down. */
+.screen-body:has(#org-screen:not([hidden])) .contact-empty { margin-top: 24px; }
+
+@media (min-width: 900px) {
+  #org-screen { max-width: 520px; }
+}

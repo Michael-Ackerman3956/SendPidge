@@ -1,4 +1,5 @@
-"""Every closed set in SendPidge, in one place. Code branches on these, never on bare strings."""
+"""Every closed set in SendPidge but two families: org-only sets live in shared/org_enums.py, the agent runner's and the
+output gate's in shared/agent_enums.py. Code branches on these, never on bare strings."""
 
 from enum import StrEnum
 
@@ -316,6 +317,7 @@ class VerifiedVia(StrEnum):
     SEED = "seed"          # written by scripts/seed_graph.py
     MOCK = "mock"          # the receiver's own PWA played the reply with CONTACT_VERIFICATION_MOCK on (labelled demo)
     WHATSAPP = "whatsapp"  # the code arrived as a WhatsApp text from that number
+    ORG = "org"            # the resident's home office, built only by shared/orgs.org_contact_row
 
 
 class RecoveryDraftKind(StrEnum):
@@ -389,7 +391,7 @@ class UserRole(StrEnum):
 
     RECEIVER = "receiver"
     CONTACT = "contact"
-    ORG_ADMIN = "org_admin"  # no PWA screen yet
+    ORG_ADMIN = "org_admin"  # a home's office staff, with an ORG#<orgId>/ADMIN#<userId> row
 
 
 class ActionOutcome(StrEnum):
@@ -480,19 +482,3 @@ class CaseAgentRuntime(StrEnum):
     AGENTCORE = "agentcore"
     LAMBDA = "lambda"
 
-
-class UnsafeTextKind(StrEnum):
-    """What the output gate found in agent text bound for a person; any one refuses the text."""
-
-    LINK = "link"
-    EMAIL_ADDRESS = "email_address"
-    MESSENGER_HANDLE = "messenger_handle"  # "@refund_desk" on Telegram, Instagram or X
-    LONG_NUMBER = "long_number"  # 6+ digits: a phone, an account, a code; not a calendar date
-    DISALLOWED_CHARACTER = "disallowed_character"  # outside the allow-list: not Latin, Hangul or plain punctuation
-
-
-class AgentRunFailure(StrEnum):
-    """Why one tool-holding agent run produced no output."""
-
-    TURN_LIMIT = "turn_limit"
-    NO_OUTPUT = "no_output"

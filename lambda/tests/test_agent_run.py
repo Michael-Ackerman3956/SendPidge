@@ -9,7 +9,8 @@ from strands.types.exceptions import StructuredOutputException
 
 from shared import case_agent
 from shared.agent_run import AGENT_TURN_LIMIT, AgentRunError, run_agent_once
-from shared.enums import AgentRunFailure, CaseTrigger, ReaderModelChoice
+from shared.agent_enums import AgentRunFailure
+from shared.enums import CaseTrigger, ReaderModelChoice
 from tests.helpers.scripted_model import ScriptedModel, tool_call_step, verdict_step
 from tests.test_case_agent import denied_request_with_body, report
 from tests.test_refund_rules import seed_rules

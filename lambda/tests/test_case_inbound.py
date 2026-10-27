@@ -1,12 +1,18 @@
-"""A bank reply: only a tokened reply from the reported address with passing auth lands, once per object, on an open case."""
+"""A bank reply: only a tokened reply from the reported address with passing auth lands, once per object, on an open case;
+the request's contact is nudged unless it is a home's office."""
+
+import importlib
+from decimal import Decimal
 
 import boto3
 from botocore.stub import ANY, Stubber
 
-from shared import case_agent, cases, graph
-from shared.enums import ActionOutcome, CaseTrigger, ReasonCode
+from shared import case_agent, cases, graph, verdict
+from shared.enums import ActionOutcome, CaseTrigger, Channel, Jurisdiction, PaymentRail, ReasonCode, VerdictAnswer
 from tests.test_case_report import CASES_ADDRESS, MOCK_BANK, SENDER, grandma, open_case, stubbed_ses
-from tests.test_verdict import RECEIVER_USER_ID, aws  # noqa: F401
+from tests.test_org import SUNRISE_ORG_ID, add_office_to_circle, new_office_request, seed_sunrise_and_maple
+from tests.test_refund_rules import seed_rules
+from tests.test_verdict import RECEIVER_ADDRESS, RECEIVER_USER_ID, at, aws  # noqa: F401
 
 REPLY_TEXT = "We opened dispute 4471 and blocked the card. A new card ships tomorrow."
 
@@ -50,6 +56,25 @@ def test_a_reply_on_a_closed_case_is_not_applied(aws):
     cases.close_case(case_id, RECEIVER_USER_ID, grandma())
     assert cases.record_bank_reply(reply(case_row)).outcome is ActionOutcome.NOT_APPLIED
     assert graph.list_case_replies(case_id) == []
+
+
+def test_bank_reply_nudge_never_reaches_the_org(aws, monkeypatch):
+    seed_sunrise_and_maple()
+    seed_rules()
+    office = add_office_to_circle(RECEIVER_ADDRESS, SUNRISE_ORG_ID)
+    request_id = new_office_request("inbox/office-1.eml", office)
+    assert verdict.record_answer(request_id, VerdictAnswer.NO, verdict.SenderIdentity(Channel.INAPP, "ann"), "m1", at(0)).outcome is ActionOutcome.RECORDED
+    payment = verdict.PaymentReport(request_id, Jurisdiction.US, PaymentRail.CARD, "Chase", Decimal("500"), "USD", "2026-10-24T01:00:00Z", "ends 4321")
+    case_id = graph.case_id_of(verdict.report_payment(payment, RECEIVER_USER_ID, RECEIVER_USER_ID, RECEIVER_ADDRESS).email_row)
+    ses_client, _ = stubbed_ses(MOCK_BANK, CASES_ADDRESS)
+    reported_row = cases.send_report(case_id, RECEIVER_USER_ID, grandma(), ses_client, SENDER, CASES_ADDRESS, MOCK_BANK).case_row
+    replied = cases.record_bank_reply(reply(reported_row))
+    assert replied.outcome is ActionOutcome.RECORDED
+    handler = importlib.import_module("pidge_case_inbound.handler")
+    pushes = []
+    monkeypatch.setattr(handler.channels, "push_to_user", lambda user_id, message: pushes.append((user_id, message["type"])) or 1)
+    handler.push_bank_reply(case_id, replied.case_row, grandma())
+    assert pushes == [(RECEIVER_USER_ID, "case_state")]  # the resident's case card only: no nudge to org-sunrise's admins
 
 
 def test_get_case_never_returns_reply_rows(aws):

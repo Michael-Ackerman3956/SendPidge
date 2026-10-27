@@ -9,6 +9,7 @@ from botocore.exceptions import ClientError
 
 from shared import circle, graph, profiles
 from shared.enums import UserRole
+from shared.org_ids import is_org_contact_sort_key, is_org_user_id
 
 USER_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")  # used with fullmatch; it also names the .env.tokens.<userId> file
 
@@ -53,10 +54,13 @@ def write_resident_rows(resident: ResidentEnrolment) -> None:
 
 
 def mark_circle_contacts(receiver_address: str) -> list[str]:
-    """Sets role CONTACT on the PROFILE of every contact in the resident's circle. Returns the contact user ids skipped: no
-    PROFILE row yet (no token issued), or a PROFILE that already holds another role."""
+    """Sets role CONTACT on the PROFILE of every person in the resident's circle; the home office's CONTACT#org-<orgId> row
+    is passed over, unreported (the org user never has a PROFILE). Returns the contact user ids skipped: no PROFILE row yet
+    (no token issued), or a PROFILE that already holds another role."""
     skipped_contact_user_ids = []
     for contact_row in graph.list_contact_rows(profiles.normalize_receiver_address(receiver_address)):
+        if is_org_contact_sort_key(contact_row["SK"]):
+            continue
         contact_user_id = contact_row["contactPwaUserId"]
         try:
             graph.get_table().update_item(
@@ -73,21 +77,31 @@ def mark_circle_contacts(receiver_address: str) -> list[str]:
     return skipped_contact_user_ids
 
 
+def is_enrollable_user_id(user_id) -> bool:
+    """A user id a resident or an org admin may hold: text matching USER_ID_PATTERN, never an org's own "org-<orgId>"."""
+    return isinstance(user_id, str) and USER_ID_PATTERN.fullmatch(user_id) is not None and not is_org_user_id(user_id)
+
+
+def validate_timezone(timezone) -> None:
+    """Raises ValueError when the timezone is not text or not a loadable IANA name."""
+    if not isinstance(timezone, str):
+        raise ValueError("timezone is not text")
+    try:
+        ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError("timezone is not an IANA name") from None
+
+
 def validate_enrolment(resident: ResidentEnrolment) -> ResidentEnrolment:
     """The enrolment with its address parsed and normalized; raises ValueError on a malformed address, a user id outside
-    USER_ID_PATTERN, an empty name or org id, or a timezone that is not a loadable IANA name."""
+    USER_ID_PATTERN or starting "org-", an empty name or org id, or a timezone that is not a loadable IANA name."""
     address = circle.parse_email_address(resident.receiver_address)
-    if not isinstance(resident.receiver_user_id, str) or not USER_ID_PATTERN.fullmatch(resident.receiver_user_id):
+    if not is_enrollable_user_id(resident.receiver_user_id):
         raise ValueError("user id")
     for field_name, value in (("resident name", resident.resident_name), ("org id", resident.org_id)):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{field_name} is empty")
-    if not isinstance(resident.timezone, str):
-        raise ValueError("timezone is not text")
-    try:
-        ZoneInfo(resident.timezone)
-    except (ZoneInfoNotFoundError, ValueError):
-        raise ValueError("timezone is not an IANA name") from None
+    validate_timezone(resident.timezone)
     return replace(resident, receiver_address=address)
 
 

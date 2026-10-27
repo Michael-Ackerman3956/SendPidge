@@ -1,14 +1,17 @@
 """Enrolment: the resident's rows are written before the address is listed and deleted only after it is delisted, an unknown
-address is counted and raised, a contact's user id never becomes a resident, and a token rotation keeps the role."""
+address is counted and raised, a contact's user id or an org's "org-" id never becomes a resident, and a token rotation keeps
+the role."""
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
 from botocore.exceptions import ClientError
 
-from shared import circle, graph, profiles, residents
+from shared import circle, graph, orgs, profiles, residents
 from shared.enums import ActionOutcome
+from shared.orgs import OrgProfile
 from shared.profiles import ReceiverProfile, UnknownReceiverError
 from shared.residents import ResidentEnrolment
 from tests.helpers.profiles import seed_resident
@@ -98,3 +101,17 @@ def test_token_rotation_keeps_the_role(aws):  # noqa: F811
     assert (user_profile["role"], user_profile["receiverEmail"], user_profile["orgId"]) == ("receiver", BOB_ADDRESS, "org-test")
     assert user_profile["tokenHash"] == graph.hash_access_token(access_token)
     assert graph.find_user_id_for_access_token(access_token) == "bob"
+
+
+def test_org_prefixed_user_id_refused(aws):  # noqa: F811
+    """An "org-<orgId>" user id is the office's in a circle: never a resident's, and its CONTACT# row is not a person to mark."""
+    client = RecordingMailManagerClient()
+    with pytest.raises(ValueError):
+        residents.enrol_resident(client, ADDRESS_LIST_ID, replace(BOB_ENROLMENT, receiver_user_id="org-sunrise"))
+    assert (client.calls, read_row(f"RECEIVER#{BOB_ADDRESS}"), read_row("USER#org-sunrise")) == ([], None, None)
+
+    seed_resident(BOB_ADDRESS, "bob", "Bob", org_id="sunrise")
+    sunrise = OrgProfile("sunrise", "Sunrise Commons", ("office@sunrise.example",), (), "America/New_York")
+    graph.get_table().put_item(Item=orgs.org_contact_row(BOB_ADDRESS, sunrise, graph.now_timestamp()))
+    assert residents.mark_circle_contacts(BOB_ADDRESS) == []
+    assert read_row("USER#org-sunrise") is None

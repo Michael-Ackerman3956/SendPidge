@@ -190,7 +190,7 @@ def hold_and_ask(
     request_id = graph.request_id_of(request_row)
     graph.record_email_outcome(email_id, outcome.decision, None, outcome.reasons, request_id)
     push_email_state(receiver, email_row, outcome, request_row, contact.contact_name)
-    if not hourly_counters.take_ask_slot(contact.contact_key, ASKS_PER_CONTACT_PER_HOUR):
+    if not hourly_counters.take_ask_slot(contact.contact_key, receiver.receiver_address, ASKS_PER_CONTACT_PER_HOUR):
         # The hold stays; no channel is tried and no re-ask is booked, so a flood of asks never reaches the contact.
         logger.info("ask cap reached for %s; %s held without an ask", contact.contact_key, request_id)
         graph.record_ask_capped(request_id)

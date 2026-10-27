@@ -156,9 +156,10 @@ def test_a_stale_code_row_never_blocks_another_resident(verdict_handler, monkeyp
     assert not any(UNKNOWN_RECEIVER_METRIC_NAME in line for line in capsys.readouterr().out.splitlines())  # a stale row pages nobody
 
 
-@pytest.mark.parametrize("rejection_reason", list(ProfileRejectionReason))
+# The resident reasons; the org reasons are reached only through orgs.require_org_admin (test_org.py).
+@pytest.mark.parametrize("rejection_reason", list(PROFILE_FIELDS_FOR_REJECTION))
 def test_each_rejected_profile_is_refused_and_counted_with_its_reason(verdict_handler, capsys, rejection_reason):  # noqa: F811
-    """A resident action runs require_resident_caller, the one path that can reach every reason."""
+    """A resident action runs require_resident_caller, the one path that can reach every resident reason."""
     handler, pushed_messages = verdict_handler
     profile_fields = PROFILE_FIELDS_FOR_REJECTION[rejection_reason]
     if profile_fields is not None:

@@ -45,6 +45,7 @@ export const VERIFIED_VIA = Object.freeze({
   SEED: "seed",
   MOCK: "mock",
   WHATSAPP: "whatsapp",
+  ORG: "org",
 });
 
 export const RELATIONSHIP = Object.freeze({

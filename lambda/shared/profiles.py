@@ -1,7 +1,8 @@
 """Who a resident is and who a PWA user is, read from their PROFILE rows: RECEIVER#<address>/PROFILE {receiverUserId,
-residentName, orgId, timezone} and USER#<id>/PROFILE {tokenHash, role, and for a resident receiverEmail, orgId}. A missing or
-incomplete row is never filled with a default: a required receiver profile is counted and raised (a found one is None,
-uncounted); a user profile or a resident caller is None, logged with the reason and counted as ProfileRejected."""
+residentName, orgId, timezone} and USER#<id>/PROFILE {tokenHash, role, receiverEmail and orgId for a resident, orgId for an
+org admin}. A missing or incomplete row is never filled with a default: a required receiver profile is counted and raised (a
+found one is None, uncounted); a user profile or a resident caller is None, logged with the reason and counted as
+ProfileRejected (an org admin likewise, in shared/orgs.require_org_admin)."""
 
 import hmac
 import logging
@@ -26,6 +27,9 @@ class ProfileRejectionReason(StrEnum):
     NO_RECEIVER_EMAIL = "no_receiver_email"  # a RECEIVER row without receiverEmail
     NOT_RECEIVER = "not_receiver"  # a resident action from a role other than RECEIVER
     RECEIVER_MISMATCH = "receiver_mismatch"  # RECEIVER#<receiverEmail> names another user: the cross-resident signal
+    NOT_ORG_ADMIN = "not_org_admin"  # an org admin check on a role other than ORG_ADMIN
+    NO_ORG_ID = "no_org_id"  # an ORG_ADMIN row without orgId
+    NOT_IN_ORG = "not_in_org"  # no ORG#<orgId>/ADMIN#<userId> row holding an AdminRole
 
 
 class UnknownReceiverError(Exception):
@@ -46,6 +50,7 @@ class UserProfile:
     user_id: str
     role: UserRole
     receiver_email: str | None  # set for a RECEIVER
+    org_id: str | None  # the row's orgId when it is non-empty text; require_org_admin refuses an ORG_ADMIN without one
 
 
 def normalize_receiver_address(address: str) -> str:
@@ -88,8 +93,8 @@ def require_receiver_profile(receiver_address: str) -> ReceiverProfile:
 
 
 def get_user_profile(user_id: str) -> UserProfile | None:
-    """The user's role from USER#<id>/PROFILE. None (rejected: logged and counted) when there is no row, the role is absent
-    or not a UserRole value, or a RECEIVER row has no receiverEmail."""
+    """The user's role, receiverEmail and orgId from USER#<id>/PROFILE. None (rejected: logged and counted) when there is no
+    row, the role is absent or not a UserRole value, or a RECEIVER row has no receiverEmail."""
     row = read_profile_row(f"USER#{user_id}")
     if row is None or "role" not in row:
         reject_profile(user_id, ProfileRejectionReason.NO_PROFILE)
@@ -100,10 +105,11 @@ def get_user_profile(user_id: str) -> UserProfile | None:
         reject_profile(user_id, ProfileRejectionReason.UNKNOWN_ROLE)
         return None
     receiver_email = row["receiverEmail"] if is_filled_text(row, "receiverEmail") else None
+    org_id = row["orgId"] if is_filled_text(row, "orgId") else None
     if role is UserRole.RECEIVER and receiver_email is None:
         reject_profile(user_id, ProfileRejectionReason.NO_RECEIVER_EMAIL)
         return None
-    return UserProfile(user_id, role, receiver_email)
+    return UserProfile(user_id, role, receiver_email, org_id)
 
 
 def require_resident_caller(user_id: str) -> ReceiverProfile | None:

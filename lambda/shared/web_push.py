@@ -8,7 +8,7 @@ import boto3
 from py_vapid import Vapid
 from pywebpush import WebPushException, webpush
 
-from shared import push_subscriptions
+from shared import orgs, push_subscriptions
 from shared.metrics import emit_count_metric
 from shared.enums import PushNotice
 
@@ -61,7 +61,8 @@ def notice_title_and_text(notice: PushNotice, contact_name: str | None) -> tuple
 
 
 def send_notice(user_id: str, notice: PushNotice, contact_name: str | None = None) -> int:
-    """Sends the notice to every saved browser of the user; returns how many accepted it.
+    """Sends the notice to every saved browser of the user, and for an org user (org-<orgId>) of each of its admins instead;
+    returns how many accepted it.
 
     A family-call notice without contact_name raises ValueError before anything is sent. A 404/410 means the browser
     unsubscribed, so its row is deleted. Any other send failure is logged with a PushFailed metric and never raised:
@@ -69,6 +70,11 @@ def send_notice(user_id: str, notice: PushNotice, contact_name: str | None = Non
     """
     title, text = notice_title_and_text(notice, contact_name)
     payload = json.dumps({"title": title, "body": text, "notice": str(notice)})
+    return sum(send_to_saved_browsers(recipient_user_id, notice, payload) for recipient_user_id in orgs.recipient_user_ids_for(user_id))
+
+
+def send_to_saved_browsers(user_id: str, notice: PushNotice, payload: str) -> int:
+    """One user's saved browsers; returns how many accepted the payload (failures handled as send_notice says)."""
     delivered_count = 0
     for row in push_subscriptions.list_subscription_rows(user_id):
         try:

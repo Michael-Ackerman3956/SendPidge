@@ -8,9 +8,8 @@ import pytest
 from botocore.exceptions import ClientError
 
 from shared import chat, chat_agent, graph, verdict
-from shared.enums import (
-    ChatCardKind, ChatVia, GuardrailOutcome, PolicyDecision, PushMessageType, UnsafeTextKind, VerdictAnswer,
-)
+from shared.agent_enums import UnsafeTextKind
+from shared.enums import ChatCardKind, ChatVia, GuardrailOutcome, PolicyDecision, PushMessageType, VerdictAnswer
 from tests.helpers.profiles import seed_contact_roles
 from tests.helpers.scripted_model import ScriptedModel, tool_call_step, verdict_step
 from tests.test_verdict import JIMIN, RECEIVER_ADDRESS, RECEIVER_USER_ID, aws, at, new_request  # noqa: F401

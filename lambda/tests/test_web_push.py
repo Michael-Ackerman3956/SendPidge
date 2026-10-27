@@ -13,6 +13,7 @@ from pywebpush import WebPushException
 
 from shared import push_subscriptions, web_push
 from shared.enums import ActionOutcome, PushNotice
+from tests.test_org import seed_sunrise_and_maple
 from tests.test_verdict import aws  # noqa: F401
 
 APPLE_ENDPOINT = "https://web.push.apple.com/QGuQyavXutnMH5VNV3bAQZ"
@@ -140,6 +141,16 @@ def test_a_missing_vapid_secret_is_reported_and_never_raised(aws, monkeypatch, c
     push_subscriptions.save_subscription("grandma", {"subscription": browser_subscription()})
     assert web_push.send_notice("grandma", PushNotice.BANK_REPLIED) == 0
     assert '"PushFailed": 1' in capsys.readouterr().out
+
+
+def test_notice_to_org_user_reaches_every_admin_browser(vapid_secret, monkeypatch):
+    seed_sunrise_and_maple()  # Sunrise's admins are ann and amy; max is Maple's
+    for user_id in ("ann", "amy", "max", "grandma"):
+        push_subscriptions.save_subscription(user_id, {"subscription": browser_subscription(f"{APPLE_ENDPOINT}-{user_id}")})
+    sent_endpoints = []
+    monkeypatch.setattr(web_push, "webpush", lambda subscription, data, **_: sent_endpoints.append(subscription["endpoint"]))
+    assert web_push.send_notice("org-sunrise", PushNotice.BANK_REPLIED) == 2
+    assert sorted(sent_endpoints) == [f"{APPLE_ENDPOINT}-amy", f"{APPLE_ENDPOINT}-ann"]
 
 
 def test_no_saved_browser_sends_nothing(vapid_secret):

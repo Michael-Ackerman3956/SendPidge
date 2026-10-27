@@ -10,6 +10,7 @@
   <link rel="icon" href="assets/pidge-icon.png">
   <link rel="apple-touch-icon" href="assets/pidge-icon-192.png">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/org.css">
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
@@ -67,6 +68,11 @@
           <img class="contact-empty-pidge" src="assets/pidge-icon.png" alt="">
           <p>Nothing to check.<br>Pidge will ask you here when an email arrives in your name.</p>
         </div>
+      </section>
+      <section id="org-screen" aria-label="Home" hidden>
+        <h2 id="org-name" class="org-name"></h2>
+        <ul id="org-member-list" class="org-member-list"></ul>
+        <p id="org-empty-message" class="org-empty-message" hidden>No members</p>
       </section>
       <section id="circle-screen" aria-label="Circle" hidden>
         <h2 class="section-header">People Pidge can ask</h2>

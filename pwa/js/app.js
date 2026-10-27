@@ -1,5 +1,5 @@
-// SendPidge PWA entry: sign-in or access token, socket, role routing from sync_state, and push dispatch to the receiver or
-// contact view. The role is never stored: every sync_state names it again.
+// SendPidge PWA entry: sign-in or access token, socket, role routing from sync_state, and push dispatch to the receiver,
+// contact or org admin view (an org admin's cards are a contact's). The role is never stored: every sync_state names it again.
 import { ACTION_REJECTED_REASON, CONNECTION_STATUS, PUSH_MESSAGE_TYPE, USER_ROLE } from "./constants.js";
 import { connectToPushChannel } from "./websocket.js";
 import { completeSignInFromRedirect, hasSignInSession, readSignInConfig, resolveIdToken, startSignIn } from "./auth.js";
@@ -23,6 +23,7 @@ import {
   hideOnboarding, startOnboarding,
 } from "./onboarding.js";
 import { startReadingPane } from "./reading-pane.js";
+import { applyOrgAdminSyncState, hideOrgView } from "./org-view.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
 const ACCESS_TOKEN_QUERY_PARAMETER = "token";
@@ -130,10 +131,16 @@ function showReceiverNameInRail(receiverName) {
   pageElements.railMeName.textContent = receiverName;
 }
 
+function hideReceiverScreens() {
+  Object.values(tabViews).forEach((view) => view.hide());
+  hideOnboarding();
+  pageElements.receiverTabs.hidden = true;
+}
+
 function handleSyncStatePush(pushMessage) {
   switch (pushMessage.role) {
     case USER_ROLE.RECEIVER:
-      if (activeUserRole === USER_ROLE.CONTACT) hideContactView();
+      if (activeUserRole === USER_ROLE.CONTACT || activeUserRole === USER_ROLE.ORG_ADMIN) { hideContactView(); hideOrgView(); }
       activeUserRole = USER_ROLE.RECEIVER;
       pageElements.loadingState.hidden = true;
       pageElements.receiverTabs.hidden = isOnboardingOpen;
@@ -147,11 +154,18 @@ function handleSyncStatePush(pushMessage) {
       refreshPushSubscriptionAfterSync();
       break;
     case USER_ROLE.CONTACT:
-      if (activeUserRole === USER_ROLE.RECEIVER) { Object.values(tabViews).forEach((view) => view.hide()); hideOnboarding(); pageElements.receiverTabs.hidden = true; }
+      if (activeUserRole === USER_ROLE.RECEIVER) hideReceiverScreens();
+      if (activeUserRole === USER_ROLE.ORG_ADMIN) hideOrgView();
       activeUserRole = USER_ROLE.CONTACT;
       pageElements.loadingState.hidden = true;
       showContactView();
       applyContactSyncState(pushMessage.requests);
+      break;
+    case USER_ROLE.ORG_ADMIN:
+      if (activeUserRole === USER_ROLE.RECEIVER) hideReceiverScreens();
+      activeUserRole = USER_ROLE.ORG_ADMIN;
+      pageElements.loadingState.hidden = true;
+      applyOrgAdminSyncState(pushMessage);
       break;
     default:
       console.error("SendPidge: sync_state has an unknown role", pushMessage.role);
@@ -187,9 +201,9 @@ function handleActionRejectedPush(pushMessage) {
 // Which role each role-specific push belongs to; a push for the other role (or before sync_state) is ignored with a warning.
 const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.EMAIL_STATE]: [USER_ROLE.RECEIVER],
-  [PUSH_MESSAGE_TYPE.VERIFICATION_CARD]: [USER_ROLE.CONTACT],
-  [PUSH_MESSAGE_TYPE.REQUEST_STATE]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT],
-  [PUSH_MESSAGE_TYPE.ACTION_REJECTED]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT],
+  [PUSH_MESSAGE_TYPE.VERIFICATION_CARD]: [USER_ROLE.CONTACT, USER_ROLE.ORG_ADMIN],
+  [PUSH_MESSAGE_TYPE.REQUEST_STATE]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT, USER_ROLE.ORG_ADMIN],
+  [PUSH_MESSAGE_TYPE.ACTION_REJECTED]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT, USER_ROLE.ORG_ADMIN],
   [PUSH_MESSAGE_TYPE.CASE_NOTE]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CASE_STATE]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CONTACT_NOTICE]: [USER_ROLE.CONTACT],
