@@ -152,6 +152,7 @@ Source: `scope.md > The Unique Kernel`.
 
 ## Possible Later Enhancements
 
+- Top future expansion (2026-10-27, outside the stretch goal): a sealed mailbox. Pidge reads each email once when it arrives, to decide hold or pass, then stores it so only Grandma's own phone can open it, and her retirement home only if she allows it. Nobody at SendPidge can read it afterwards; who wrote, what Pidge decided and why stay visible. Losing the phone must not mean losing the mail. (`spec.md > Future expansion — sealed mailbox`)
 - B2B version: supplier PO fraud, CEO wire requests, fake insurance claims — same relationship graph, different personas.
 - Institution impersonation ("fake police", "fake bank") as the known party.
 - Consolidated omni-inbox with real integrations across all channels.

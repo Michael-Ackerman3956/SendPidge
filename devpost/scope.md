@@ -90,6 +90,7 @@ Demo framing (ruled 2026-10-25, option a): the video's title card and narration 
 16. Vault concept (E5)
 
 ## Future expansion
+- **Top of future expansion (2026-10-27, founder; outside the stretch goal and the roadmap order above): sealed mailbox.** Pidge reads each email once, at arrival, to decide, then stores it so only the receiver's device can open it, and the organisation only if she allows it; nobody at SendPidge can read it afterwards. The sender, state, reasons and verdict stay readable for the checks. Big feature; kill tests first (key recovery on her iPhone, no plaintext left after arrival, the PWA renders the decrypted email). Spec: `spec.md > Future expansion — sealed mailbox`
 - Carrier/OS-level check (Apple, Google, telcos), as TheCheat does with Korean carriers; needs a platform partner (2026-10-24)
 
 ## Later
