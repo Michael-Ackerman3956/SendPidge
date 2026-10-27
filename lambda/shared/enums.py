@@ -107,8 +107,8 @@ class IndicatorKind(StrEnum):
     ADDRESS = "address"      # a full sender address, lower-cased
     DOMAIN = "domain"        # a registrable domain
     LOOKALIKE = "lookalike"  # the confusable skeleton of a contact's name
-    PHONE = "phone"          # E.164 (seeded, not yet queried)
-    URL = "url"              # a registrable domain or full URL (seeded, not yet queried)
+    PHONE = "phone"          # E.164, queried by lists.check
+    URL = "url"              # sha256 of the canonical URL, queried by lists.check
 
 
 class ListCategory(StrEnum):
@@ -126,10 +126,11 @@ class ListStrength(StrEnum):
 
 
 class ListSource(StrEnum):
-    """Where a LIST# row came from. Only sample rows and Pidge's own confirms exist in the POC."""
+    """Where a LIST# row came from."""
 
     SAMPLE = "sample"                    # hand-written infra/seed/lists.sample.json, labelled as sample data in the PWA
     PIDGE_CONFIRMED = "pidge-confirmed"  # tier 0: written by pidge-verdict on Confirm
+    PUBLIC_FEED = "public-feed"          # a SOURCE# feed (infra/seed/lists.public.json snapshot); row keeps its sourceId
 
 
 class GateFired(StrEnum):
@@ -419,8 +420,9 @@ class PaymentRail(StrEnum):
 
     CARD = "card"
     ZELLE = "zelle"
-    WIRE = "wire"
+    WIRE = "wire"  # every push payment (Faster Payments, SEPA, Interac, PayNow, 계좌이체); the PWA says "Bank transfer"
     GIFT_CARD = "gift_card"
+    CRYPTO = "crypto"
 
 
 class Jurisdiction(StrEnum):
@@ -429,6 +431,12 @@ class Jurisdiction(StrEnum):
     US = "US"
     KR = "KR"
     GB = "GB"
+    AU = "AU"
+    CA = "CA"
+    SG = "SG"
+    JP = "JP"
+    FR = "FR"
+    DE = "DE"
 
 
 class RuleState(StrEnum):
@@ -440,7 +448,7 @@ class RuleState(StrEnum):
 
 
 class ProposedBy(StrEnum):
-    """Who wrote a refund rule version."""
+    """Who wrote a RULE# or SOURCE# version."""
 
     SEED = "seed"
     ADMIN = "admin"

@@ -21,7 +21,7 @@ def seed_rules() -> list[dict]:
 
 def test_the_four_seeded_us_rules_resolve_with_an_https_source_on_every_step(aws):
     seed_rules()
-    for rail in PaymentRail:
+    for rail in (PaymentRail.CARD, PaymentRail.ZELLE, PaymentRail.WIRE, PaymentRail.GIFT_CARD):  # no US crypto rule yet
         rule = refund_rules.find_live_rule(Jurisdiction.US, rail)
         assert rule is not None and rule.payment_rail is rail and rule.version == 1
         assert all(step.source_url.startswith("https://") for step in rule.steps)
@@ -56,3 +56,17 @@ def test_the_pack_carries_only_case_and_rule_facts(aws):
     assert "Chase" not in json.dumps(pack) and "500" not in json.dumps(pack)
     gap_pack = refund_rules.build_recovery_pack({**case_row, "jurisdiction": "KR"}, None)
     assert (gap_pack["ruleGap"], gap_pack["steps"]) == (True, [])
+
+
+def test_every_seed_rule_file_loads(aws, tmp_path):
+    rows = refund_rules.read_rule_seed_rows(SEED_PATH.parent)
+    partition_keys = {row["PK"] for row in rows}
+    assert {"RULE#GB#crypto#any", "RULE#KR#card#any", "RULE#US#card#any"} <= partition_keys
+    for row in rows:
+        graph.get_table().put_item(Item=row)
+    assert refund_rules.find_live_rule(Jurisdiction.GB, PaymentRail.CRYPTO).version == 1
+    assert refund_rules.find_live_rule(Jurisdiction.KR, PaymentRail.CARD) is None  # seeded proposed, never read
+    misfiled_rule = {**json.loads(SEED_PATH.read_text())[0], "jurisdiction": "GB"}
+    (tmp_path / "refund_rules.FR.json").write_text(json.dumps([misfiled_rule]))
+    with pytest.raises(ValueError):
+        refund_rules.read_rule_seed_rows(tmp_path)

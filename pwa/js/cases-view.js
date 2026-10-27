@@ -12,6 +12,7 @@ const PAYMENT_RAIL_LABELS = Object.freeze({
   [PAYMENT_RAIL.ZELLE]: "Zelle",
   [PAYMENT_RAIL.WIRE]: "Bank transfer",
   [PAYMENT_RAIL.GIFT_CARD]: "Gift card",
+  [PAYMENT_RAIL.CRYPTO]: "Crypto",
 });
 const DEFAULT_CURRENCY = "USD";
 const SUBTAB_LABELS = Object.freeze({ [CASES_TAB.OPEN]: "Open", [CASES_TAB.CLOSED]: "Closed", [CASES_TAB.NOTES]: "Notes" });

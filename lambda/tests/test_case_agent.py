@@ -132,7 +132,7 @@ def test_payment_report_parsing_rejects_odd_input():
             "paidAt": "2026-10-24T01:00:00Z", "payeeHint": "@someone"}
     parsed = verdict.PaymentReport.from_client_body(good)
     assert (parsed.payment_rail, parsed.amount, parsed.currency) == (PaymentRail.ZELLE, Decimal("120.50"), "USD")
-    for bad in ({**good, "paymentRail": "crypto"}, {**good, "amount": "-5"}, {**good, "amount": "lots"}, {**good, "jurisdiction": "FR"},
+    for bad in ({**good, "paymentRail": "bank_transfer"}, {**good, "amount": "-5"}, {**good, "amount": "lots"}, {**good, "jurisdiction": "XX"},
                 {**good, "paidAt": "yesterday"}, {**good, "bank": ""}, {**good, "currency": "dollars"}):
         with pytest.raises((ValueError, KeyError, ArithmeticError)):
             verdict.PaymentReport.from_client_body(bad)

@@ -98,12 +98,19 @@ export const PAYMENT_RAIL = Object.freeze({
   ZELLE: "zelle",
   WIRE: "wire",
   GIFT_CARD: "gift_card",
+  CRYPTO: "crypto",
 });
 
 export const JURISDICTION = Object.freeze({
   US: "US",
   KR: "KR",
   GB: "GB",
+  AU: "AU",
+  CA: "CA",
+  SG: "SG",
+  JP: "JP",
+  FR: "FR",
+  DE: "DE",
 });
 
 // Where an ask goes out and where an answer comes back (request.repliedVia). Mirrors Channel in enums.py.

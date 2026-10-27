@@ -1,8 +1,11 @@
-"""The scam list: normalisers, lookalikes, LIST# reads that add reasons (never a verdict), a failed read that marks, and the
-ask cap that fails closed. Reads go through the production table fixture."""
+"""The scam list: normalisers, lookalikes, LIST# reads that add reasons (never a verdict), a failed read that marks, the
+ask cap that fails closed, public-feed rows, and check() reading a stale feed or a failed read as unavailable, never
+clean. Reads go through the production table fixture."""
 
 import json
+from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from botocore.exceptions import ClientError
@@ -10,8 +13,9 @@ from botocore.exceptions import ClientError
 from shared import graph, hourly_counters, lists
 from shared.enums import Friction, IndicatorKind, ListSource, PolicyDecision, ReasonCode, RequestState, WarnReason
 from shared.lists import (
-    DynamoListStore, ListLookupFailed, SeedListStore, confusable_skeleton, is_lookalike_name,
-    list_row_from_seed, lookup_sender_reasons, normalise_phone_e164, normalise_registrable_domain, parse_list_row,
+    LIST_CHECK_FAILED_METRIC_NAME, CheckCoverage, DynamoListStore, Indicator, ListLookupFailed, SeedListStore, canonical_url,
+    check, confusable_skeleton, indicator_key, is_lookalike_name, list_row_from_seed, lookup_sender_reasons,
+    normalise_phone_e164, normalise_registrable_domain, parse_list_row, public_list_row_from_seed,
     sender_reasons_or_lookup_failure,
 )
 from shared.policy import decide
@@ -20,6 +24,7 @@ from shared.enums import Intent
 from tests.test_verdict import aws  # noqa: F401
 
 SEED_PATH = Path(__file__).resolve().parents[2] / "infra" / "seed" / "lists.sample.json"
+PUBLIC_SEED_PATH = SEED_PATH.parent / "lists.public.json"
 JIMIN = graph.Contact("CONTACT#jimin", "Jimin", "jimin", known_addresses=("jimin@example.com",))
 MINHO = graph.Contact("CONTACT#minho", "Minho", "minho", known_addresses=("minho@family.example",))
 CONTACTS = [JIMIN, MINHO]
@@ -31,6 +36,14 @@ def seed_rows() -> list[dict]:
 
 def seeded_store() -> SeedListStore:
     return SeedListStore(seed_rows())
+
+
+def public_seeds() -> list[dict]:
+    return json.loads(PUBLIC_SEED_PATH.read_text(), parse_float=Decimal)
+
+
+def public_seed(value: str) -> dict:
+    return next(seed for seed in public_seeds() if seed["value"] == value)
 
 
 def test_normalisers():
@@ -185,3 +198,69 @@ def test_a_capped_ask_is_stored_as_the_same_warn_the_receiver_saw(reader_handler
     assert (request_row["status"], request_row["askCapped"]) == (str(RequestState.PENDING), True)
     assert [(email["state"], email["warnReason"]) for email in pushed] == [("hold", None), ("warn", "ask_capped")]
     assert pushed[-1]["request"]["requestId"] == stored["requestId"]
+
+
+def test_url_keys_are_the_sha256_of_the_canonical_url():
+    assert canonical_url("HTTPS://MarketOrbitLabs.IT.com") == "https://marketorbitlabs.it.com/"
+    assert indicator_key(IndicatorKind.URL, "HTTPS://MarketOrbitLabs.IT.com") == (
+        "5978deadfc1472f442da256125dc09ec65eddb9abdbf9156e3f1cbeea93c2580")
+    assert canonical_url("https://bit.ly/AbC#x") == "https://bit.ly/AbC"  # the short link's case is kept, the fragment dropped
+    for refused_url in ("https://user@bit.ly/AbC", "https://user:secret@bit.ly/AbC", "ftp://bit.ly/AbC"):
+        with pytest.raises(ValueError):
+            canonical_url(refused_url)
+
+
+def test_every_public_row_loads_and_a_widening_domain_is_refused():
+    seeds = public_seeds()
+    rows = [public_list_row_from_seed(seed, 0, seed["expiresAt"]) for seed in seeds]
+    for seed, row in zip(seeds, rows):
+        parsed = parse_list_row(row)
+        assert parsed.source is ListSource.PUBLIC_FEED and parsed.source_id == seed["sourceId"]
+    assert len({(row["PK"], row["SK"]) for row in rows}) == len(rows)
+    listed_domain = public_seed("1password-login.com")
+    assert public_list_row_from_seed(listed_domain, 0, "2027-04-25T00:00:00Z")["ttlEpochSeconds"] == 1808611200
+    with pytest.raises(ValueError):
+        public_list_row_from_seed({**listed_domain, "value": "app-ledger.co.com"}, 0, "2027-04-25T00:00:00Z")  # would list co.com
+    with pytest.raises(ValueError):
+        public_list_row_from_seed({**listed_domain, "source": "sample"}, 0, "2027-04-25T00:00:00Z")
+
+
+class FailingListStore:
+    def get_row(self, kind, key):
+        raise ListLookupFailed("table unreadable")
+
+
+def test_check_reads_stale_and_failed_reads_as_unavailable_never_clean(capsys):
+    indicators = [Indicator(IndicatorKind.DOMAIN, "parcel-fee.example")]
+    domain_source = SimpleNamespace(indicator_kinds=(IndicatorKind.DOMAIN,), last_sync_at="2026-10-27T09:00:00Z", sync_interval_minutes=60)
+    fresh = check(SeedListStore([]), indicators, [domain_source], "2026-10-27T12:00:00Z")
+    assert (fresh.hits, fresh.coverage, fresh.cache_until) == ((), CheckCoverage.COMPLETE, "2026-10-28T12:00:00Z")
+    stale = check(SeedListStore([]), indicators, [domain_source], "2026-10-27T12:00:01Z")
+    assert (stale.hits, stale.coverage, stale.cache_until) == ((), CheckCoverage.UNAVAILABLE, "2026-10-27T12:05:01Z")
+    never_synced = SimpleNamespace(indicator_kinds=(IndicatorKind.DOMAIN,), last_sync_at=None, sync_interval_minutes=60)
+    assert check(SeedListStore([]), indicators, [never_synced], "2026-10-27T12:00:00Z").coverage is CheckCoverage.UNAVAILABLE
+
+    capsys.readouterr()
+    failed = check(FailingListStore(), indicators, [domain_source], "2026-10-27T12:00:00Z")
+    assert (failed.hits, failed.coverage, failed.cache_until) == ((), CheckCoverage.UNAVAILABLE, "2026-10-27T12:05:00Z")
+    metric_lines = [line for line in capsys.readouterr().out.splitlines() if LIST_CHECK_FAILED_METRIC_NAME in line]
+    assert len(metric_lines) == 1 and json.loads(metric_lines[0])[LIST_CHECK_FAILED_METRIC_NAME] == 1
+    assert failed.as_payload() == {"reasons": [], "attributions": [], "coverage": "unavailable", "cacheUntil": "2026-10-27T12:05:00Z"}
+
+
+def test_a_listed_sender_from_a_feed_is_warn_never_hold(aws):  # noqa: F811
+    listed_domain = public_seed("1password-login.com")
+    graph.get_table().put_item(Item=public_list_row_from_seed(listed_domain, 1, "2099-01-01T00:00:00Z"))
+    sender_address = "billing@1password-login.com"
+    reasons = lookup_sender_reasons(DynamoListStore(), sender_address, "1password-login.com", "Billing", CONTACTS)
+    assert reasons == [ReasonCode.LISTED_SENDER_DOMAIN]
+    for intent in Intent:
+        for confidence in (0.1, 0.95):
+            verdict = EmailVerdict(claimed_person=None, intent=intent, confidence=confidence, summary="A note.")
+            outcome = decide(verdict, None, None, sender_address, reasons)
+            assert outcome.decision is not PolicyDecision.HOLD
+            if intent is Intent.NONE:
+                assert (outcome.decision, outcome.warn_reason) == (PolicyDecision.WARN, WarnReason.LISTED_SENDER)
+
+    graph.get_table().put_item(Item=public_list_row_from_seed(listed_domain, 1, "2026-01-01T00:00:00Z"))  # expired, TTL not yet run
+    assert lookup_sender_reasons(DynamoListStore(), sender_address, "1password-login.com", "Billing", CONTACTS) == []
