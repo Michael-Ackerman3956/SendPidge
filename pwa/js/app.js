@@ -24,6 +24,7 @@ import {
 } from "./onboarding.js";
 import { startReadingPane } from "./reading-pane.js";
 import { applyOrgAdminSyncState, hideOrgView } from "./org-view.js";
+import { applyOrgPreferenceState, handleOrgPreferenceActionRejected } from "./org-preference-view.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
 const ACCESS_TOKEN_QUERY_PARAMETER = "token";
@@ -147,6 +148,7 @@ function handleSyncStatePush(pushMessage) {
       if (activeReceiverTab === RECEIVER_TAB.INBOX && !isOnboardingOpen) showReceiverView();
       showReceiverNameInRail(pushMessage.receiverName);
       applyCircleSyncState(pushMessage.circle, pushMessage.contactVerification);
+      applyOrgPreferenceState(pushMessage.orgPreference);
       applyReceiverSyncState(pushMessage.emails);
       applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);
       applyChatSyncState(pushMessage.chat, pushMessage.chatEnabled);
@@ -193,6 +195,7 @@ function handleActionRejectedPush(pushMessage) {
   if (activeUserRole === USER_ROLE.RECEIVER) {
     handleReceiverActionRejected(requestId);
     handlePidgeActionRejected();
+    handleOrgPreferenceActionRejected();
   } else {
     handleContactActionRejected(requestId);
   }
@@ -261,6 +264,7 @@ function handlePushMessage(pushMessage) {
       break;
     case PUSH_MESSAGE_TYPE.CIRCLE_STATE:
       applyCircleStatePush(pushMessage.circle);
+      applyOrgPreferenceState(pushMessage.orgPreference);
       handleCircleSyncDuringOnboarding();
       break;
     default:

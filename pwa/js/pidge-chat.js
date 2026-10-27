@@ -1,7 +1,7 @@
 // Grandma's questions to Pidge on the Pidge tab: a greeting bubble with suggestion chips, the thread from sync_state.chat (so a
 // reload keeps it), the composer with dictation, and live pidge_reply bubbles. Text from the server goes in through textContent.
 import { DICTATION_ENABLED } from "./config.js";
-import { CHAT_CARD_KIND, CHAT_ROLE, CLIENT_ACTION } from "./constants.js";
+import { CHAT_CARD_KIND, CHAT_ROLE, CLIENT_ACTION, VERIFIED_VIA } from "./constants.js";
 import { buildCopyButton, createElementWithText } from "./dom-helpers.js";
 import { listCircleEntries } from "./circle-view.js";
 import { sendClientAction } from "./websocket.js";
@@ -65,10 +65,10 @@ function handleUserTappedSuggestionChip(suggestionChip) {
   }
 }
 
-// A fixed note to the first person in her circle, written by code; she copies it into her own mail app. An empty circle gets
-// one sentence and no draft: no name is ever invented.
+// A fixed note to the first person in her circle (her home's office row is skipped), written by code; she copies it into her
+// own mail app. A circle with no person gets one sentence and no draft: no name is ever invented.
 function appendDraftReplyBubble() {
-  const [firstContact] = listCircleEntries();
+  const firstContact = listCircleEntries().find((entry) => entry.verifiedVia !== VERIFIED_VIA.ORG);
   if (firstContact === undefined) {
     const emptyBubble = buildBubbleElement({ role: CHAT_ROLE.PIDGE, text: "Nobody is in your circle yet. Add someone on the Circle tab first.", isRefusal: false });
     pageElements.chatThread.append(emptyBubble);

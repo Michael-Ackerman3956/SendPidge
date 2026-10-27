@@ -300,6 +300,9 @@ class ClientAction(StrEnum):
     ADD_CONTACT = "add_contact"                        # the receiver: the Add-someone form → a pending CONTACT# row
     VERIFY_CONTACT = "verify_contact"                  # the receiver: plays the contact's code reply (CONTACT_VERIFICATION_MOCK only)
     EDIT_CONTACT = "edit_contact"                      # the receiver: the same form saved on an existing CONTACT# row
+    SET_ORG_VISIBILITY = "set_org_visibility"          # the receiver: what the home's office may see (an OrgVisibility)
+    ADD_ORG_CONTACT = "add_org_contact"                # the receiver: the home's office row joins the circle
+    REMOVE_ORG_CONTACT = "remove_org_contact"          # the receiver: the home's office row leaves the circle
 
 
 class PushNotice(StrEnum):
@@ -404,7 +407,7 @@ class ActionOutcome(StrEnum):
     NOT_APPLIED = "not_applied"    # duplicate, redelivered, or a Yes after the hold or after a No
     NOT_ALLOWED = "not_allowed"    # this user may not do this action
     BAD_MESSAGE = "bad_message"    # unparseable or missing fields
-    DUPLICATE_NAME = "duplicate_name"  # add_contact: the circle already has that name (asks are matched by name)
+    DUPLICATE_NAME = "duplicate_name"  # add_contact / add_org_contact: the circle already has that name (asks are matched by name)
     CIRCLE_FULL = "circle_full"        # add_contact: the circle has CIRCLE_MAXIMUM_SIZE people
     LAST_CHECKED_NUMBER = "last_checked_number"  # edit_contact: the edit drops every checked WhatsApp number
 

@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from shared import channels, circle, graph, payloads, profiles, whatsapp
+from shared import channels, circle, graph, org_preferences, payloads, profiles, whatsapp
 from shared.enums import ActionOutcome, PushMessageType, VerifiedVia
 from shared.metrics import emit_count_metric
 from shared.profiles import ReceiverProfile
@@ -58,7 +58,10 @@ def circle_entries(settings: CircleSettings, resident: ReceiverProfile) -> list[
 
 
 def push_circle_state(settings: CircleSettings, resident: ReceiverProfile) -> None:
-    channels.push_to_user(resident.receiver_user_id, {"type": PushMessageType.CIRCLE_STATE, "circle": circle_entries(settings, resident)})
+    """Every receiver socket gets the circle and the home section (org_preferences.org_preference_for_sync: None when the
+    resident's org has no PROFILE)."""
+    channels.push_to_user(resident.receiver_user_id, {"type": PushMessageType.CIRCLE_STATE, "circle": circle_entries(settings, resident),
+                                                      "orgPreference": org_preferences.org_preference_for_sync(resident)})
 
 
 def handle_add_contact(connection_id: str, resident: ReceiverProfile, body: dict) -> None:

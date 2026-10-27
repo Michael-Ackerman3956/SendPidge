@@ -1,4 +1,5 @@
-/* An org admin's Home section (js/org-view.js); app.css is at its size limit, so every org rule lives here. */
+/* An org admin's Home section (js/org-view.js) and a resident's home on the Circle tab (js/org-preference-view.js); app.css is
+   at its size limit, so every org rule lives here. */
 #org-screen { margin-top: 24px; }
 .org-name { font-size: 20px; font-weight: 800; margin: 0 4px 10px; overflow-wrap: anywhere; }
 .org-member-list { list-style: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); margin-bottom: 14px; }
@@ -11,6 +12,16 @@
 /* With the home below it, the office's empty card list sits at the top instead of a fifth of the screen down. */
 .screen-body:has(#org-screen:not([hidden])) .contact-empty { margin-top: 24px; }
 
+.org-preference { margin-top: 24px; }
+.org-visibility-group { border: none; min-width: 0; margin-bottom: 14px; }
+.org-visibility-legend { overflow-wrap: anywhere; }
+.org-visibility-options { display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); }
+.org-visibility-option { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 600; cursor: pointer; }
+.org-visibility-option:last-child { border-bottom: none; }
+.org-visibility-radio { flex-shrink: 0; width: 20px; height: 20px; accent-color: var(--teal); }
+.org-visibility-radio:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.org-contact-button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
+
 @media (min-width: 900px) {
-  #org-screen { max-width: 520px; }
+  #org-screen, .org-preference { max-width: 520px; }
 }

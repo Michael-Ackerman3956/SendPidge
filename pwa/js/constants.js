@@ -29,6 +29,16 @@ export const CLIENT_ACTION = Object.freeze({
   ADD_CONTACT: "add_contact",
   VERIFY_CONTACT: "verify_contact",
   EDIT_CONTACT: "edit_contact",
+  SET_ORG_VISIBILITY: "set_org_visibility",
+  ADD_ORG_CONTACT: "add_org_contact",
+  REMOVE_ORG_CONTACT: "remove_org_contact",
+});
+
+// What the resident's home may see (orgPreference.visibility). Mirrors OrgVisibility in lambda/shared/org_enums.py.
+export const ORG_VISIBILITY = Object.freeze({
+  ALERTS_ONLY: "alerts_only",
+  ALERTS_AND_CASES: "alerts_and_cases",
+  NONE: "none",
 });
 
 export const CHAT_CARD_KIND = Object.freeze({

@@ -1,7 +1,7 @@
 """WebSocket $default: sync (an org admin's in org_admin_handlers), the contact's Yes / No / Undo / Reverse, the receiver's
 Confirm, case actions and questions to Pidge, a browser's Web Push subscription, the receiver's Add-someone form and demo
-code reply (circle_handlers); SNS: phone-channel taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's
-reply to the ask by email.
+code reply (circle_handlers), the receiver's home visibility and office row (org_preference_handlers); SNS: phone-channel
+taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's reply to the ask by email.
 
 The user comes from the connection row, never from the message body; their role and resident (or org) come from their own
 USER#<id>/PROFILE row, and an answer's resident from the REQUEST# row's receiverEmail.
@@ -15,8 +15,10 @@ from urllib.parse import unquote_plus
 
 import boto3
 
-from pidge_verdict import circle_handlers, org_admin_handlers
-from shared import cases, channels, chat, email_ask, graph, orgs, payloads, profiles, push_subscriptions, rcs, schedules, verdict, whatsapp
+from pidge_verdict import circle_handlers, org_admin_handlers, org_preference_handlers
+from shared import (
+    cases, channels, chat, email_ask, graph, org_preferences, orgs, payloads, profiles, push_subscriptions, rcs, schedules, verdict, whatsapp,
+)
 from shared.enums import (
     ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, EmailedAnswerOutcome, PushMessageType, RequestState,
     UserRole, VerdictAnswer,
@@ -141,7 +143,8 @@ def receiver_sync_message(resident: ReceiverProfile) -> dict:
     return {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "receiverName": resident.resident_name, "emails": emails,
             "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages,
             "circle": circle_handlers.circle_entries(circle_settings, resident),
-            "contactVerification": circle_handlers.verification_flags(circle_settings)}
+            "contactVerification": circle_handlers.verification_flags(circle_settings),
+            "orgPreference": org_preferences.org_preference_for_sync(resident)}
 
 
 def contact_sync_message(user_id: str) -> dict:
@@ -431,6 +434,9 @@ RESIDENT_ACTION_HANDLERS = {  # each acts for the caller's own resident, resolve
     ClientAction.ADD_CONTACT: circle_handlers.handle_add_contact,
     ClientAction.VERIFY_CONTACT: circle_handlers.handle_verify_contact,
     ClientAction.EDIT_CONTACT: circle_handlers.handle_edit_contact,
+    ClientAction.SET_ORG_VISIBILITY: org_preference_handlers.handle_set_org_visibility,
+    ClientAction.ADD_ORG_CONTACT: org_preference_handlers.handle_add_org_contact,
+    ClientAction.REMOVE_ORG_CONTACT: org_preference_handlers.handle_remove_org_contact,
 }
 ACTION_ROUTES = {  # any role; the caller is the connection's user, never an id from the body
     ClientAction.SYNC: route_sync,

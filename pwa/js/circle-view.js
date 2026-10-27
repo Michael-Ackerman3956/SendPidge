@@ -1,6 +1,7 @@
 // Grandma's Circle tab (RECEIVER): the people Pidge can ask, from sync_state.circle and every circle_state push. Names come from
 // the server: textContent only. Each entry carries the numbers and emails she typed (reachPoints, her own sockets only) for the
-// edit form; the rows show none of them, only reach chips for the channels Pidge asks on. Tapping a row opens the edit form.
+// edit form; the rows show none of them, only reach chips for the channels Pidge asks on. Tapping a row opens the edit form,
+// except the home's row (verifiedVia org): it is not a button and is never edited.
 // sync_state.contactVerification says how a new contact can be verified on this stack (WhatsApp reply, labelled demo).
 import { CHANNEL, RELATIONSHIP_LABELS, VERIFIED_VIA } from "./constants.js";
 import { isCodeExpired } from "./contact-form-draft.js";
@@ -31,6 +32,7 @@ function isValidCircleEntry(entry) {
 function describeVerification(entry) {
   if (entry.verifiedVia === VERIFIED_VIA.PENDING) return isCodeExpired(entry, Date.now()) ? "Code expired. Tap, then Save" : "Waiting for their code";
   if (entry.verifiedVia === VERIFIED_VIA.SEED) return "Set up for the demo";
+  if (entry.verifiedVia === VERIFIED_VIA.ORG) return "Your home";
   const verifiedAtMilliseconds = parseTimestampMilliseconds(entry.verifiedAt);
   const dayText = verifiedAtMilliseconds === null ? "" : ` ${new Date(verifiedAtMilliseconds).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
   return entry.verifiedVia === VERIFIED_VIA.WHATSAPP ? `Verified${dayText} on WhatsApp` : `Verified${dayText} (demo code)`;
@@ -43,9 +45,12 @@ function describeContact(entry) {
 
 function buildCircleRowElement(entry) {
   const item = createElementWithText("li", "circle-item");
-  const row = createElementWithText("button", "circle-row");
-  row.type = "button";
-  row.addEventListener("click", () => onContactTapped(entry));
+  const isOrgRow = entry.verifiedVia === VERIFIED_VIA.ORG;
+  const row = createElementWithText(isOrgRow ? "div" : "button", "circle-row");
+  if (!isOrgRow) {
+    row.type = "button";
+    row.addEventListener("click", () => onContactTapped(entry));
+  }
   const avatar = createElementWithText("span", "avatar-initial", (entry.contactName.trim()[0] || "?").toUpperCase());
   avatar.setAttribute("aria-hidden", "true");
   const nameBlock = createElementWithText("span", "circle-name-block");

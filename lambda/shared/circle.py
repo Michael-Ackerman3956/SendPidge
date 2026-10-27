@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError
 
 from shared import graph, reach_points
 from shared.enums import ActionOutcome, Channel, Relationship, UserRole, VerifiedVia
+from shared.org_ids import is_org_contact_sort_key
 from shared.reach_points import ReachPoint, verified_via_of
 
 CIRCLE_MAXIMUM_SIZE = 10
@@ -191,13 +192,16 @@ def edit_contact(receiver_address: str, contact_user_id: str, form: ContactForm,
     """Saves the edited form on the contact's row in place, as a contactReachPoints list. A point already on the row keeps
     its stored entry, so a checked number keeps being asked; a new WhatsApp number waits for a fresh code (one per edit, for
     every number still waiting), returned once. The row and a WACODE# row per number still waiting are written in one
-    transaction. Refused, writing nothing: an unknown contact, a name another row has, an edit
-    that drops every checked WhatsApp number, and a row whose points, check state or code changed since it was read (two
-    edits that change only the name or relationship: the last one wins)."""
+    transaction. Refused, writing nothing: an unknown contact, the home office's CONTACT#org-<orgId> row (NOT_ALLOWED: only
+    orgs.org_contact_row builds it), a name another row has, an edit that drops every checked WhatsApp number, and a row
+    whose points, check state or code changed since it was read (two edits that change only the name or relationship: the
+    last one wins)."""
     contact_rows = graph.list_contact_rows(receiver_address)
     contact_row = next((row for row in contact_rows if row["contactPwaUserId"] == contact_user_id), None)
     if contact_row is None:
         return Enrolment(ActionOutcome.NOT_APPLIED)
+    if is_org_contact_sort_key(contact_row["SK"]):
+        return Enrolment(ActionOutcome.NOT_ALLOWED)
     same_name_row = find_same_name_row(contact_rows, form.contact_name)
     if same_name_row is not None and same_name_row["SK"] != contact_row["SK"]:
         return Enrolment(ActionOutcome.DUPLICATE_NAME)
