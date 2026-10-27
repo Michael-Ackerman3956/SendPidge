@@ -3,13 +3,14 @@
 Three modes (`SwarmMode`):
   dry_run  write the .eml files and send nothing.
   offline  parse -> links -> lists -> policy.decide with each template's scripted verdict, no model, no AWS.
-  live     drop each case under inbox/ in the email bucket (the object event the Reader gets from Mail Manager), one at a
-           time, then read the EMAIL#/REQUEST# rows. A live run proves detection on every case; the ask cap
-           (lambda/pidge_reader/handler.py:133-137) means a hold fans out on channels at most three times per UTC clock
-           hour, so the swarm's hold count restarts when the hour changes.
+  live     drop each case under inbox/ in the email bucket and invoke the Reader (CDK output ReaderFunctionName) with
+           the event Mail Manager sends it, envelope recipient --receiver-address (an enrolled resident), one at a time,
+           then read the EMAIL#/REQUEST# rows. A live run proves detection on every case; the ask cap
+           (lambda/pidge_reader/handler.py hold_and_ask) means a hold fans out on channels at most three times per UTC
+           clock hour, so the swarm's hold count restarts when the hour changes.
 
 The live run estimates its worst-case spend (every case read on Haiku and escalated on Opus) and refuses before the first
-S3 drop when it exceeds --max-cost-usd. Point live mode at an in-app-only contact, or every hold sends a real card.
+drop when it exceeds --max-cost-usd. Point live mode at an in-app-only contact, or every hold sends a real card.
 
 Usage:
   python scripts/swarm.py --generate --seed 7                 # offline, writes docs/swarm/REPORT-<run_id>.json
@@ -22,6 +23,7 @@ import json
 import sys
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
@@ -50,6 +52,23 @@ INBOX_PREFIX = "inbox/"
 DEFAULT_DELAY_SECONDS = 8
 DEFAULT_WAIT_SECONDS = 90
 DEFAULT_ASKS_PER_HOUR = 3
+READER_FUNCTION_NAME_OUTPUT_NAME = "ReaderFunctionName"
+
+
+@dataclass(frozen=True)
+class LiveMailDrop:
+    """Stands in for Mail Manager in a live run: stores the case under inbox/ (store-raw-email's write), then invokes the Reader
+    asynchronously with the same event shape the rule's InvokeLambda action sends (lambda/pidge_reader/handler.py)."""
+    s3_client: object
+    lambda_client: object
+    reader_function_name: str
+
+    def deliver(self, bucket: str, message_id: str, raw_email: bytes, receiver_address: str) -> None:
+        self.s3_client.put_object(Bucket=bucket, Key=f"{INBOX_PREFIX}{message_id}", Body=raw_email)
+        event = {"Records": [{"eventSource": "aws:ses",
+                              "ses": {"mail": {"messageId": message_id}, "receipt": {"recipients": [receiver_address]}}}]}
+        self.lambda_client.invoke(FunctionName=self.reader_function_name, InvocationType="Event",
+                                  Payload=json.dumps(event).encode())
 
 
 def build_contacts() -> list[Contact]:
@@ -139,7 +158,7 @@ def is_over_budget(case_count: int, arguments) -> bool:
     return True
 
 
-def run_live(cases, s3_client, table, arguments) -> int:
+def run_live(cases, mail_drop: LiveMailDrop, table, arguments) -> int:
     """One cost check, then --repeat live runs; each writes its report, and a repeated run adds the per-axis min/max.
     Returns the worst exit code across the runs."""
     if is_over_budget(len(cases), arguments):
@@ -148,7 +167,7 @@ def run_live(cases, s3_client, table, arguments) -> int:
     exit_codes: list[int] = []
     for repeat_index in range(arguments.repeat):
         print(f"=== live run {repeat_index + 1} of {arguments.repeat} ===", flush=True)
-        runs.append(run_live_once(cases, s3_client, table, arguments))
+        runs.append(run_live_once(cases, mail_drop, table, arguments))
         exit_codes.append(print_headline(runs[-1]))
     if len(runs) > 1:
         saved = swarm_report.write_repeat_report(runs, Path(arguments.out_dir), uuid.uuid4().hex[:6], arguments.seed)
@@ -162,7 +181,7 @@ def holds_counted_for_hour(holds_counted: int, counted_hour_label: str, drop_hou
     return holds_counted if drop_hour_label == counted_hour_label else 0
 
 
-def run_live_once(cases, s3_client, table, arguments) -> list[SwarmResult]:
+def run_live_once(cases, mail_drop: LiveMailDrop, table, arguments) -> list[SwarmResult]:
     """Drop each case, read its decision and write this run's report. The hold count judged against the ask cap is per
     UTC clock hour, starting from --holds-already-this-hour."""
     run_id = uuid.uuid4().hex[:6]
@@ -173,8 +192,9 @@ def run_live_once(cases, s3_client, table, arguments) -> list[SwarmResult]:
         drop_hour_label = current_hour_label()
         holds_so_far = holds_counted_for_hour(holds_so_far, counted_hour_label, drop_hour_label)
         counted_hour_label = drop_hour_label
-        object_key = f"{INBOX_PREFIX}swarm-{run_id}-{index:04d}-{case.template.key}.eml"
-        s3_client.put_object(Bucket=arguments.bucket, Key=object_key, Body=build_case_eml(case))
+        message_id = f"swarm-{run_id}-{index:04d}-{case.template.key}.eml"
+        object_key = f"{INBOX_PREFIX}{message_id}"
+        mail_drop.deliver(arguments.bucket, message_id, build_case_eml(case), arguments.receiver_address)
         result = read_live_result(case, table, object_key, arguments.wait_seconds)
         judge(result, holds_so_far, arguments.asks_per_hour)
         if result.scored_decision is PolicyDecision.HOLD:
@@ -188,11 +208,14 @@ def run_live_once(cases, s3_client, table, arguments) -> list[SwarmResult]:
     return results
 
 
-def open_live_clients(arguments):
+def open_live_clients(arguments) -> tuple[LiveMailDrop, object]:
     import boto3  # only the live run talks to AWS
+    from enrol_resident import read_stack_outputs
 
     session = boto3.Session(region_name=arguments.region)
-    return session.client("s3"), session.resource("dynamodb").Table(arguments.table)
+    reader_function_name = read_stack_outputs(session)[READER_FUNCTION_NAME_OUTPUT_NAME]
+    mail_drop = LiveMailDrop(session.client("s3"), session.client("lambda"), reader_function_name)
+    return mail_drop, session.resource("dynamodb").Table(arguments.table)
 
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
@@ -210,7 +233,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--bucket", help="the email bucket (CDK output EmailBucketName); required for a live run")
     parser.add_argument("--table", default=TABLE_NAME)
     parser.add_argument("--region", default="us-east-1")
-    parser.add_argument("--receiver-address", default="grandma@sendpidge.com", help="the monitored address (To header)")
+    parser.add_argument("--receiver-address", default="grandma@sendpidge.com",
+                        help="the enrolled resident the live run delivers to (the envelope recipient)")
     parser.add_argument("--asks-per-hour", type=int, default=DEFAULT_ASKS_PER_HOUR, help="the deployed ASKS_PER_CONTACT_PER_HOUR")
     parser.add_argument("--holds-already-this-hour", type=int, default=0, help="asks the contact already got this hour")
     parser.add_argument("--delay-seconds", type=int, default=DEFAULT_DELAY_SECONDS)
@@ -229,8 +253,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_dry(cases, arguments)
     if not arguments.bucket:
         raise SystemExit("--bucket is required for a live run (or use --mode dry_run / --generate)")
-    s3_client, table = open_live_clients(arguments)
-    return run_live(cases, s3_client, table, arguments)
+    mail_drop, table = open_live_clients(arguments)
+    return run_live(cases, mail_drop, table, arguments)
 
 
 if __name__ == "__main__":

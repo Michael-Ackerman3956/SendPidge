@@ -5,11 +5,16 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
+
+from enrol_resident import RESIDENT_ADDRESS_LIST_OUTPUT_NAME  # noqa: E402
+
 INFRA_DIRECTORY = REPOSITORY_ROOT / "infra"
 SYNTH_TEST_ENTRY = INFRA_DIRECTORY / "test-entry" / "synth-for-tests.ts"
 TSX_BINARY = INFRA_DIRECTORY / "node_modules" / ".bin" / "tsx"
@@ -114,13 +119,14 @@ ALLOWED_WILDCARD_GRANTS: dict[str, dict[str, frozenset[str]]] = {
     },
 }
 
-# Every Mail Manager rule that stores mail: {rule name: (its one recipient, its S3 prefix)}.
+# Every Mail Manager rule that stores mail: {rule name: (its one recipient or "address-list:<list>", its S3 prefix)}.
 EXPECTED_STORE_RULES = {
     "store-case-reply": ("cases@sendpidge.com", "cases/"),
     "store-ask-reply": ("pidge@sendpidge.com", "asks/"),
     "store-pidge-question": ("pidge@sendpidge.com", "pidge/"),
-    "store-raw-email": ("grandma@sendpidge.com", "inbox/"),
+    "store-raw-email": ("address-list:ResidentAddressList", "inbox/"),
 }
+MAILBOX_RESIDENT_ADDRESS = "grandma@sendpidge.com"  # cdk.json mailboxResidentAddress: enrolled, never named in routing
 
 IDENTITY_POLICY_RESOURCE_TYPES = {"AWS::IAM::Policy", "AWS::IAM::ManagedPolicy"}
 POLICY_DOCUMENT_RESOURCE_TYPES = {"AWS::S3::BucketPolicy", "AWS::SNS::TopicPolicy", "AWS::SQS::QueuePolicy"}
@@ -374,22 +380,68 @@ def test_reader_has_a_dead_letter_queue_and_reserved_concurrency(synthesized_tem
     assert queue_targets, "pidge-reader has no SQS failure destination or dead-letter queue"
 
 
-def test_store_rules_match_only_their_own_recipient(synthesized_template):
-    """Every rule that writes to S3, whatever its name: one RECIPIENT EQUALS condition and the prefix its readers expect."""
-    rule_sets = resources_of_type(synthesized_template, "AWS::SES::MailManagerRuleSet")
+def describe_recipient_condition(condition: dict) -> str | None:
+    """A recipient match as text: the one RECIPIENT EQUALS value, or "address-list:<list logical id>" for a RECIPIENT
+    IS_TRUE address-list match; None for a condition on anything else."""
+    if condition.get("StringExpression", {}).get("Evaluate") == {"Attribute": "RECIPIENT"}:
+        expression = condition["StringExpression"]
+        assert expression["Operator"] == "EQUALS" and len(expression["Values"]) == 1, expression
+        return expression["Values"][0]
+    if "IsInAddressList" in condition.get("BooleanExpression", {}).get("Evaluate", {}):
+        expression = condition["BooleanExpression"]
+        address_list_match = expression["Evaluate"]["IsInAddressList"]
+        assert expression["Operator"] == "IS_TRUE" and address_list_match["Attribute"] == "RECIPIENT", expression
+        [address_list] = address_list_match["AddressLists"]
+        assert address_list["Fn::GetAtt"][1] == "AddressListArn", address_list
+        return "address-list:" + strip_trailing_logical_id_hash(address_list["Fn::GetAtt"][0])
+    return None
+
+
+def the_one_rule_set_rules(template: dict) -> list[dict]:
+    rule_sets = resources_of_type(template, "AWS::SES::MailManagerRuleSet")
     assert len(rule_sets) == 1
+    return next(iter(rule_sets.values()))["Properties"]["Rules"]
+
+
+def test_store_rules_match_only_their_own_recipient(synthesized_template):
+    """Every rule that writes to S3, whatever its name: one recipient condition (one address, or the resident address list)
+    and the prefix its readers expect."""
     stored_by_rule = {}
-    for rule in next(iter(rule_sets.values()))["Properties"]["Rules"]:
+    for rule in the_one_rule_set_rules(synthesized_template):
         write_actions = [action["WriteToS3"] for action in rule["Actions"] if "WriteToS3" in action]
         if not write_actions:
             continue
         assert len(write_actions) == 1, rule["Name"]
-        recipient_conditions = [condition["StringExpression"] for condition in rule.get("Conditions", [])
-                                if condition.get("StringExpression", {}).get("Evaluate") == {"Attribute": "RECIPIENT"}]
-        assert len(recipient_conditions) == 1 and recipient_conditions[0]["Operator"] == "EQUALS", rule["Name"]
-        assert len(recipient_conditions[0]["Values"]) == 1, rule["Name"]
-        stored_by_rule[rule["Name"]] = (recipient_conditions[0]["Values"][0], write_actions[0]["S3Prefix"])
+        recipient_matches = [described for condition in rule.get("Conditions", [])
+                             if (described := describe_recipient_condition(condition)) is not None]
+        assert len(recipient_matches) == 1, rule["Name"]
+        stored_by_rule[rule["Name"]] = (recipient_matches[0], write_actions[0]["S3Prefix"])
     assert stored_by_rule == EXPECTED_STORE_RULES
+
+
+def test_traffic_policy_allows_address_list_denies_rest(synthesized_template):
+    """Ingress accepts the enrolled residents (the address list), cases@ and pidge@, and denies everything else; no resident
+    address is written into the policy or the rules, and the raw email is stored and then handed to the Reader."""
+    [address_list_logical_id] = resources_of_type(synthesized_template, "AWS::SES::MailManagerAddressList")
+    address_list_arn = {"Fn::GetAtt": [address_list_logical_id, "AddressListArn"]}
+    [traffic_policy] = [policy["Properties"] for policy in resources_of_type(synthesized_template, "AWS::SES::MailManagerTrafficPolicy").values()]
+    assert traffic_policy["DefaultAction"] == "DENY"
+    assert traffic_policy["PolicyStatements"] == [
+        {"Action": "ALLOW", "Conditions": [{"BooleanExpression": {
+            "Evaluate": {"IsInAddressList": {"Attribute": "RECIPIENT", "AddressLists": [address_list_arn]}}, "Operator": "IS_TRUE"}}]},
+        {"Action": "ALLOW", "Conditions": [{"StringExpression": {
+            "Evaluate": {"Attribute": "RECIPIENT"}, "Operator": "EQUALS", "Values": ["cases@sendpidge.com", "pidge@sendpidge.com"]}}]},
+    ]
+    rules = the_one_rule_set_rules(synthesized_template)
+    assert MAILBOX_RESIDENT_ADDRESS not in json.dumps(traffic_policy) + json.dumps(rules)
+    assert synthesized_template["Outputs"][RESIDENT_ADDRESS_LIST_OUTPUT_NAME]["Value"] == {
+        "Fn::GetAtt": [address_list_logical_id, "AddressListId"]}
+    reader_logical_id, _reader_function = find_function_by_handler(synthesized_template, "pidge_reader.handler.handle")
+    [store_raw_email] = [rule for rule in rules if rule["Name"] == "store-raw-email"]
+    [write_action, invoke_action] = store_raw_email["Actions"]
+    assert write_action["WriteToS3"]["S3Prefix"] == "inbox/"
+    invoke_lambda = invoke_action["InvokeLambda"]
+    assert (invoke_lambda["FunctionArn"], invoke_lambda["InvocationType"]) == ({"Fn::GetAtt": [reader_logical_id, "Arn"]}, "EVENT")
 
 
 def test_dispatch_failures_reach_a_dead_letter_queue(synthesized_template):

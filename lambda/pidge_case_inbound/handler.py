@@ -1,12 +1,12 @@
-"""S3 cases/ → a bank reply. Matched by the subject token, stored verbatim, shown to Grandma (in-app + Web Push), Jimin nudged. Never the Reader."""
+"""S3 cases/ → a bank reply. Matched by the subject token, stored verbatim, shown to the case's resident (in-app + Web Push),
+the contact nudged. Never the Reader."""
 
 import logging
-import os
 from urllib.parse import unquote_plus
 
 import boto3
 
-from shared import cases, channels, graph, payloads, web_push
+from shared import cases, channels, graph, payloads, profiles, web_push
 from shared.metrics import emit_count_metric
 from shared.auth import authentication_reasons
 from shared.email_parse import parse_eml
@@ -15,10 +15,7 @@ from shared.enums import ActionOutcome, CaseEvent, PushNotice
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
-RECEIVER_NAME = os.environ["RECEIVER_NAME"]
-RECEIVER_ADDRESS = os.environ["RECEIVER_ADDRESS"]
-CONTACT_NUDGE_TEXT = f"{RECEIVER_NAME}'s bank replied about the payment she reported. Pidge is on it."
+CONTACT_NUDGE_TEMPLATE = "{resident_name}'s bank replied about the payment she reported. Pidge is on it."
 REJECTED_METRIC_NAME = "CaseReplyRejected"
 
 s3_client = boto3.client("s3")
@@ -46,10 +43,21 @@ def handle_case_reply_object(bucket_name: str, object_key: str) -> None:
         emit_rejected_metric(result.outcome)
         return
     case_id = graph.case_id_of(result.case_row)
-    channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.BANK_REPLIED))
-    notified_count = web_push.send_notice(RECEIVER_USER_ID, PushNotice.BANK_REPLIED)  # lock-screen notice; fixed text
+    try:
+        resident = profiles.require_receiver_profile(result.case_row["receiverEmail"])
+    except profiles.UnknownReceiverError:  # counted by require_receiver_profile; the REPLY# row stays, nobody is pushed
+        logger.error("bank reply on %s stored; its resident has no profile, pushes skipped", case_id)
+        return
+    push_bank_reply(case_id, result.case_row, resident)
+
+
+def push_bank_reply(case_id: str, case_row: dict, resident: profiles.ReceiverProfile) -> None:
+    """The case's state to the resident's PWA, a lock-screen notice, and a fixed-text nudge to the request's contact."""
+    channels.push_to_user(resident.receiver_user_id, payloads.case_state_message(case_row, graph.list_case_replies(case_id), CaseEvent.BANK_REPLIED))
+    notified_count = web_push.send_notice(resident.receiver_user_id, PushNotice.BANK_REPLIED)  # lock-screen notice; fixed text
     logger.info("bank reply on %s: web push accepted by %d browser(s)", case_id, notified_count)
-    request_row = graph.get_request(result.case_row["requestId"])
-    contact_row = graph.get_contact_row(RECEIVER_ADDRESS, request_row["contactSK"]) if request_row else None
+    request_row = graph.get_request(case_row["requestId"])
+    contact_row = graph.get_contact_row(resident.receiver_address, request_row["contactSK"]) if request_row else None
     if contact_row:
-        channels.push_to_user(contact_row["contactPwaUserId"], payloads.contact_notice_message(CONTACT_NUDGE_TEXT))  # fixed text, never the reply
+        nudge_text = CONTACT_NUDGE_TEMPLATE.format(resident_name=resident.resident_name)
+        channels.push_to_user(contact_row["contactPwaUserId"], payloads.contact_notice_message(nudge_text))  # fixed text, never the reply

@@ -7,16 +7,26 @@ from pathlib import Path
 from shared import graph
 from shared.enums import Channel, Intent
 from shared.reader_agent import EmailVerdict
+from tests.helpers.profiles import seed_resident
 from tests.test_lists import reader_handler  # noqa: F401
 from tests.test_verdict import aws  # noqa: F401
 
 SAMPLE_PATH = Path(__file__).resolve().parent.parent.parent / "samples" / "fake-jimin.eml"
-OBJECT_KEY = "inbox/fake-jimin.eml"
-READER_RECEIVER_ADDRESS = "grandma@sendpidge.example"  # the reader_handler fixture's RECEIVER_ADDRESS
+MESSAGE_ID = "fake-jimin.eml"
+OBJECT_KEY = f"inbox/{MESSAGE_ID}"
+READER_RESIDENT_ADDRESS = "grandma@sendpidge.example"  # the envelope recipient every Reader test's event carries
 
 
-def seed_jimin_for_the_reader() -> None:
-    graph.get_table().put_item(Item={"PK": f"RECEIVER#{READER_RECEIVER_ADDRESS}", "SK": "CONTACT#jimin", "contactName": "Jimin",
+def inbound_event(message_id: str, recipients: list[str]) -> dict:
+    """The event Mail Manager's store-raw-email rule sends pidge-reader (the K0 seam)."""
+    return {"Records": [{"eventSource": "aws:ses",
+                         "ses": {"mail": {"messageId": message_id}, "receipt": {"recipients": recipients}}}]}
+
+
+def seed_grandma_and_jimin_for_the_reader() -> None:
+    """Grandma enrolled as the resident at READER_RESIDENT_ADDRESS, with Jimin in her circle."""
+    seed_resident(READER_RESIDENT_ADDRESS, "grandma", "Grandma")
+    graph.get_table().put_item(Item={"PK": f"RECEIVER#{READER_RESIDENT_ADDRESS}", "SK": "CONTACT#jimin", "contactName": "Jimin",
                                      "contactPwaUserId": "jimin", "knownAddresses": ["jimin@example.com"], "verifiedVia": "seed"})
 
 
@@ -28,12 +38,12 @@ def run_reader_on_the_sample(handler, monkeypatch) -> None:
     async def asked_in_app(*_):
         return [Channel.INAPP]
     monkeypatch.setattr(handler.channels, "ask_on_every_channel", asked_in_app)
-    handler.process_email_object("bucket", OBJECT_KEY)
+    handler.handle(inbound_event(MESSAGE_ID, [READER_RESIDENT_ADDRESS]), None)
 
 
 def test_the_reading_push_precedes_the_verdict_push_and_carries_no_body(reader_handler, monkeypatch):  # noqa: F811
     handler, pushed = reader_handler
-    seed_jimin_for_the_reader()
+    seed_grandma_and_jimin_for_the_reader()
     run_reader_on_the_sample(handler, monkeypatch)
     assert [email["state"] for email in pushed] == [None, "hold"]
     assert pushed[0]["textBody"] == "" and pushed[0]["links"] == [] and pushed[0]["emailId"] == OBJECT_KEY
@@ -42,7 +52,7 @@ def test_the_reading_push_precedes_the_verdict_push_and_carries_no_body(reader_h
 
 def test_a_failed_reading_push_is_counted_and_the_verdict_still_goes_out(reader_handler, monkeypatch):  # noqa: F811
     handler, pushed = reader_handler
-    seed_jimin_for_the_reader()
+    seed_grandma_and_jimin_for_the_reader()
     counted = []
     monkeypatch.setattr(handler, "emit_count_metric", lambda metric_name, *_: counted.append(metric_name))
     original_push = handler.channels.push_to_user
@@ -57,7 +67,7 @@ def test_a_failed_reading_push_is_counted_and_the_verdict_still_goes_out(reader_
 
 def test_a_retry_runs_an_email_the_crashed_reader_claimed_but_a_fresh_duplicate_is_refused(reader_handler, monkeypatch):  # noqa: F811
     handler, pushed = reader_handler
-    seed_jimin_for_the_reader()
+    seed_grandma_and_jimin_for_the_reader()
     now = datetime.now(timezone.utc)
     assert graph.claim_email(OBJECT_KEY, {"s3Key": OBJECT_KEY, "receivedAt": "2026-10-27T06:00:00Z"})
     run_reader_on_the_sample(handler, monkeypatch)  # the duplicate arrives seconds after the claim: another run holds it

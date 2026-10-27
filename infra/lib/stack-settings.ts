@@ -2,11 +2,10 @@ import { Stack } from "aws-cdk-lib";
 
 // Everything the stack reads from cdk.json context and the git-ignored ../.env (via bin/sendpidge.ts), validated once.
 export interface StackSettings {
-  receiverAddress: string;
   receiverDomain: string;
+  // The one resident bound to receiverMailbox (emailed questions, the mailed recovery pack); "" when none.
+  mailboxResidentAddress: string;
   readerModel: string;
-  receiverUserId: string;
-  receiverName: string;
   receiptSender: string;
   sendingDomain: string;
   casesAddress: string;
@@ -47,11 +46,10 @@ export interface StackSettings {
 const MAXIMUM_CALL_REMINDER_DELAY_SECONDS = 82800;
 
 export function readStackSettings(stack: Stack): StackSettings {
-  const receiverAddress: string = stack.node.getContext("receiverAddress");
+  const receiverDomain: string = stack.node.getContext("receiverDomain");
   const readerModel: string = stack.node.getContext("readerModel");
   const receiptSender: string = stack.node.getContext("receiptSender");
   const sendingDomain = receiptSender.split("@")[1];
-  const receiverDomain = receiverAddress.split("@")[1];
   // Personal mailboxes come from the git-ignored ../.env (bin/sendpidge.ts), never from an address on our own domain.
   // The SIMULATED bank; empty → Send to my bank is refused.
   const mockBankMailbox: string = stack.node.tryGetContext("mockBankMailbox") ?? "";
@@ -77,12 +75,14 @@ export function readStackSettings(stack: Stack): StackSettings {
   if (chatEnabled && !receiverMailbox.includes("@")) {
     throw new Error("chatEnabled needs RECEIVER_MAILBOX in ../.env (Grandma's real mailbox for pidge@)");
   }
+  const mailboxResidentAddress = readMailboxResidentAddress(stack, receiverDomain);
+  if ((chatEnabled || receiverMailbox !== "") && mailboxResidentAddress === "") {
+    throw new Error("chatEnabled or RECEIVER_MAILBOX needs mailboxResidentAddress: the resident that mailbox belongs to");
+  }
   return {
-    receiverAddress,
     receiverDomain,
+    mailboxResidentAddress,
     readerModel,
-    receiverUserId: stack.node.getContext("receiverUserId"),
-    receiverName: stack.node.getContext("receiverName"),
     receiptSender,
     sendingDomain,
     casesAddress: `cases@${receiverDomain}`,
@@ -124,6 +124,15 @@ export function readStackSettings(stack: Stack): StackSettings {
     // The Web Push signing key (raw P-256, base64url), created once by scripts/create_vapid_key.py; never in context or code.
     vapidSecretName: stack.node.tryGetContext("vapidSecretName") ?? "sendpidge/vapid-private-key",
   };
+}
+
+// The mailbox resident's address, lower-cased; absent reads as "". Throws when it is set but not on receiverDomain.
+function readMailboxResidentAddress(stack: Stack, receiverDomain: string): string {
+  const mailboxResidentAddress = readOptionalTextContext(stack, "mailboxResidentAddress").toLowerCase();
+  if (mailboxResidentAddress !== "" && !mailboxResidentAddress.endsWith(`@${receiverDomain}`)) {
+    throw new Error(`mailboxResidentAddress must be an address @${receiverDomain}`);
+  }
+  return mailboxResidentAddress;
 }
 
 // An optional text context key: absent reads as "" (the feature it configures then reports itself off), never a guess.

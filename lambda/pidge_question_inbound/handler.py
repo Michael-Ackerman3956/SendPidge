@@ -1,5 +1,6 @@
-"""S3 pidge/ → Grandma's question by email. Only a mail from her real mailbox with aligned DKIM becomes a CHAT# row;
-pidge-dispatch answers it from the stream. Everything else is dropped, logged and counted. No Bedrock here."""
+"""S3 pidge/ → the mailbox resident's question by email. Only a mail from her real mailbox (RECEIVER_MAILBOX) with aligned
+DKIM becomes a CHAT# row under the user id of RECEIVER#<MAILBOX_RESIDENT_ADDRESS>/PROFILE; pidge-dispatch answers it from
+the stream. Everything else is dropped, logged and counted. No Bedrock here."""
 
 import logging
 import os
@@ -7,14 +8,14 @@ from urllib.parse import unquote_plus
 
 import boto3
 
-from shared import chat_email
+from shared import chat_email, profiles
 from shared.metrics import emit_count_metric
 from shared.enums import EmailedQuestionOutcome
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
+MAILBOX_RESIDENT_ADDRESS = os.environ["MAILBOX_RESIDENT_ADDRESS"]  # the one resident bound to RECEIVER_MAILBOX
 RECEIVER_MAILBOX = os.environ["RECEIVER_MAILBOX"]
 DROPPED_METRIC_NAME = "EmailedQuestionDropped"
 
@@ -31,10 +32,12 @@ def emit_dropped_metric(outcome: EmailedQuestionOutcome) -> None:
 
 
 def handle_question_object(bucket_name: str, object_key: str) -> None:
+    """The mailbox resident is resolved first; no profile raises (UnknownReceiverError) before anything is read or written."""
+    resident = profiles.require_receiver_profile(MAILBOX_RESIDENT_ADDRESS)
     raw_email = s3_client.get_object(Bucket=bucket_name, Key=object_key)["Body"].read()
-    outcome = chat_email.accept_emailed_question(raw_email, RECEIVER_MAILBOX, RECEIVER_USER_ID)
+    outcome = chat_email.accept_emailed_question(raw_email, RECEIVER_MAILBOX, resident.receiver_user_id)
     if outcome is not EmailedQuestionOutcome.ACCEPTED:
         logger.warning("emailed question %s dropped: %s", object_key, outcome)
         emit_dropped_metric(outcome)
         return
-    logger.info("emailed question %s stored for %s", object_key, RECEIVER_USER_ID)
+    logger.info("emailed question %s stored for %s", object_key, resident.receiver_user_id)

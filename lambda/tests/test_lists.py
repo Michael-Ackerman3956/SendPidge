@@ -143,8 +143,8 @@ def reader_handler(aws, monkeypatch):  # noqa: F811
     """pidge_reader.handler with the Reader never called and every push recorded; the table is moto's."""
     import importlib
 
-    for name, value in {"RECEIVER_ADDRESS": "grandma@sendpidge.example", "RECEIVER_USER_ID": "grandma", "RECEIVER_NAME": "Grandma",
-                        "READER_MODEL": "haiku-4.5", "ESCALATION_MODEL": "opus-4.5", "ASKS_PER_CONTACT_PER_HOUR": "3"}.items():
+    for name, value in {"EMAIL_BUCKET": "bucket", "READER_MODEL": "haiku-4.5", "ESCALATION_MODEL": "opus-4.5",
+                        "ASKS_PER_CONTACT_PER_HOUR": "3"}.items():
         monkeypatch.setenv(name, value)
     handler = importlib.import_module("pidge_reader.handler")
     importlib.reload(handler)
@@ -160,9 +160,13 @@ def held_outcome(contact):
 
 def test_a_capped_ask_is_stored_as_the_same_warn_the_receiver_saw(reader_handler, monkeypatch):
     """A reload must show the calm banner, not a countdown for an ask nobody received."""
+    from shared.profiles import require_receiver_profile
+    from tests.helpers.profiles import seed_resident
     from tests.test_verdict import EMAIL_ID, VERDICT_FIELDS, seed_contact
 
+    resident_address = "grandma@example.com"  # the resident seed_contact files Jimin under
     handler, pushed = reader_handler
+    seed_resident(resident_address, "grandma", "Grandma")
     contact = seed_contact()
     email_row = {"s3Key": EMAIL_ID, "senderName": "Jimin", "senderAddress": "x@y.example", "subject": "Hi", "receivedAt": "2026-10-25T00:00:00Z",
                  "textBody": "Send money", "quarantined": False}
@@ -172,7 +176,7 @@ def test_a_capped_ask_is_stored_as_the_same_warn_the_receiver_saw(reader_handler
     asked = []
     monkeypatch.setattr(handler.channels, "ask_on_every_channel", lambda *_: asked.append(True))
     verdict = EmailVerdict(**VERDICT_FIELDS)
-    handler.hold_and_ask(EMAIL_ID, email_row, verdict, held_outcome(contact), None)
+    handler.hold_and_ask(require_receiver_profile(resident_address), EMAIL_ID, email_row, verdict, held_outcome(contact), None)
 
     assert asked == []
     stored = graph.get_email(EMAIL_ID)

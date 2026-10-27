@@ -12,7 +12,7 @@ from shared.enums import Channel, EscalationDecision, Friction, GateFired, Inten
 from shared.escalation import EscalationVerdict
 from shared.reader_agent import EmailVerdict
 from tests.helpers.scripted_model import ScriptedModel, ScriptedStep, text_reply_step, verdict_step
-from tests.test_reader_reading_state import READER_RECEIVER_ADDRESS, seed_jimin_for_the_reader
+from tests.test_reader_reading_state import READER_RESIDENT_ADDRESS, inbound_event, seed_grandma_and_jimin_for_the_reader
 from tests.test_verdict import aws  # noqa: F401
 
 SAMPLES_DIRECTORY = Path(__file__).resolve().parent.parent.parent / "samples"
@@ -66,8 +66,7 @@ class LoadedReaderHandler:
 
 def load_reader_handler(monkeypatch, is_escalation_enabled: bool) -> LoadedReaderHandler:
     """pidge_reader.handler re-imported under the test environment; pushes and asks recorded, the table is moto's."""
-    environment = {"RECEIVER_ADDRESS": READER_RECEIVER_ADDRESS, "RECEIVER_USER_ID": "grandma", "RECEIVER_NAME": "Grandma",
-                   "READER_MODEL": "haiku-4.5", "ESCALATION_MODEL": "opus-4.5", "ASKS_PER_CONTACT_PER_HOUR": "3",
+    environment = {"EMAIL_BUCKET": "bucket", "READER_MODEL": "haiku-4.5", "ESCALATION_MODEL": "opus-4.5", "ASKS_PER_CONTACT_PER_HOUR": "3",
                    "ESCALATION_ENABLED": "true" if is_escalation_enabled else "false", "RETRY_SCHEDULER_ENABLED": "false"}
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
@@ -94,10 +93,10 @@ def run_sample(loaded: LoadedReaderHandler, monkeypatch, sample_file_name: str) 
     raw_email = (SAMPLES_DIRECTORY / sample_file_name).read_bytes()
     object_key = f"inbox/{sample_file_name}"
     def get_sample_object(Bucket, Key):
-        assert Key == object_key
+        assert (Bucket, Key) == ("bucket", object_key)
         return {"Body": type("Body", (), {"read": lambda self: raw_email})()}
     monkeypatch.setattr(loaded.handler.s3_client, "get_object", get_sample_object)
-    loaded.handler.process_email_object("bucket", object_key)
+    loaded.handler.handle(inbound_event(sample_file_name, [READER_RESIDENT_ADDRESS]), None)
     return object_key
 
 
@@ -136,7 +135,7 @@ def assert_sample_reached_its_golden(loaded: LoadedReaderHandler, object_key: st
 
 
 def test_each_sample_reaches_its_golden_rows_through_the_real_loop(aws, monkeypatch):  # noqa: F811
-    seed_jimin_for_the_reader()
+    seed_grandma_and_jimin_for_the_reader()
     loaded = load_reader_handler(monkeypatch, is_escalation_enabled=False)
     scripted_reader_model = ScriptedModel(EmailVerdict, reader_scripts_for(FIVE_SAMPLE_GOLDENS))
     loaded.handler.reader.model = scripted_reader_model
@@ -154,7 +153,7 @@ def test_each_sample_reaches_its_golden_rows_through_the_real_loop(aws, monkeypa
 
 
 def test_text_instead_of_the_verdict_tool_twice_is_warn_unreadable_never_pass(aws, monkeypatch):  # noqa: F811
-    seed_jimin_for_the_reader()
+    seed_grandma_and_jimin_for_the_reader()
     loaded = load_reader_handler(monkeypatch, is_escalation_enabled=False)
     scripted_reader_model = ScriptedModel(EmailVerdict, {
         FAMILY_HELLO.subject_fragment: [text_reply_step(NOT_A_VERDICT_REPLY), text_reply_step(NOT_A_VERDICT_REPLY)],
@@ -172,7 +171,7 @@ def test_text_instead_of_the_verdict_tool_twice_is_warn_unreadable_never_pass(aw
 
 
 def test_reader_and_reviewer_have_no_tools(aws, monkeypatch):  # noqa: F811
-    seed_jimin_for_the_reader()
+    seed_grandma_and_jimin_for_the_reader()
     loaded = load_reader_handler(monkeypatch, is_escalation_enabled=True)
     reader, reviewer = loaded.handler.reader, loaded.handler.escalation_reader
     assert (reader.tool_names, reviewer.tool_names) == ([], [])
@@ -186,7 +185,7 @@ def test_reader_and_reviewer_have_no_tools(aws, monkeypatch):  # noqa: F811
 
 
 def test_escalation_warn_on_claimed_jimin_clears_to_warn_but_never_gate_1(aws, monkeypatch):  # noqa: F811
-    seed_jimin_for_the_reader()
+    seed_grandma_and_jimin_for_the_reader()
     loaded = load_reader_handler(monkeypatch, is_escalation_enabled=True)
     loaded.handler.reader.model = ScriptedModel(EmailVerdict, reader_scripts_for((CLAIMED_JIMIN, FAKE_JIMIN)))
     scripted_reviewer_model = ScriptedModel(EscalationVerdict, {

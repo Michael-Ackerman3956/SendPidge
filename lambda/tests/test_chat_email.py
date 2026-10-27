@@ -8,8 +8,9 @@ from botocore.stub import Stubber
 
 from shared import chat, chat_email
 from shared.enums import ChatVia, EmailedQuestionOutcome, GuardrailOutcome
+from tests.helpers.profiles import seed_resident
 from tests.test_chat import chat_on, message_rows  # noqa: F401
-from tests.test_verdict import RECEIVER_USER_ID, aws  # noqa: F401
+from tests.test_verdict import RECEIVER_ADDRESS, RECEIVER_USER_ID, aws  # noqa: F401
 
 RECEIVER_MAILBOX = "grandma.real@family.example"
 PIDGE_ADDRESS = "pidge@sendpidge.example"
@@ -65,7 +66,8 @@ def test_the_hourly_cap_and_the_chat_flag_also_drop_emailed_questions(aws, monke
 
 
 def test_an_emailed_question_is_answered_by_mail_to_her_mailbox_only(chat_on, monkeypatch):  # noqa: F811
-    monkeypatch.setenv("RECEIVER_USER_ID", RECEIVER_USER_ID)
+    seed_resident(RECEIVER_ADDRESS, RECEIVER_USER_ID, "Grandma")
+    monkeypatch.setenv("MAILBOX_RESIDENT_ADDRESS", RECEIVER_ADDRESS)
     monkeypatch.setenv("CASE_AGENT_RUNTIME", "lambda")
     monkeypatch.setenv("CASE_AGENT_MODEL", "haiku-4.5")
     dispatch = importlib.import_module("pidge_dispatch.handler")

@@ -1,9 +1,10 @@
 """DynamoDB Streams → the case agent. A final REQUEST# status (denied, confirmed, reversed_no, timeout), a new CASE# row
-or a closed one becomes one case note pushed to Grandma;
-a new question row under CHAT# becomes one Pidge reply (guardrail first), pushed to her or, for a question she
-emailed to pidge@, mailed back to her real mailbox."""
+or a closed one becomes one case note pushed to the resident named by the row's receiverEmail (RECEIVER#/PROFILE);
+a new question row under CHAT# becomes one Pidge reply (guardrail first), pushed to the asker or, for a question the
+mailbox resident (MAILBOX_RESIDENT_ADDRESS) emailed to pidge@, mailed back to her real mailbox."""
 
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -12,7 +13,7 @@ import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.config import Config
 
-from shared import case_agent, channels, chat, chat_agent, chat_email, graph, payloads, recovery_drafts
+from shared import case_agent, channels, chat, chat_agent, chat_email, graph, payloads, profiles, recovery_drafts
 from shared.enums import (
     FINAL_REQUEST_STATES, AgentInvocationKind, CaseAgentRuntime, CaseState, CaseTrigger, ChatVia, GuardrailOutcome,
     ReaderModelChoice,
@@ -25,7 +26,6 @@ PACK_MAIL_FAILED_METRIC_NAME = "PackMailFailed"  # the recovery pack could not b
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
 CASE_AGENT_RUNTIME = CaseAgentRuntime(os.environ["CASE_AGENT_RUNTIME"])
 CASE_AGENT_MODEL = ReaderModelChoice(os.environ["CASE_AGENT_MODEL"])
 CASE_AGENT_RUNTIME_ARN = os.environ.get("CASE_AGENT_RUNTIME_ARN", "")
@@ -56,21 +56,23 @@ def handle(event, context):
         if question_key is not None:
             answer_and_push_question(*question_key)
             continue
-        scope = scope_for_record(record)
-        if scope is None:
+        note_target = scope_for_record(record)
+        if note_target is None:
             continue
+        scope, resident = note_target
         if case_agent.has_note_for(scope):
             logger.info("note for %s %s already written", scope.request_id, scope.trigger)
             continue
-        write_and_push_note(scope)
+        write_and_push_note(scope, resident)
 
 
 def deserialize(image: dict | None) -> dict:
     return {key: deserializer.deserialize(value) for key, value in (image or {}).items()}
 
 
-def scope_for_record(record: dict) -> case_agent.CaseScope | None:
-    """A REQUEST# META reaching a final state, a CASE# META insert or a CASE# META turning closed wakes the agent."""
+def scope_for_record(record: dict) -> tuple[case_agent.CaseScope, profiles.ReceiverProfile] | None:
+    """A REQUEST# META reaching a final state, a CASE# META insert or a CASE# META turning closed wakes the agent. The scope's
+    user id is the resident of the row's receiverEmail; a missing field or profile raises (stream retry, bisect, DLQ)."""
     keys = deserialize(record["dynamodb"].get("Keys"))
     new_image = deserialize(record["dynamodb"].get("NewImage"))
     old_image = deserialize(record["dynamodb"].get("OldImage"))
@@ -80,17 +82,25 @@ def scope_for_record(record: dict) -> case_agent.CaseScope | None:
         new_status, old_status = new_image.get("status"), old_image.get("status")
         if new_status not in NOTE_WORTHY_STATES or new_status == old_status:
             return None
-        return case_agent.CaseScope(RECEIVER_USER_ID, graph.request_id_of(keys), CaseTrigger.VERDICT)
-    if keys["PK"].startswith("CASE#") and record["eventName"] == "INSERT":
-        return case_agent.CaseScope(RECEIVER_USER_ID, new_image["requestId"], CaseTrigger.CASE, graph.case_id_of(keys))
-    if keys["PK"].startswith("CASE#") and new_image.get("status") == CaseState.CLOSED and old_image.get("status") != CaseState.CLOSED:
-        return case_agent.CaseScope(RECEIVER_USER_ID, new_image["requestId"], CaseTrigger.CASE_CLOSED, graph.case_id_of(keys))
-    return None
+        request_id, trigger, case_id = graph.request_id_of(keys), CaseTrigger.VERDICT, None
+    elif keys["PK"].startswith("CASE#") and record["eventName"] == "INSERT":
+        request_id, trigger, case_id = new_image["requestId"], CaseTrigger.CASE, graph.case_id_of(keys)
+    elif keys["PK"].startswith("CASE#") and new_image.get("status") == CaseState.CLOSED and old_image.get("status") != CaseState.CLOSED:
+        request_id, trigger, case_id = new_image["requestId"], CaseTrigger.CASE_CLOSED, graph.case_id_of(keys)
+    else:
+        return None
+    resident = profiles.require_receiver_profile(new_image["receiverEmail"])
+    return case_agent.CaseScope(resident.receiver_user_id, request_id, trigger, case_id), resident
 
 
-def write_and_push_note(scope: case_agent.CaseScope) -> None:
-    """Runs the agent, stores the note, mails a recovery pack, tells Grandma's PWA. A note the output gate refuses is
-    stored as case_agent.CASE_NOTE_REFUSED_TEXT, with its pack mailed and the push sent. A failed run (AgentRunError,
+def mailbox_resident_address() -> str:
+    """The one resident bound to RECEIVER_MAILBOX ("" when the deployment has none), read per call."""
+    return profiles.normalize_receiver_address(os.environ["MAILBOX_RESIDENT_ADDRESS"])
+
+
+def write_and_push_note(scope: case_agent.CaseScope, resident: profiles.ReceiverProfile) -> None:
+    """Runs the agent, stores the note, mails a recovery pack (mailbox resident only), tells the resident's PWA. A note the
+    output gate refuses is stored as case_agent.CASE_NOTE_REFUSED_TEXT, with its pack mailed and the push sent. A failed run (AgentRunError,
     an AgentCore error) writes nothing and raises: the stream retries it, then sends it to DispatchDeadLetterQueue."""
     if CASE_AGENT_RUNTIME is CaseAgentRuntime.LAMBDA:
         agent = case_agent.build_case_agent(CASE_AGENT_MODEL, scope)
@@ -99,14 +109,18 @@ def write_and_push_note(scope: case_agent.CaseScope) -> None:
         note = invoke_case_agent_on_agentcore(scope)
     note_row = case_agent.store_case_note(scope, note)
     if note_row.get("recoveryPack"):
-        note_row = mail_recovery_pack(note_row)
+        note_row = mail_recovery_pack(note_row, resident)
     delivered_count = channels.push_to_user(scope.receiver_user_id, payloads.case_note_message(note_row))
     logger.info("case note for %s (%s) stored; pushed to %d connection(s)", scope.request_id, scope.trigger, delivered_count)
 
 
-def mail_recovery_pack(note_row: dict) -> dict:
-    """The pack goes to her own mailbox (the only SES recipient this role may use); a refused send is logged, the note
+def mail_recovery_pack(note_row: dict, resident: profiles.ReceiverProfile) -> dict:
+    """The pack goes to her own mailbox (the only SES recipient this role may use), and only when the note's resident is the
+    mailbox resident; any other resident's pack stays in-app on the unstamped NOTE# row. A refused send is logged, the note
     still reaches the app, and the row stays unstamped so the screen does not claim a copy was sent."""
+    if resident.receiver_address != mailbox_resident_address():
+        logger.info("recovery pack for %s stays in-app: its resident is not the mailbox resident", note_row["PK"])
+        return note_row
     if not RECEIVER_MAILBOX:
         logger.warning("RECEIVER_MAILBOX is not set; recovery pack for %s not mailed", note_row["PK"])
         return note_row
@@ -173,8 +187,12 @@ def get_ses_client():
 def answer_and_push_question(user_id: str, sort_key: str) -> None:
     """One question → one stored reply → mailed back (emailed question) or pushed to the asker's open sockets.
 
-    A redelivered question is skipped.
+    A redelivered question is skipped. An emailed question under any user id but the mailbox resident's raises before the
+    agent runs.
     """
+    pending_question_row = chat.get_message(user_id, sort_key)
+    if pending_question_row is not None and ChatVia(pending_question_row["via"]) is ChatVia.EMAIL:
+        require_mailbox_resident(user_id)
     reply_row = chat.answer_question(user_id, sort_key, check_question_with_guardrail, ask_chat_agent)
     if reply_row is None:
         logger.info("question %s for %s already answered", sort_key, user_id)
@@ -186,6 +204,13 @@ def answer_and_push_question(user_id: str, sort_key: str) -> None:
         return
     delivered_count = channels.push_to_user(user_id, chat.pidge_reply_message_for_row(reply_row))
     logger.info("reply to %s for %s stored; pushed to %d connection(s)", sort_key, user_id, delivered_count)
+
+
+def require_mailbox_resident(user_id: str) -> None:
+    """Raises unless user_id is the receiverUserId of RECEIVER#<MAILBOX_RESIDENT_ADDRESS>/PROFILE (constant-time compare)."""
+    mailbox_resident = profiles.require_receiver_profile(mailbox_resident_address())
+    if not hmac.compare_digest(mailbox_resident.receiver_user_id.encode(), user_id.encode()):
+        raise RuntimeError("an emailed question under a user id that is not the mailbox resident's")
 
 
 def chat_session_id(user_id: str) -> str:

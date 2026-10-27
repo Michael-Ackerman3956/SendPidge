@@ -1,13 +1,16 @@
-"""S3 email → Reader (no tools) → policy in code → hold and ask, or warn, or pass."""
+"""Mail Manager invokes this per accepted email (stored under inbox/<messageId>): the envelope recipient → the enrolled
+resident → Reader (no tools) → policy in code → hold and ask, or warn, or pass."""
 
 import asyncio
 import logging
 import os
-from dataclasses import replace
+import re
+import time
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
-from urllib.parse import unquote_plus
 
 import boto3
+from botocore.exceptions import ClientError
 
 from shared import channels, graph, hourly_counters, lists, payloads, schedules
 from shared.metrics import emit_count_metric
@@ -20,6 +23,9 @@ from shared.policy import (
     EscalationAnswer, EscalationFailure, PolicyOutcome, ReaderFailure, apply_escalation, decide, needs_escalation,
     verdict_fields_for_request,
 )
+from shared.profiles import (
+    UNKNOWN_RECEIVER_METRIC_NAME, ReceiverProfile, UnknownReceiverError, normalize_receiver_address, require_receiver_profile,
+)
 from shared.reader_agent import EmailVerdict, build_reader, read_email
 from shared.sanitize import sanitize_summary
 
@@ -29,9 +35,12 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 TEXT_BODY_MAX_CHARACTERS = 20_000
-RECEIVER_ADDRESS = os.environ["RECEIVER_ADDRESS"]  # the one monitored address, never To/Cc
-RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
-RECEIVER_NAME = os.environ["RECEIVER_NAME"]
+EMAIL_BUCKET = os.environ["EMAIL_BUCKET"]
+INBOX_PREFIX = "inbox/"  # Mail Manager's store-raw-email rule writes here (infra/lib/mail-ingress.ts INBOX_PREFIX)
+SES_EVENT_SOURCE = "aws:ses"
+MESSAGE_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,200}")  # used with fullmatch; "." and ".." are refused separately
+RAW_EMAIL_FETCH_RETRY_DELAYS_SECONDS = (1, 2, 4)  # the S3 write may land after the invoke; a later miss raises
+NO_SUCH_KEY_ERROR_CODE = "NoSuchKey"
 ESCALATION_ENABLED = os.environ.get("ESCALATION_ENABLED") == "true"
 RETRY_SCHEDULER_ENABLED = os.environ.get("RETRY_SCHEDULER_ENABLED") == "true"
 RETRY_FUNCTION_ARN = os.environ.get("RETRY_FUNCTION_ARN", "")
@@ -43,23 +52,74 @@ escalation_reader = build_escalation_reader(ReaderModelChoice(os.environ["ESCALA
 list_store = lists.DynamoListStore()
 
 
+@dataclass(frozen=True)
+class InboundDelivery:
+    bucket_name: str
+    object_key: str  # inbox/<messageId>, also the EMAIL# id
+    receiver_address: str  # the envelope recipient, normalized; never To/Cc or model output
+
+
 def handle(event, context):
-    for record in event["Records"]:
-        process_email_object(record["s3"]["bucket"]["name"], unquote_plus(record["s3"]["object"]["key"]))
+    delivery = resolve_inbound_delivery(event)
+    if delivery is None:
+        return
+    process_inbound_delivery(delivery)
 
 
-def process_email_object(bucket_name: str, object_key: str) -> None:
-    raw_email = s3_client.get_object(Bucket=bucket_name, Key=object_key)["Body"].read()
+def resolve_inbound_delivery(event) -> InboundDelivery | None:
+    """The only code that reads the invoke event: one SES record, its messageId and its one envelope recipient. A malformed
+    event raises (retried, then the dead-letter queue); a recipient count other than one counts UnknownReceiver and is
+    dropped. Never reads mail.destination, commonHeaders or headers."""
+    [record] = event["Records"]
+    if record["eventSource"] != SES_EVENT_SOURCE:
+        raise ValueError("not an SES record")
+    message_id = record["ses"]["mail"]["messageId"]
+    if not isinstance(message_id, str) or not MESSAGE_ID_PATTERN.fullmatch(message_id) or message_id in (".", ".."):
+        raise ValueError("messageId is not a safe object name")
+    recipients = record["ses"]["receipt"]["recipients"]
+    if not isinstance(recipients, list) or len(recipients) != 1 or not isinstance(recipients[0], str):
+        emit_count_metric(UNKNOWN_RECEIVER_METRIC_NAME)
+        logger.warning("message %s does not have exactly one envelope recipient; dropped, nothing written", message_id)
+        return None
+    return InboundDelivery(EMAIL_BUCKET, INBOX_PREFIX + message_id, normalize_receiver_address(recipients[0]))
+
+
+def process_inbound_delivery(delivery: InboundDelivery) -> None:
+    """The resident first: an address with no complete RECEIVER# profile is dropped (counted by require_receiver_profile)
+    before the email is fetched or any row is written."""
+    try:
+        receiver = require_receiver_profile(delivery.receiver_address)
+    except UnknownReceiverError:
+        logger.warning("no enrolled resident for %s; dropped, nothing written", delivery.object_key)
+        return
+    raw_email = fetch_raw_email(delivery.bucket_name, delivery.object_key)
+    process_email(receiver, delivery.object_key, raw_email)
+
+
+def fetch_raw_email(bucket_name: str, object_key: str) -> bytes:
+    """Retries a missing object after 1, 2 and 4 s; still missing, or any other error, raises."""
+    for delay_seconds in RAW_EMAIL_FETCH_RETRY_DELAYS_SECONDS:
+        try:
+            return s3_client.get_object(Bucket=bucket_name, Key=object_key)["Body"].read()
+        except ClientError as error:
+            if error.response["Error"]["Code"] != NO_SUCH_KEY_ERROR_CODE:
+                raise
+            logger.info("%s not stored yet; retrying in %d s", object_key, delay_seconds)
+            time.sleep(delay_seconds)
+    return s3_client.get_object(Bucket=bucket_name, Key=object_key)["Body"].read()
+
+
+def process_email(receiver: ReceiverProfile, object_key: str, raw_email: bytes) -> None:
     parsed_email = parse_eml(raw_email)
-    contacts = graph.list_contacts(RECEIVER_ADDRESS)  # one query per email; every name match below reads this list
+    contacts = graph.list_contacts(receiver.receiver_address)  # one query per email; every name match below reads this list
     link_assessments = link_checks.assess_links(parsed_email.links, graph.domains_of(contacts))
-    email_row = build_email_row(object_key, parsed_email, link_assessments)
+    email_row = build_email_row(receiver, object_key, parsed_email, link_assessments)
     if not graph.claim_email(object_key, email_row):
         if not graph.reclaim_abandoned_email(object_key, datetime.now(timezone.utc)):
             logger.info("duplicate event for %s; already processed or still running", object_key)
             return
         logger.warning("email %s was claimed but never decided; this retry runs it again", object_key)
-    push_email_reading(email_row)
+    push_email_reading(receiver, email_row)
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
     reasons.extend(link_checks.link_reasons(link_assessments, parsed_email))
     reasons.extend(lists.sender_reasons_or_lookup_failure(
@@ -74,12 +134,12 @@ def process_email_object(bucket_name: str, object_key: str) -> None:
         outcome, escalation = review_hold(capped_email, outcome, reasons, reader_outcome, contacts)
     logger.info("email %s → %s %s %s", object_key, outcome.decision, outcome.warn_reason, list(outcome.reasons))
     if outcome.decision is PolicyDecision.HOLD:
-        hold_and_ask(object_key, email_row, reader_outcome, outcome, escalation)
+        hold_and_ask(receiver, object_key, email_row, reader_outcome, outcome, escalation)
     else:
         graph.record_email_outcome(object_key, outcome.decision, outcome.warn_reason, outcome.reasons, None)
         if escalation is not None:
             graph.record_email_escalation(object_key, escalation_fields(escalation))
-        push_email_state(email_row, outcome, request_row=None, contact_name=None)
+        push_email_state(receiver, email_row, outcome, request_row=None, contact_name=None)
 
 
 def read_and_look_up_claimed_contact(
@@ -116,41 +176,42 @@ def review_hold(
 
 
 def hold_and_ask(
-    email_id: str, email_row: dict, reader_outcome: EmailVerdict | ReaderFailure, outcome: PolicyOutcome,
-    escalation: EscalationVerdict | EscalationFailure | None,
+    receiver: ReceiverProfile, email_id: str, email_row: dict, reader_outcome: EmailVerdict | ReaderFailure,
+    outcome: PolicyOutcome, escalation: EscalationVerdict | EscalationFailure | None,
 ) -> None:
-    """The hold reaches Grandma before any channel is tried, so a failed channel never undoes it."""
+    """The hold reaches the resident before any channel is tried, so a failed channel never undoes it."""
     contact = outcome.contact
     summary = "" if isinstance(reader_outcome, ReaderFailure) else sanitize_summary(reader_outcome.summary)
     verdict_fields = verdict_fields_for_request(reader_outcome, summary)
     request_row = graph.create_request(
-        email_id, RECEIVER_ADDRESS, contact, verdict_fields, outcome.friction,
+        email_id, receiver.receiver_address, contact, verdict_fields, outcome.friction,
         escalation_fields(escalation) if escalation is not None else None,
     )
     request_id = graph.request_id_of(request_row)
     graph.record_email_outcome(email_id, outcome.decision, None, outcome.reasons, request_id)
-    push_email_state(email_row, outcome, request_row, contact.contact_name)
+    push_email_state(receiver, email_row, outcome, request_row, contact.contact_name)
     if not hourly_counters.take_ask_slot(contact.contact_key, ASKS_PER_CONTACT_PER_HOUR):
         # The hold stays; no channel is tried and no re-ask is booked, so a flood of asks never reaches the contact.
         logger.info("ask cap reached for %s; %s held without an ask", contact.contact_key, request_id)
         graph.record_ask_capped(request_id)
-        keep_held_with_warning(email_id, email_row, request_row, outcome, WarnReason.ASK_CAPPED, contact.contact_name)
+        keep_held_with_warning(receiver, email_id, email_row, request_row, outcome, WarnReason.ASK_CAPPED, contact.contact_name)
         return
-    channels_sent = asyncio.run(channels.ask_on_every_channel(request_row, contact, RECEIVER_NAME))
+    channels_sent = asyncio.run(channels.ask_on_every_channel(request_row, contact, receiver.resident_name))
     graph.record_channels_sent(request_id, channels_sent)
     if not channels_sent:
-        keep_held_with_warning(email_id, email_row, request_row, outcome, WarnReason.UNREACHABLE, contact.contact_name)
+        keep_held_with_warning(receiver, email_id, email_row, request_row, outcome, WarnReason.UNREACHABLE, contact.contact_name)
     schedule_re_ask(request_id)
 
 
 def keep_held_with_warning(
-    email_id: str, email_row: dict, request_row: dict, outcome: PolicyOutcome, warn_reason: WarnReason, contact_name: str,
+    receiver: ReceiverProfile, email_id: str, email_row: dict, request_row: dict, outcome: PolicyOutcome,
+    warn_reason: WarnReason, contact_name: str,
 ) -> None:
     """The request stays pending and the email held, but the EMAIL# row and the receiver both get the WARN, so a reload
     shows the same calm banner as the live push instead of a countdown for an ask that never went out. Never a release."""
     warned = PolicyOutcome(PolicyDecision.WARN, warn_reason, outcome.reasons)
     graph.record_email_outcome(email_id, warned.decision, warned.warn_reason, warned.reasons, graph.request_id_of(request_row))
-    push_email_state(email_row, warned, request_row, contact_name)
+    push_email_state(receiver, email_row, warned, request_row, contact_name)
 
 
 def schedule_re_ask(request_id: str) -> None:
@@ -164,7 +225,9 @@ def schedule_re_ask(request_id: str) -> None:
         logger.exception("re-ask schedule for %s failed; the hold stays without a retry", request_id)
 
 
-def build_email_row(object_key: str, parsed_email: ParsedEmail, link_assessments: list[link_checks.LinkAssessment]) -> dict:
+def build_email_row(
+    receiver: ReceiverProfile, object_key: str, parsed_email: ParsedEmail, link_assessments: list[link_checks.LinkAssessment],
+) -> dict:
     received_at = graph.now_timestamp()
     return {
         "s3Key": object_key,
@@ -176,17 +239,17 @@ def build_email_row(object_key: str, parsed_email: ParsedEmail, link_assessments
         "imageCount": parsed_email.image_count,  # tracking pixels included; counted, never a reason on its own (D7)
         "visibleHtmlCharacters": parsed_email.visible_html_characters,
         "receivedAt": received_at,
-        "receiverEmail": RECEIVER_ADDRESS,
+        "receiverEmail": receiver.receiver_address,
         "quarantined": False,
-        graph.USER_INDEX_PARTITION_KEY: graph.user_index_partition(RECEIVER_USER_ID, graph.EMAIL_ROW_KIND),
+        graph.USER_INDEX_PARTITION_KEY: graph.user_index_partition(receiver.receiver_user_id, graph.EMAIL_ROW_KIND),
         graph.USER_INDEX_SORT_KEY: received_at,
     }
 
 
-def push_email_reading(email_row: dict) -> None:
-    """"Pidge is reading…" on Grandma's screen while the Reader runs; a failed push is logged and never delays the verdict."""
+def push_email_reading(receiver: ReceiverProfile, email_row: dict) -> None:
+    """"Pidge is reading…" on the resident's screen while the Reader runs; a failed push is logged and never delays the verdict."""
     try:
-        delivered_count = channels.push_to_user(RECEIVER_USER_ID, payloads.email_reading_message(email_row))
+        delivered_count = channels.push_to_user(receiver.receiver_user_id, payloads.email_reading_message(email_row))
         logger.info("pushed reading state to %d receiver connection(s)", delivered_count)
     except Exception:
         logger.exception("reading push for %s failed; the verdict push follows", email_row["s3Key"])
@@ -194,7 +257,7 @@ def push_email_reading(email_row: dict) -> None:
 
 
 def push_email_state(
-    email_row: dict, outcome: PolicyOutcome, request_row: dict | None, contact_name: str | None
+    receiver: ReceiverProfile, email_row: dict, outcome: PolicyOutcome, request_row: dict | None, contact_name: str | None
 ) -> None:
     decided_row = {
         **email_row,
@@ -204,5 +267,5 @@ def push_email_state(
     }
     status = RequestState(request_row["status"]) if request_row else None
     message = payloads.email_state_message(decided_row, request_row, contact_name, status)
-    delivered_count = channels.push_to_user(RECEIVER_USER_ID, message)
+    delivered_count = channels.push_to_user(receiver.receiver_user_id, message)
     logger.info("pushed %s state to %d receiver connection(s)", outcome.decision, delivered_count)

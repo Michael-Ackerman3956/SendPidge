@@ -20,8 +20,6 @@ export function buildRetryFunction(stack: Stack, settings: StackSettings, shared
     timeout: Duration.seconds(30),
     environment: {
       TABLE_NAME: shared.table.tableName,
-      RECEIVER_USER_ID: settings.receiverUserId,
-      RECEIVER_NAME: settings.receiverName,
       RE_ASK_DELAY_SECONDS: String(settings.reAskDelaySeconds),
       WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,
       SCHEDULE_GROUP_NAME: shared.scheduleGroup.scheduleGroupName,
@@ -59,7 +57,6 @@ export function buildCaseFollowUpFunction(stack: Stack, settings: StackSettings,
     timeout: Duration.seconds(15),
     environment: {
       TABLE_NAME: shared.table.tableName,
-      RECEIVER_USER_ID: settings.receiverUserId,
       RECEIPT_SENDER: settings.receiptSender,
       CASES_ADDRESS: settings.casesAddress,
       WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,
@@ -118,8 +115,6 @@ export function buildReleaseFunction(stack: Stack, settings: StackSettings, shar
     timeout: Duration.seconds(15),
     environment: {
       TABLE_NAME: shared.table.tableName,
-      RECEIVER_USER_ID: settings.receiverUserId,
-      RECEIVER_NAME: settings.receiverName,
       RECEIPT_SENDER: settings.receiptSender,
       WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,
     },
@@ -139,7 +134,6 @@ export function buildCallReminderFunction(stack: Stack, settings: StackSettings,
     timeout: Duration.seconds(15),
     environment: {
       TABLE_NAME: shared.table.tableName,
-      RECEIVER_NAME: settings.receiverName,
       WHATSAPP_PHONE_NUMBER_ID: settings.whatsappPhoneNumberId,
       WHATSAPP_META_API_VERSION: settings.whatsappMetaApiVersion,
     },
@@ -166,8 +160,6 @@ export function buildAskLinkFunction(stack: Stack, settings: StackSettings, shar
     timeout: Duration.seconds(10),
     environment: {
       TABLE_NAME: shared.table.tableName,
-      RECEIVER_USER_ID: settings.receiverUserId,
-      RECEIVER_NAME: settings.receiverName,
       RECEIPT_SENDER: settings.receiptSender,
       WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,
       ASK_LINK_SECRET_NAME: askLinkSecret.secretName,
@@ -189,9 +181,6 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
     timeout: Duration.seconds(15),
     environment: {
       TABLE_NAME: shared.table.tableName,
-      RECEIVER_ADDRESS: settings.receiverAddress,
-      RECEIVER_USER_ID: settings.receiverUserId,
-      RECEIVER_NAME: settings.receiverName,
       EMAIL_BUCKET: shared.emailBucket.bucketName,
       RECEIPT_SENDER: settings.receiptSender,
       WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,

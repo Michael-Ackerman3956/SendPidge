@@ -137,7 +137,7 @@ def test_an_agent_reply_with_a_phone_number_is_refused_and_never_stored(chat_on,
     scripted_model = ScriptedModel(chat_agent.ChatReply, {question: [
         tool_call_step("list_my_held_emails", {}), verdict_step({"reply_text": "Call Jimin at 010-1234-5678 today."})]})
     monkeypatch.setattr(chat_agent, "build_bedrock_model", lambda _model_choice: scripted_model)
-    for name, value in {"RECEIVER_USER_ID": RECEIVER_USER_ID, "CASE_AGENT_RUNTIME": "lambda", "CASE_AGENT_MODEL": "haiku-4.5"}.items():
+    for name, value in {"CASE_AGENT_RUNTIME": "lambda", "CASE_AGENT_MODEL": "haiku-4.5"}.items():
         monkeypatch.setenv(name, value)
     dispatch = importlib.import_module("pidge_dispatch.handler")  # its ask_chat_agent builds the production chat agent
     reply_row = chat.answer_question(RECEIVER_USER_ID, question_row["SK"], lambda _: GuardrailOutcome.PASSED, dispatch.ask_chat_agent)

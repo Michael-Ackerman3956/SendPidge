@@ -6,7 +6,7 @@ import { EventType } from "aws-cdk-lib/aws-s3";
 import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
 import { ISecret } from "aws-cdk-lib/aws-secretsmanager";
 import { Queue } from "aws-cdk-lib/aws-sqs";
-import { CASES_PREFIX, INBOX_PREFIX, PIDGE_QUESTION_PREFIX } from "./mail-ingress.js";
+import { CASES_PREFIX, PIDGE_QUESTION_PREFIX } from "./mail-ingress.js";
 import {
   BEDROCK_INVOKE_ACTIONS, buildPythonFunction, buildSendEmailStatement, claudeModelResourceArns, grantRcsSendIfConfigured,
   grantWhatsAppSendIfConfigured,
@@ -15,7 +15,7 @@ import { SharedResources } from "./realtime.js";
 import { StackSettings, flagEnvironmentValue } from "./stack-settings.js";
 
 // A bank reply under cases/: matched by token, stored verbatim, shown to Grandma (in-app + Web Push), Jimin nudged. Never the Reader.
-export function buildCaseInboundFunction(stack: Stack, settings: StackSettings, shared: SharedResources, vapidSecret: ISecret): Function {
+export function buildCaseInboundFunction(stack: Stack, shared: SharedResources, vapidSecret: ISecret): Function {
   const caseInboundFunction = buildPythonFunction(stack, "CaseInbound", shared.lambdaCode, {
     handler: "pidge_case_inbound.handler.handle",
     memorySize: 512,
@@ -23,9 +23,6 @@ export function buildCaseInboundFunction(stack: Stack, settings: StackSettings, 
     layers: [shared.dependencyLayer],  // pywebpush for the lock-screen notice
     environment: {
       TABLE_NAME: shared.table.tableName,
-      RECEIVER_USER_ID: settings.receiverUserId,
-      RECEIVER_NAME: settings.receiverName,
-      RECEIVER_ADDRESS: settings.receiverAddress,
       WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,
       VAPID_SECRET_NAME: vapidSecret.secretName,
     },
@@ -46,8 +43,8 @@ export function buildQuestionInboundFunction(stack: Stack, settings: StackSettin
     timeout: Duration.seconds(15),
     environment: {
       TABLE_NAME: shared.table.tableName,
-      RECEIVER_USER_ID: settings.receiverUserId,
       RECEIVER_MAILBOX: settings.receiverMailbox,
+      MAILBOX_RESIDENT_ADDRESS: settings.mailboxResidentAddress,
       CHAT_ENABLED: flagEnvironmentValue(settings.chatEnabled),
     },
   });
@@ -57,7 +54,8 @@ export function buildQuestionInboundFunction(stack: Stack, settings: StackSettin
   return questionInboundFunction;
 }
 
-// pidge-reader on every new object under inbox/: the Reader agent, the policy, the hold and the first ask.
+// pidge-reader, invoked by Mail Manager (mail-ingress.ts store-raw-email) once per email to an enrolled resident: the Reader
+// agent, the policy, the hold and the first ask.
 export function buildReaderFunction(
   stack: Stack, settings: StackSettings, shared: SharedResources, retryFunction: Function, askLinkSecret: ISecret,
 ): { readerFunction: Function; readerDeadLetterQueue: Queue } {
@@ -85,9 +83,7 @@ export function buildReaderFunction(
       RETRY_FUNCTION_ARN: retryFunction.functionArn,
       SCHEDULE_GROUP_NAME: shared.scheduleGroup.scheduleGroupName,
       SCHEDULER_ROLE_ARN: shared.schedulerRole.roleArn,
-      RECEIVER_ADDRESS: settings.receiverAddress,
-      RECEIVER_USER_ID: settings.receiverUserId,
-      RECEIVER_NAME: settings.receiverName,
+      EMAIL_BUCKET: shared.emailBucket.bucketName,
       WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,
       RCS_ENABLED: flagEnvironmentValue(settings.rcsEnabled),
       RCS_AGENT_ID: settings.rcsAgentId,
@@ -110,9 +106,6 @@ export function buildReaderFunction(
   shared.schedulerRole.grantPassRole(readerFunction.grantPrincipal);
   shared.webSocketStage.grantManagementApiAccess(readerFunction);
   readerFunction.addToRolePolicy(new PolicyStatement({ actions: BEDROCK_INVOKE_ACTIONS, resources: claudeModelResourceArns(stack) }));
-  shared.emailBucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(readerFunction), {
-    prefix: INBOX_PREFIX,
-  });
   grantRcsSendIfConfigured(readerFunction, settings.rcsAgentArn);
   grantWhatsAppSendIfConfigured(readerFunction, settings.whatsappPhoneNumberArn);
   return { readerFunction, readerDeadLetterQueue };

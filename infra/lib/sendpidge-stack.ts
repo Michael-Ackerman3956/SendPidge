@@ -1,7 +1,7 @@
 import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from "aws-cdk-lib";
 import { AllowedMethods, CachePolicy, OriginRequestPolicy, ResponseHeadersPolicy, ViewerProtocolPolicy } from "aws-cdk-lib/aws-cloudfront";
 import { FunctionUrlOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
-import { Alarm, ComparisonOperator, TreatMissingData } from "aws-cdk-lib/aws-cloudwatch";
+import { Alarm, ComparisonOperator, Metric, Stats, TreatMissingData } from "aws-cdk-lib/aws-cloudwatch";
 import { AttributeType, BillingMode, StreamViewType, Table } from "aws-cdk-lib/aws-dynamodb";
 import { Architecture, Code, LayerVersion, Runtime } from "aws-cdk-lib/aws-lambda";
 import { Source } from "aws-cdk-lib/aws-s3-deployment";
@@ -10,7 +10,7 @@ import { EmailIdentity, Identity } from "aws-cdk-lib/aws-ses";
 import { Construct } from "constructs";
 import { buildCaseAgent, buildChatGuardrail, buildDispatchFunction } from "./case-agent.js";
 import { buildCaseInboundFunction, buildQuestionInboundFunction, buildReaderFunction } from "./inbound-functions.js";
-import { buildMailIngress } from "./mail-ingress.js";
+import { buildEmailStore, buildInboundRouting } from "./mail-ingress.js";
 import { SharedResources, buildScheduler, buildWebSocketApi } from "./realtime.js";
 import { readStackSettings } from "./stack-settings.js";
 import { buildStaticSite } from "./static-site.js";
@@ -22,9 +22,13 @@ import {
 const LAMBDA_SOURCE_DIRECTORY = "../lambda";
 // The "No, that wasn't me" link in the ask by email lives under the PWA domain (lambda/shared/ask_link.py LINK_PATH_PREFIX).
 const ASK_LINK_PATH_PATTERN = "/no/*";
+// lambda/shared/metrics.py METRIC_NAMESPACE and lambda/shared/profiles.py UNKNOWN_RECEIVER_METRIC_NAME (EMF on stdout, no dimension).
+const LAMBDA_METRIC_NAMESPACE = "SendPidge";
+const UNKNOWN_RECEIVER_METRIC_NAME = "UnknownReceiver";
 
 // CDK stack: the declaration of every AWS resource SendPidge deploys (`cdk deploy` turns this into CloudFormation).
-// The whole SendPidge deployment, in the order the mail flows: ingress → table → the Lambdas → the case agent → outputs.
+// The whole SendPidge deployment: table → email store → the Lambdas → the Mail Manager ingress (it names the Reader) → the case
+// agent → alarms and outputs.
 // Each piece is built by a plain function in its own file with this stack as the construct scope, so construct ids
 // (and therefore CloudFormation logical ids) stay where they were when this was one file.
 export class SendPidgeStack extends Stack {
@@ -57,7 +61,8 @@ export class SendPidgeStack extends Stack {
       sortKey: { name: "userIndexSK", type: AttributeType.STRING },
     });
 
-    const { emailBucket, ingressPoint, residentAddressList } = buildMailIngress(this, settings);
+    const emailStore = buildEmailStore(this);
+    const { emailBucket, residentAddressList } = emailStore;
 
     const dependencyLayer = new LayerVersion(this, "DependencyLayer", {
       code: Code.fromAsset("build/layer"),
@@ -80,9 +85,11 @@ export class SendPidgeStack extends Stack {
     const retryFunction = buildRetryFunction(this, settings, shared, askLinkSecret);
     const caseFollowUpFunction = buildCaseFollowUpFunction(this, settings, shared);
     const vapidSecret = Secret.fromSecretNameV2(this, "VapidPrivateKey", settings.vapidSecretName);
-    buildCaseInboundFunction(this, settings, shared, vapidSecret);
+    buildCaseInboundFunction(this, shared, vapidSecret);
     buildQuestionInboundFunction(this, settings, shared);
-    const { readerDeadLetterQueue } = buildReaderFunction(this, settings, shared, retryFunction, askLinkSecret);
+    const { readerFunction, readerDeadLetterQueue } = buildReaderFunction(this, settings, shared, retryFunction, askLinkSecret);
+    // The rule set names the Reader's ARN, so the ingress is built after it (construct ids unchanged: no replacement, MX holds).
+    const ingressPoint = buildInboundRouting(this, settings, emailStore, readerFunction);
     const topics = buildInboundTopics(this);
     const releaseFunction = buildReleaseFunction(this, settings, shared);
     // pidge_call_reminder is call-nudge wave 2 and not written yet, so the function exists only once the nudge is switched on.
@@ -109,6 +116,16 @@ export class SendPidgeStack extends Stack {
       comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: TreatMissingData.NOT_BREACHING,
     });
+    new Alarm(this, "UnknownReceiverAlarm", {
+      alarmDescription: "mail or an action named an address with no complete RECEIVER# profile; it was dropped or refused",
+      metric: new Metric({
+        namespace: LAMBDA_METRIC_NAMESPACE, metricName: UNKNOWN_RECEIVER_METRIC_NAME, statistic: Stats.SUM, period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
+    });
 
     new CfnOutput(this, "EmailBucketName", { value: emailBucket.bucketName });
     new CfnOutput(this, "TableName", { value: table.tableName });
@@ -118,6 +135,8 @@ export class SendPidgeStack extends Stack {
       description: `Create an MX record for the receiver's domain pointing at this host`,
     });
     new CfnOutput(this, "ResidentAddressListId", { value: residentAddressList.attrAddressListId });
+    // scripts/swarm.py live mode invokes the Reader by this name after each drop (Mail Manager does it in production).
+    new CfnOutput(this, "ReaderFunctionName", { value: readerFunction.functionName });
     new CfnOutput(this, "RcsInboundTopicArn", { value: topics.rcsInboundTopic.topicArn });
     new CfnOutput(this, "CaseAgentRuntimeArn", { value: caseAgent.caseAgentRuntime.agentRuntimeArn });
     new CfnOutput(this, "CaseAgentMemoryId", { value: caseAgent.caseAgentMemory.memoryId });

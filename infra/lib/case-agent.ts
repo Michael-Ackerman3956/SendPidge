@@ -113,7 +113,7 @@ function buildDispatchDeadLetterQueue(stack: Stack): Queue {
 }
 
 // pidge-dispatch wakes on the table stream and asks the case agent (on AgentCore, or in-process in lambda mode)
-// for the note, then writes the NOTE# row and pushes it to Grandma.
+// for the note, then writes the NOTE# row and pushes it to the resident named by the row's receiverEmail.
 export function buildDispatchFunction(
   stack: Stack, settings: StackSettings, shared: SharedResources, caseAgent: CaseAgent, guardrail: ChatGuardrail, vapidSecret: ISecret,
 ): Function {
@@ -124,7 +124,6 @@ export function buildDispatchFunction(
     timeout: Duration.seconds(90),
     environment: {
       TABLE_NAME: shared.table.tableName,
-      RECEIVER_USER_ID: settings.receiverUserId,
       CASE_AGENT_RUNTIME: settings.caseAgentRuntimeMode,
       CASE_AGENT_MODEL: settings.caseAgentModel,
       CASE_AGENT_RUNTIME_ARN: caseAgent.caseAgentRuntime.agentRuntimeArn,
@@ -133,6 +132,7 @@ export function buildDispatchFunction(
       CHAT_GUARDRAIL_ID: guardrail.chatGuardrail.attrGuardrailId,
       CHAT_GUARDRAIL_VERSION: guardrail.chatGuardrailVersion.attrVersion,
       RECEIVER_MAILBOX: settings.receiverMailbox,
+      MAILBOX_RESIDENT_ADDRESS: settings.mailboxResidentAddress,
       RECEIPT_SENDER: settings.receiptSender,
       VAPID_SECRET_NAME: vapidSecret.secretName,
     },
