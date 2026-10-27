@@ -51,6 +51,7 @@ LIVE_TABLE_NAME = "sendpidge"
 EVAL_TABLE_NAME = "sendpidge-eval"
 EVAL_ENVIRONMENT = {"TABLE_NAME": EVAL_TABLE_NAME, "AWS_DEFAULT_REGION": "us-east-1"}
 JUDGE_MODEL_CHOICE = ReaderModelChoice.OPUS_4_5  # the only Opus this account can call (enums.py)
+JUDGE_MAX_OUTPUT_TOKENS = 2000
 REPORT_DIRECTORY = REPOSITORY_ROOT / "docs" / "evals"
 LATEST_REPORT_FILE_NAME = "latest.json"
 CALIBRATION_ANSWER_COUNT = 8
@@ -135,7 +136,11 @@ class CalibrationGrade:
 
 
 def build_judge_agent() -> Agent:
-    return Agent(model=build_bedrock_model(JUDGE_MODEL_CHOICE), tools=[], system_prompt=JUDGE_PROMPT, callback_handler=None)
+    """The judge on Opus with a larger output cap: it reasons in text before its JudgeVerdict call, and the agents' 400-token
+    cap cut that call off mid-JSON (MaxTokensReachedException)."""
+    judge_model = build_bedrock_model(JUDGE_MODEL_CHOICE)
+    judge_model.update_config(max_tokens=JUDGE_MAX_OUTPUT_TOKENS)
+    return Agent(model=judge_model, tools=[], system_prompt=JUDGE_PROMPT, callback_handler=None)
 
 
 def production_agent_factories(case_agent_model: ReaderModelChoice) -> EvalAgentFactories:
