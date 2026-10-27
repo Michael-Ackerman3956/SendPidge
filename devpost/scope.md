@@ -95,7 +95,7 @@ Demo framing (ruled 2026-10-25, option a): the video's title card and narration 
 ## Later
 - Multiple trusted contacts and disambiguation when no name is given
 - SMS and messenger inbound, not just email
-- Onboarding the trust circle (consent flow) as a product surface
+- Onboarding the trust circle (consent flow) as a product surface — 2026-10-27: the Add-someone form and WhatsApp-reply verification were built (checklist slice 10c); consent wording and removal stay later
 - Institution impersonation ("fake police", "fake bank") as the known party
 - B2B version: supplier PO fraud, fake insurance claims, CEO wire requests
 - Call nudge (2026-10-25, roadmap 1, in the Oct 28 build): after Jimin's WhatsApp Yes or No tap, Pidge replies inside the 24-hour window with two reply buttons, "I'll call today" / "Tomorrow"; a tap shows "Jimin will call you today" on Grandma's screen (WebSocket + Web Push), schedules one WhatsApp reminder (EventBridge Scheduler) and the case agent notes it. Own hourly cap per contact, fails closed; an offer failure never touches the verdict. In-app and RCS taps get no offer (no open window). Flag `callNudgeEnabled`

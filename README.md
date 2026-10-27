@@ -50,7 +50,7 @@ Context flags live in `infra/cdk.json` (`chatEnabled`, `asksPerContactPerHour`, 
 - Plain SMS is not built: it needs an origination number in AWS End User Messaging SMS.
 - RCS is a stub: the send path, the two-way SNS topic and the reply parser are in the code behind `rcsEnabled: false`, but we had no US number to receive the sandbox agent (a Korean SIM cannot), so the card was never tested end to end on a phone. The inbound parser is covered by pytest only.
 - The bank in the recovery flow is simulated: "Send to my bank" emails a mailbox we control.
-- Onboarding's code step is a demo: the contact's reply is played by a labelled button, and the server (`contactVerificationMock`) marks the seeded contact verified without sending anything.
+- Adding someone to the circle is real: the form writes a pending contact with a one-time code, Grandma sends the note from her own phone, and the contact proves the number by replying with the code to Pidge on WhatsApp (`PIDGE_WHATSAPP_NUMBER` in `.env`). With `contactVerificationMock` on, a labelled button can play that reply instead; nothing is sent by it.
 - The SMS and app-notification rows in Grandma's inbox are static mock rows; only email comes in today.
 
 ## Prior work

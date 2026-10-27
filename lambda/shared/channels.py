@@ -11,7 +11,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from shared import ask_link, email_ask, graph, payloads, rcs, verdict, whatsapp
-from shared.enums import Channel, RequestState
+from shared.enums import ActionOutcome, Channel, PushMessageType, RequestState
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +169,11 @@ def announce_recorded_answer(result: verdict.ActionResult, receiver_user_id: str
         verdict.send_receipt(ses_client, receipt_sender, result.contact_row, result.status, receiver_name)
     except Exception:
         logger.exception("receipt for %s failed", graph.request_id_of(result.request_row))
+
+
+def reject_action(connection_id: str, request_id: str | None, outcome: ActionOutcome) -> None:
+    """The action_rejected reply to one client action; every ActionOutcome but RECORDED goes back this way."""
+    push_to_connection(connection_id, {"type": PushMessageType.ACTION_REJECTED, "requestId": request_id, "reason": outcome})
 
 
 def push_to_connection(connection_id: str, message: dict) -> None:

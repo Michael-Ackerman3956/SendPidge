@@ -10,6 +10,8 @@ export const PUSH_MESSAGE_TYPE = Object.freeze({
   CASE_STATE: "case_state",
   CONTACT_NOTICE: "contact_notice",
   PIDGE_REPLY: "pidge_reply",
+  CONTACT_ADDED: "contact_added",
+  CIRCLE_STATE: "circle_state",
 });
 
 export const CLIENT_ACTION = Object.freeze({
@@ -23,6 +25,7 @@ export const CLIENT_ACTION = Object.freeze({
   CLOSE_CASE: "close_case",
   SAVE_PUSH_SUBSCRIPTION: "save_push_subscription",
   ASK_PIDGE: "ask_pidge",
+  ADD_CONTACT: "add_contact",
   VERIFY_CONTACT: "verify_contact",
 });
 
@@ -36,8 +39,34 @@ export const CHAT_ROLE = Object.freeze({
 });
 
 export const VERIFIED_VIA = Object.freeze({
+  PENDING: "pending",
   SEED: "seed",
   MOCK: "mock",
+  WHATSAPP: "whatsapp",
+});
+
+export const RELATIONSHIP = Object.freeze({
+  SON: "son",
+  DAUGHTER: "daughter",
+  GRANDSON: "grandson",
+  GRANDDAUGHTER: "granddaughter",
+  SPOUSE: "spouse",
+  SIBLING: "sibling",
+  FRIEND: "friend",
+  CARER: "carer",
+  OTHER: "other",
+});
+
+export const RELATIONSHIP_LABELS = Object.freeze({
+  [RELATIONSHIP.SON]: "Son",
+  [RELATIONSHIP.DAUGHTER]: "Daughter",
+  [RELATIONSHIP.GRANDSON]: "Grandson",
+  [RELATIONSHIP.GRANDDAUGHTER]: "Granddaughter",
+  [RELATIONSHIP.SPOUSE]: "Spouse",
+  [RELATIONSHIP.SIBLING]: "Sibling",
+  [RELATIONSHIP.FRIEND]: "Friend",
+  [RELATIONSHIP.CARER]: "Carer",
+  [RELATIONSHIP.OTHER]: "Other",
 });
 
 export const CASES_TAB = Object.freeze({ OPEN: "open", CLOSED: "closed", NOTES: "notes" });
@@ -104,6 +133,8 @@ export const ACTION_REJECTED_REASON = Object.freeze({
   NOT_APPLIED: "not_applied",
   NOT_ALLOWED: "not_allowed",
   BAD_MESSAGE: "bad_message",
+  DUPLICATE_NAME: "duplicate_name",
+  CIRCLE_FULL: "circle_full",
 });
 
 export const POLICY_DECISION = Object.freeze({

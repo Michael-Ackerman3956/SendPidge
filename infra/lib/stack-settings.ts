@@ -36,6 +36,7 @@ export interface StackSettings {
   chatEnabled: boolean;
   chatGuardrailEnabled: boolean;
   contactVerificationMock: boolean;
+  whatsappDisplayNumber: string;
   callNudgeEnabled: boolean;
   callNudgesPerContactPerHour: number;
   callReminderTodayDelaySeconds: number;
@@ -111,8 +112,11 @@ export function readStackSettings(stack: Stack): StackSettings {
     receiverMailbox,
     chatEnabled,
     chatGuardrailEnabled: stack.node.tryGetContext("chatGuardrailEnabled") === true,
-    // Onboarding's contact code step: only a mock code exists until a real channel carries it (pidge-verdict only).
+    // Add someone: with the mock on, Grandma's own PWA may play the contact's code reply (labelled demo, pidge-verdict only).
     contactVerificationMock: stack.node.tryGetContext("contactVerificationMock") === true,
+    // Pidge's own WhatsApp number in E.164 (PIDGE_WHATSAPP_NUMBER in ../.env via bin/sendpidge.ts), for the wa.me reply line in
+    // the note; "" → only the demo can verify a new contact.
+    whatsappDisplayNumber: readOptionalTextContext(stack, "whatsappDisplayNumber"),
     callNudgeEnabled: stack.node.tryGetContext("callNudgeEnabled") === true,
     callNudgesPerContactPerHour: Number(stack.node.tryGetContext("callNudgesPerContactPerHour") ?? 1),
     callReminderTodayDelaySeconds,
@@ -120,6 +124,12 @@ export function readStackSettings(stack: Stack): StackSettings {
     // The Web Push signing key (raw P-256, base64url), created once by scripts/create_vapid_key.py; never in context or code.
     vapidSecretName: stack.node.tryGetContext("vapidSecretName") ?? "sendpidge/vapid-private-key",
   };
+}
+
+// An optional text context key: absent reads as "" (the feature it configures then reports itself off), never a guess.
+function readOptionalTextContext(stack: Stack, contextKey: string): string {
+  const value: unknown = stack.node.tryGetContext(contextKey);
+  return typeof value === "string" ? value : "";
 }
 
 // Lambda environment values are strings; every feature flag crosses as "true" / "false".

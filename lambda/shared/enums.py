@@ -174,10 +174,11 @@ class RcsInboundMessageType(StrEnum):
 
 
 class WhatsAppInboundMessageType(StrEnum):
-    """The `type` of an inbound WhatsApp message: a quick-reply tap on our template, or a reply-button tap."""
+    """The `type` of an inbound WhatsApp message: a quick-reply tap on our template, a reply-button tap, or typed text."""
 
     BUTTON = "button"
     INTERACTIVE = "interactive"  # a reply-button tap on a non-template interactive message (the call offer)
+    TEXT = "text"                # typed text: only a pending contact's verification code is read from it
 
 
 class WhatsAppInteractiveType(StrEnum):
@@ -236,6 +237,8 @@ class PushMessageType(StrEnum):
     CASE_STATE = "case_state"                # to the receiver: a case changed (sent, bank replied, reminded, closed)
     CONTACT_NOTICE = "contact_notice"        # to the contact: one fixed sentence (the bank replied to the receiver's case)
     PIDGE_REPLY = "pidge_reply"              # to the receiver: Pidge's answer to her question, or a refusal
+    CONTACT_ADDED = "contact_added"          # to the receiver's own socket once: the new circle entry, the note to send and its code
+    CIRCLE_STATE = "circle_state"            # to the receiver: the circle changed (someone added or verified)
 
 
 class ClientAction(StrEnum):
@@ -251,7 +254,8 @@ class ClientAction(StrEnum):
     CLOSE_CASE = "close_case"          # the receiver: "Done" → the case is closed
     SAVE_PUSH_SUBSCRIPTION = "save_push_subscription"  # either user: this browser may get Web Push notifications
     ASK_PIDGE = "ask_pidge"                            # the receiver: a question typed in the Pidge chat window
-    VERIFY_CONTACT = "verify_contact"                  # the receiver: onboarding's code step; mock mode only for Oct 28
+    ADD_CONTACT = "add_contact"                        # the receiver: the Add-someone form → a pending CONTACT# row
+    VERIFY_CONTACT = "verify_contact"                  # the receiver: plays the contact's code reply (CONTACT_VERIFICATION_MOCK only)
 
 
 class PushNotice(StrEnum):
@@ -263,10 +267,26 @@ class PushNotice(StrEnum):
 
 
 class VerifiedVia(StrEnum):
-    """How a CONTACT# row was verified. Mirrored in pwa/js/constants.js; rcs/inapp code verification is later."""
+    """Whether and how a CONTACT# row was verified. Mirrored in pwa/js/constants.js. A PENDING contact is never asked."""
 
-    SEED = "seed"  # written by scripts/seed_graph.py
-    MOCK = "mock"  # onboarding's code step with CONTACT_VERIFICATION_MOCK on (no real channel carries the code yet)
+    PENDING = "pending"    # added from the app; the code has not come back from the contact's own number yet
+    SEED = "seed"          # written by scripts/seed_graph.py
+    MOCK = "mock"          # the receiver's own PWA played the reply with CONTACT_VERIFICATION_MOCK on (labelled demo)
+    WHATSAPP = "whatsapp"  # the code arrived as a WhatsApp text from the row's contactWhatsApp number
+
+
+class Relationship(StrEnum):
+    """Who the contact is to the receiver, as shown on the circle row. Mirrored in pwa/js/constants.js."""
+
+    SON = "son"
+    DAUGHTER = "daughter"
+    GRANDSON = "grandson"
+    GRANDDAUGHTER = "granddaughter"
+    SPOUSE = "spouse"
+    SIBLING = "sibling"
+    FRIEND = "friend"
+    CARER = "carer"
+    OTHER = "other"
 
 
 class ChatRole(StrEnum):
@@ -330,6 +350,8 @@ class ActionOutcome(StrEnum):
     NOT_APPLIED = "not_applied"    # duplicate, redelivered, or a Yes after the hold or after a No
     NOT_ALLOWED = "not_allowed"    # this user may not do this action
     BAD_MESSAGE = "bad_message"    # unparseable or missing fields
+    DUPLICATE_NAME = "duplicate_name"  # add_contact: the circle already has that name (asks are matched by name)
+    CIRCLE_FULL = "circle_full"        # add_contact: the circle has CIRCLE_MAXIMUM_SIZE people
 
 
 class CaseState(StrEnum):

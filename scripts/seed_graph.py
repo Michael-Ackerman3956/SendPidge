@@ -8,7 +8,6 @@ Usage: AWS_PROFILE=sendpidge [JIMIN_CONTACT_EMAIL=...] [JIMIN_KNOWN_ADDRESSES=a@
 
 import json
 import os
-import secrets
 import sys
 from pathlib import Path
 
@@ -17,7 +16,8 @@ import boto3
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "lambda"))
 
-from shared.graph import METADATA_SORT_KEY, hash_access_token  # noqa: E402
+from shared import circle  # noqa: E402
+from shared.graph import METADATA_SORT_KEY  # noqa: E402
 
 TABLE_NAME = "sendpidge"
 TOKENS_FILE = REPOSITORY_ROOT / ".env.tokens"
@@ -26,7 +26,6 @@ RECEIVER_ADDRESS = CDK_CONTEXT["receiverAddress"]
 RECEIVER_USER_ID = CDK_CONTEXT["receiverUserId"]
 CONTACT_USER_ID = "jimin"
 CONTACT_NAME = "Jimin"
-PROFILE_SORT_KEY = "PROFILE"
 DEFAULT_KNOWN_ADDRESSES = ["jimin@example.com"]  # the address samples/family-hello.eml is sent from
 
 
@@ -37,16 +36,11 @@ def known_addresses_from_environment() -> list[str]:
 
 
 def rotate_access_token(table, user_id: str) -> str:
-    """Deletes the user's previous token row, writes a new one, returns the new token."""
-    profile_key = {"PK": f"USER#{user_id}", "SK": PROFILE_SORT_KEY}
-    previous_profile = table.get_item(Key=profile_key).get("Item")
+    """Deletes the user's previous token row, then writes a new one the same way the app does for an added contact."""
+    previous_profile = table.get_item(Key={"PK": f"USER#{user_id}", "SK": circle.PROFILE_SORT_KEY}).get("Item")
     if previous_profile:
         table.delete_item(Key={"PK": f"TOKEN#{previous_profile['tokenHash']}", "SK": METADATA_SORT_KEY})
-    access_token = secrets.token_urlsafe(32)
-    token_hash = hash_access_token(access_token)
-    table.put_item(Item={"PK": f"TOKEN#{token_hash}", "SK": METADATA_SORT_KEY, "userId": user_id})
-    table.put_item(Item={**profile_key, "tokenHash": token_hash})
-    return access_token
+    return circle.issue_access_token(user_id)
 
 
 def write_contact(table) -> None:
@@ -76,6 +70,8 @@ def save_tokens(tokens_by_variable: dict[str, str]) -> None:
 
 
 def main() -> None:
+    os.environ.setdefault("TABLE_NAME", TABLE_NAME)  # shared.graph reads the table name from the environment
+    os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
     table = boto3.Session(region_name="us-east-1").resource("dynamodb").Table(TABLE_NAME)
     write_contact(table)
     if TOKENS_FILE.exists() and "--rotate-tokens" not in sys.argv:

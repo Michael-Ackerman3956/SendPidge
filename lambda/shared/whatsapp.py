@@ -52,6 +52,13 @@ class CallPromiseReply:
 
 
 @dataclass(frozen=True)
+class InboundText:
+    text: str  # whatever the person typed; read only as a verification code, never stored or shown
+    sender_number: str  # E.164 with "+", built from Meta's digits-only `from`; the only identity source
+    message_id: str  # Meta's wamid
+
+
+@dataclass(frozen=True)
 class FailedWhatsAppStatus:
     message_id: str  # the wamid of our own message that failed
     error_code: str  # Meta's first errors[].code, as text
@@ -181,14 +188,29 @@ def build_call_offer_message(request_id: str, receiver_name: str, destination_nu
     }
 
 
+def build_text_message(destination_number: str, text: str) -> dict:
+    """Meta JSON for one plain-text message (free-form: only inside the 24-h window the person's own message opened)."""
+    return {"messaging_product": "whatsapp", "to": destination_number, "type": "text", "text": {"body": text}}
+
+
 def build_call_reminder_message(receiver_name: str, destination_number: str) -> dict:
     """Meta JSON for the plain-text reminder; fixed text plus the receiver's name."""
-    return {
-        "messaging_product": "whatsapp",
-        "to": destination_number,
-        "type": "text",
-        "text": {"body": CALL_REMINDER_TEMPLATE.format(receiver_name=receiver_name)},
-    }
+    return build_text_message(destination_number, CALL_REMINDER_TEMPLATE.format(receiver_name=receiver_name))
+
+
+def parse_inbound_text(sns_message: dict) -> InboundText | None:
+    """A typed WhatsApp message (type `text`) with its sender; taps, statuses and anything else → None."""
+    try:
+        change_value = read_first_change_value(sns_message)
+        if "messages" not in change_value:
+            return None
+        message = change_value["messages"][0]
+        if WhatsAppInboundMessageType(message["type"]) is not WhatsAppInboundMessageType.TEXT:
+            return None
+        return InboundText(str(message["text"]["body"]), f"+{message['from']}", message["id"])
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+        logger.info("inbound WhatsApp message is not typed text; ignored")
+        return None
 
 
 def read_first_change_value(sns_message: dict) -> dict:

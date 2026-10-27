@@ -1,11 +1,10 @@
 """WebSocket $default: sync, the contact's Yes / No / Undo / Reverse, the receiver's Confirm, case actions and questions
-to Pidge, a browser's Web Push subscription, the receiver's contact verification code; SNS: phone-channel taps;
-S3 asks/: a contact's reply to the ask by email.
+to Pidge, a browser's Web Push subscription, the receiver's Add-someone form and demo code reply (circle_handlers);
+SNS: phone-channel taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's reply to the ask by email.
 
 The user comes from the connection row, never from the message body.
 """
 
-import hmac
 import json
 import logging
 import os
@@ -14,10 +13,11 @@ from urllib.parse import unquote_plus
 
 import boto3
 
+from pidge_verdict import circle_handlers
 from shared import cases, channels, chat, email_ask, graph, payloads, push_subscriptions, rcs, schedules, verdict, whatsapp
 from shared.enums import (
     ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, EmailedAnswerOutcome, PushMessageType, RequestState,
-    UserRole, VerdictAnswer, VerifiedVia,
+    UserRole, VerdictAnswer,
 )
 from shared.metrics import emit_count_metric
 
@@ -44,7 +44,6 @@ SYNC_EMAIL_LIMIT = 20
 SYNC_REQUEST_LIMIT = 10
 SYNC_NOTE_LIMIT = 20
 SYNC_CHAT_LIMIT = 20
-DEFAULT_CONTACT_VERIFICATION_MOCK_CODE = "4821"  # the PWA plays the reply with this code (onboarding.js); a real code is never configured here
 HANDLED = {"statusCode": 200}
 FORBIDDEN = {"statusCode": 403}
 ANSWER_FOR_ACTION = {ClientAction.UNDO: VerdictAnswer.UNDO, ClientAction.REVERSE: VerdictAnswer.REVERSE}
@@ -89,8 +88,10 @@ def handle(event, context):
         handle_save_push_subscription(connection_id, user_id, body)
     elif action is ClientAction.ASK_PIDGE:
         handle_ask_pidge(connection_id, user_id, body)
+    elif action is ClientAction.ADD_CONTACT:
+        circle_handlers.handle_add_contact(connection_id, user_id, body)
     elif action is ClientAction.VERIFY_CONTACT:
-        handle_verify_contact(connection_id, user_id, body)
+        circle_handlers.handle_verify_contact(connection_id, user_id, body)
     elif action is ClientAction.CONFIRM:
         handle_confirm(connection_id, user_id, body)
     else:
@@ -99,9 +100,7 @@ def handle(event, context):
 
 
 def reject(connection_id: str, request_id: str | None, outcome: ActionOutcome) -> None:
-    channels.push_to_connection(
-        connection_id, {"type": PushMessageType.ACTION_REJECTED, "requestId": request_id, "reason": outcome}
-    )
+    channels.reject_action(connection_id, request_id, outcome)
 
 
 def contact_name_for(request_row: dict) -> str:
@@ -126,9 +125,11 @@ def handle_sync(connection_id: str, user_id: str) -> None:
         case_rows = graph.list_recent_rows(user_id, graph.CASE_ROW_KIND, SYNC_CASE_LIMIT)
         case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(graph.case_id_of(case_row))) for case_row in case_rows]
         chat_messages = [chat.chat_message_for_sync(message_row) for message_row in chat.list_recent_messages(user_id, SYNC_CHAT_LIMIT)]
-        circle = [payloads.circle_entry_for_receiver(contact_row, RCS_ENABLED) for contact_row in graph.list_contact_rows(RECEIVER_ADDRESS)]
+        circle_settings = circle_handlers.read_settings()
         message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "receiverName": RECEIVER_NAME, "emails": emails,
-                   "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages, "circle": circle}
+                   "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages,
+                   "circle": circle_handlers.circle_entries(circle_settings),
+                   "contactVerification": circle_handlers.verification_flags(circle_settings)}
     else:
         cards = []
         for request_row in graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT):
@@ -202,13 +203,25 @@ def parse_phone_reply(record: dict) -> tuple[Channel, verdict.SenderIdentity, st
     return None
 
 
+def whatsapp_text_of(record: dict) -> whatsapp.InboundText | None:
+    """Typed text on Pidge's WhatsApp number (the only channel that carries one); taps and statuses → None."""
+    if record["Sns"]["TopicArn"] != WHATSAPP_TOPIC_ARN:
+        return None
+    return whatsapp.parse_inbound_text(json.loads(record["Sns"]["Message"]))
+
+
 def handle_sns_records(records: list) -> None:
-    """Taps from the phone channels. Nothing here raises: SNS would only redeliver the same tap."""
+    """Taps from the phone channels, and a pending contact's code typed on WhatsApp. Nothing here raises: SNS would only
+    redeliver the same message."""
     for record in records:
         try:
-            parsed = parse_phone_reply(record)
+            inbound_text = whatsapp_text_of(record)
+            parsed = None if inbound_text is not None else parse_phone_reply(record)
         except (KeyError, TypeError, ValueError):
             logger.warning("unreadable SNS record ignored")
+            continue
+        if inbound_text is not None:
+            circle_handlers.handle_whatsapp_text(inbound_text)
             continue
         if parsed is None:
             continue
@@ -346,27 +359,3 @@ def handle_ask_pidge(connection_id: str, user_id: str, body: dict) -> None:
     logger.info("question %s stored for %s (%d characters)", accepted.message_row["SK"], user_id, len(accepted.message_row["text"]))
 
 
-def is_contact_verification_mock_on() -> bool:
-    """Read per call: no real channel carries the code yet, so verification works only in mock mode."""
-    return os.environ.get("CONTACT_VERIFICATION_MOCK") == "true"
-
-
-def handle_verify_contact(connection_id: str, user_id: str, body: dict) -> None:
-    """Onboarding's code step: the receiver only, mock mode only; the contact is looked up server-side, then sync is re-sent."""
-    if user_id != RECEIVER_USER_ID or not is_contact_verification_mock_on():
-        reject(connection_id, None, ActionOutcome.NOT_ALLOWED)
-        return
-    contact_user_id, code = body.get("contactUserId"), body.get("code")
-    if not isinstance(contact_user_id, str) or not isinstance(code, str):
-        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
-        return
-    contact_row = graph.find_contact_row_for_user(RECEIVER_ADDRESS, contact_user_id)
-    if contact_row is None or not hmac.compare_digest(code.encode(), DEFAULT_CONTACT_VERIFICATION_MOCK_CODE.encode()):
-        logger.info("contact verification refused for %s: %s", user_id, "unknown contact" if contact_row is None else "wrong code")
-        reject(connection_id, None, ActionOutcome.NOT_APPLIED)
-        return
-    if not graph.mark_contact_verified(RECEIVER_ADDRESS, contact_row["SK"], VerifiedVia.MOCK, graph.now_timestamp()):
-        reject(connection_id, None, ActionOutcome.NOT_APPLIED)  # the row vanished between the lookup and the update
-        return
-    logger.info("contact %s verified via %s", contact_row["SK"], VerifiedVia.MOCK)
-    handle_sync(connection_id, user_id)

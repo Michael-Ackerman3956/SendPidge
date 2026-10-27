@@ -138,7 +138,9 @@ def find_contact_among(contacts: list[Contact], person_name: str | None) -> Cont
 
 
 def list_contacts(receiver_address: str) -> list[Contact]:
-    return [contact_from_row(item) for item in list_contact_rows(receiver_address)]
+    """The contacts Pidge may match and ask: a PENDING row (added from the app, code not back yet) is left out, so its name
+    reads as unknown and its number is never asked."""
+    return [contact_from_row(item) for item in list_contact_rows(receiver_address) if item.get("verifiedVia") != VerifiedVia.PENDING]
 
 
 def list_contact_rows(receiver_address: str) -> list[dict]:
@@ -155,11 +157,12 @@ def find_contact_row_for_user(receiver_address: str, contact_user_id: str) -> di
 
 
 def mark_contact_verified(receiver_address: str, contact_sort_key: str, verified_via: VerifiedVia, verified_at: str) -> bool:
-    """Sets verifiedVia and verifiedAt on an existing CONTACT# row (never a put: the row holds the numbers); False if it is gone."""
+    """Sets verifiedVia and verifiedAt on an existing CONTACT# row in place (the row keeps its numbers and addresses) and drops
+    the one-time code; False if the row is gone. New rows are put by shared/circle.py only."""
     try:
         get_table().update_item(
             Key={"PK": f"RECEIVER#{receiver_address}", "SK": contact_sort_key},
-            UpdateExpression="SET verifiedVia = :via, verifiedAt = :at",
+            UpdateExpression="SET verifiedVia = :via, verifiedAt = :at REMOVE verificationCodeHash, verificationExpiresAt",
             ConditionExpression="attribute_exists(PK)",
             ExpressionAttributeValues={":via": str(verified_via), ":at": verified_at},
         )

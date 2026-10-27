@@ -1,5 +1,5 @@
-"""Onboarding's code step: the receiver only, mock mode only, the contact looked up under her own partition, the right code
-updates verifiedVia / verifiedAt in place (numbers kept), and every refusal writes nothing."""
+"""The labelled demo reply (CONTACT_VERIFICATION_MOCK): the receiver only, mock mode only, the contact looked up under her own
+partition, the code she was shown turns the PENDING row verified in place (numbers kept), and every refusal writes nothing."""
 
 import importlib
 import json
@@ -11,7 +11,8 @@ from tests.test_verdict import BUCKET_NAME, CONTACT_EMAIL, JIMIN_WHATSAPP_NUMBER
 
 CONTACT_SORT_KEY = "CONTACT#jimin"
 OTHER_RECEIVER_ADDRESS = "someone-else@example.com"
-MOCK_CODE = "4821"  # the handler's only code: the PWA plays the reply with it
+MINSOO_FORM = {"action": "add_contact", "contactName": "Minsoo", "relationship": "son", "whatsappNumber": "+821098765432",
+               "emailAddress": "minsoo@example.com"}
 
 
 @pytest.fixture
@@ -25,11 +26,13 @@ def verdict_handler(aws, monkeypatch):  # noqa: F811
     monkeypatch.setenv("RCS_TOPIC_ARN", "arn:aws:sns:us-east-1:123456789012:rcs")
     monkeypatch.setenv("WHATSAPP_TOPIC_ARN", "arn:aws:sns:us-east-1:123456789012:whatsapp")
     monkeypatch.setenv("WEBSOCKET_ENDPOINT", "https://example.com")
+    monkeypatch.delenv("CONTACT_VERIFICATION_MOCK", raising=False)
     handler = importlib.import_module("pidge_verdict.handler")
     importlib.reload(handler)
     pushed_messages: list[dict] = []
     monkeypatch.setattr(handler.channels, "push_to_connection",
                         lambda _connection_id, message: pushed_messages.append(json.loads(handler.channels.encode_push_message(message))))
+    monkeypatch.setattr(handler.channels, "push_to_user", lambda _user_id, _message: 0)
     return handler, pushed_messages
 
 
@@ -63,43 +66,58 @@ def mock_on(monkeypatch):
     monkeypatch.setenv("CONTACT_VERIFICATION_MOCK", "true")
 
 
-def test_the_right_code_marks_the_contact_verified_in_place_and_re_sends_the_circle(verdict_handler, mock_on):
+def add_minsoo(handler, pushed_messages) -> tuple[str, dict]:
+    """Adds Minsoo as the receiver; returns (the code she was shown, the PENDING row)."""
+    send_action(handler, RECEIVER_USER_ID, MINSOO_FORM)
+    [contact_added] = [message for message in pushed_messages if message["type"] == "contact_added"]
+    pushed_messages.clear()
+    return contact_added["code"], graph.get_contact_row(RECEIVER_ADDRESS, f"CONTACT#{contact_added['contact']['contactUserId']}")
+
+
+def test_the_right_code_marks_the_pending_contact_verified_in_place(verdict_handler, mock_on):
     handler, pushed_messages = verdict_handler
-    seeded_row = seed_circle_contact()
-    send_action(handler, RECEIVER_USER_ID, {"action": "verify_contact", "contactUserId": "jimin", "code": MOCK_CODE})
-    verified_row = stored_contact_row()
+    code, pending_row = add_minsoo(handler, pushed_messages)
+    send_action(handler, RECEIVER_USER_ID, {"action": "verify_contact", "contactUserId": pending_row["contactPwaUserId"], "code": code})
+    verified_row = stored_contact_row(sort_key=pending_row["SK"])
     assert verified_row["verifiedVia"] == "mock"
     assert verified_row["verifiedAt"].endswith("Z")
-    unchanged_fields = ("contactWhatsApp", "knownAddresses", "contactEmail", "contactName", "contactPwaUserId")
-    assert {field: verified_row[field] for field in unchanged_fields} == {field: seeded_row[field] for field in unchanged_fields}
-    [sync_message] = pushed_messages
-    assert (sync_message["type"], sync_message["role"], sync_message["receiverName"]) == ("sync_state", "receiver", "Grandma")
-    assert sync_message["circle"] == [{"contactUserId": "jimin", "contactName": "Jimin", "verifiedVia": "mock",
-                                       "verifiedAt": verified_row["verifiedAt"],
-                                       "reach": {"inapp": True, "rcs": False, "whatsapp": True, "email": True}}]
+    unchanged_fields = ("contactWhatsApp", "knownAddresses", "contactEmail", "contactName", "contactPwaUserId", "relationship")
+    assert {field: verified_row[field] for field in unchanged_fields} == {field: pending_row[field] for field in unchanged_fields}
+    assert "verificationCodeHash" not in verified_row and "verificationExpiresAt" not in verified_row
+    assert pushed_messages == []  # the new circle goes to every receiver socket (push_to_user), not back on this one
 
 
 def test_a_wrong_code_writes_nothing_and_is_not_applied(verdict_handler, mock_on):
     handler, pushed_messages = verdict_handler
+    _code, pending_row = add_minsoo(handler, pushed_messages)
+    send_action(handler, RECEIVER_USER_ID, {"action": "verify_contact", "contactUserId": pending_row["contactPwaUserId"], "code": "000000"})
+    assert stored_contact_row(sort_key=pending_row["SK"]) == pending_row
+    assert pushed_messages == [rejection("not_applied")]
+
+
+def test_a_seeded_row_has_no_code_and_is_not_applied(verdict_handler, mock_on):
+    handler, pushed_messages = verdict_handler
     seeded_row = seed_circle_contact()
-    send_action(handler, RECEIVER_USER_ID, {"action": "verify_contact", "contactUserId": "jimin", "code": "0000"})
+    send_action(handler, RECEIVER_USER_ID, {"action": "verify_contact", "contactUserId": "jimin", "code": "4821"})
     assert stored_contact_row() == seeded_row
     assert pushed_messages == [rejection("not_applied")]
 
 
 def test_the_contact_cannot_verify_even_with_the_right_code(verdict_handler, mock_on):
     handler, pushed_messages = verdict_handler
-    seeded_row = seed_circle_contact()
-    send_action(handler, "jimin", {"action": "verify_contact", "contactUserId": "jimin", "code": MOCK_CODE})
-    assert stored_contact_row() == seeded_row
+    code, pending_row = add_minsoo(handler, pushed_messages)
+    send_action(handler, pending_row["contactPwaUserId"], {"action": "verify_contact", "contactUserId": pending_row["contactPwaUserId"], "code": code})
+    assert stored_contact_row(sort_key=pending_row["SK"]) == pending_row
     assert pushed_messages == [rejection("not_allowed")]
 
 
-def test_mock_mode_off_refuses_the_right_code(verdict_handler):
+def test_mock_mode_off_refuses_the_right_code(verdict_handler, monkeypatch):
     handler, pushed_messages = verdict_handler
-    seeded_row = seed_circle_contact()
-    send_action(handler, RECEIVER_USER_ID, {"action": "verify_contact", "contactUserId": "jimin", "code": MOCK_CODE})
-    assert stored_contact_row() == seeded_row
+    monkeypatch.setenv("CONTACT_VERIFICATION_MOCK", "true")
+    code, pending_row = add_minsoo(handler, pushed_messages)
+    monkeypatch.setenv("CONTACT_VERIFICATION_MOCK", "false")
+    send_action(handler, RECEIVER_USER_ID, {"action": "verify_contact", "contactUserId": pending_row["contactPwaUserId"], "code": code})
+    assert stored_contact_row(sort_key=pending_row["SK"]) == pending_row
     assert pushed_messages == [rejection("not_allowed")]
 
 
@@ -107,13 +125,13 @@ def test_a_contact_outside_the_receivers_own_partition_is_not_applied(verdict_ha
     handler, pushed_messages = verdict_handler
     seed_circle_contact()
     other_receivers_row = seed_circle_contact(OTHER_RECEIVER_ADDRESS, "minsu")
-    send_action(handler, RECEIVER_USER_ID, {"action": "verify_contact", "contactUserId": "minsu", "code": MOCK_CODE})
+    send_action(handler, RECEIVER_USER_ID, {"action": "verify_contact", "contactUserId": "minsu", "code": "4821"})
     assert stored_contact_row(OTHER_RECEIVER_ADDRESS, "CONTACT#minsu") == other_receivers_row
     assert [row["SK"] for row in graph.list_contact_rows(RECEIVER_ADDRESS)] == [CONTACT_SORT_KEY]
     assert pushed_messages == [rejection("not_applied")]
 
 
-@pytest.mark.parametrize("fields", [{"contactUserId": "jimin", "code": 4821}, {"code": MOCK_CODE}])
+@pytest.mark.parametrize("fields", [{"contactUserId": "jimin", "code": 4821}, {"code": "4821"}])
 def test_a_non_string_code_or_missing_contact_id_is_a_bad_message(verdict_handler, mock_on, fields):
     handler, pushed_messages = verdict_handler
     seeded_row = seed_circle_contact()

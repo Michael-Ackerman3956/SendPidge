@@ -16,8 +16,10 @@ import { applyChatSyncState, handlePidgeReplyPush, hidePidgeView, showPidgeView,
 import {
   applyPidgeSyncState, handleCaseNotePush, handleCaseStatePush, handlePidgeActionRejected, hideCasesView, openReportPaymentForm, showCasesView,
 } from "./cases-view.js";
-import { applyCircleSyncState, hideCircleView, showCircleView, startCircleView } from "./circle-view.js";
-import { ONBOARDING_START, handleCircleSyncDuringOnboarding, handleOnboardingActionRejected, hideOnboarding, startOnboarding } from "./onboarding.js";
+import { applyCircleStatePush, applyCircleSyncState, hideCircleView, showCircleView, startCircleView } from "./circle-view.js";
+import {
+  ONBOARDING_START, handleCircleSyncDuringOnboarding, handleContactAddedPush, handleOnboardingActionRejected, hideOnboarding, startOnboarding,
+} from "./onboarding.js";
 import { startReadingPane } from "./reading-pane.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
@@ -127,7 +129,7 @@ function handleSyncStatePush(pushMessage) {
       pageElements.receiverTabs.hidden = isOnboardingOpen;
       if (activeReceiverTab === RECEIVER_TAB.INBOX && !isOnboardingOpen) showReceiverView();
       showReceiverNameInRail(pushMessage.receiverName);
-      applyCircleSyncState(pushMessage.circle);
+      applyCircleSyncState(pushMessage.circle, pushMessage.contactVerification);
       applyReceiverSyncState(pushMessage.emails);
       applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);
       applyChatSyncState(pushMessage.chat, pushMessage.chatEnabled);
@@ -161,12 +163,12 @@ function handleActionRejectedPush(pushMessage) {
   if (!KNOWN_ACTION_REJECTED_REASONS.has(pushMessage.reason)) {
     console.error("SendPidge: action_rejected has an unknown reason", pushMessage.reason);
   }
+  if (activeUserRole === USER_ROLE.RECEIVER && handleOnboardingActionRejected(pushMessage.reason)) return; // the form shows why
   const isAlreadyRecorded = pushMessage.reason === ACTION_REJECTED_REASON.NOT_APPLIED;
   showActionStatusMessage(isAlreadyRecorded ? ACTION_STATUS_MESSAGE.ALREADY_RECORDED : ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
   if (activeUserRole === USER_ROLE.RECEIVER) {
     handleReceiverActionRejected(requestId);
     handlePidgeActionRejected();
-    handleOnboardingActionRejected();
   } else {
     handleContactActionRejected(requestId);
   }
@@ -182,6 +184,8 @@ const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.CASE_STATE]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CONTACT_NOTICE]: [USER_ROLE.CONTACT],
   [PUSH_MESSAGE_TYPE.PIDGE_REPLY]: [USER_ROLE.RECEIVER],
+  [PUSH_MESSAGE_TYPE.CONTACT_ADDED]: [USER_ROLE.RECEIVER],
+  [PUSH_MESSAGE_TYPE.CIRCLE_STATE]: [USER_ROLE.RECEIVER],
 });
 
 function isPushForActiveRole(pushMessageType) {
@@ -224,6 +228,13 @@ function handlePushMessage(pushMessage) {
     case PUSH_MESSAGE_TYPE.CONTACT_NOTICE:
       if (typeof pushMessage.text === "string") showActionStatusMessage(pushMessage.text);
       break;
+    case PUSH_MESSAGE_TYPE.CONTACT_ADDED:
+      handleContactAddedPush(pushMessage);
+      break;
+    case PUSH_MESSAGE_TYPE.CIRCLE_STATE:
+      applyCircleStatePush(pushMessage.circle);
+      handleCircleSyncDuringOnboarding();
+      break;
     default:
       console.warn("SendPidge: ignoring push of unknown type", pushMessageType);
   }
@@ -238,7 +249,7 @@ function updateConnectionDot(connectionStatus) {
 function startApp() {
   Object.entries(tabButtons).forEach(([tabName, button]) => button.addEventListener("click", () => showReceiverTab(tabName)));
   setUnseenHoldListener((hasUnseenPendingHold) => { hasUnseenHold = hasUnseenPendingHold; renderInboxTabDot(); });
-  startCircleView(() => openOnboarding(ONBOARDING_START.PICK_CIRCLE));
+  startCircleView(() => openOnboarding(ONBOARDING_START.ADD_CONTACT));
   startReadingPane(() => { if (activeUserRole === USER_ROLE.RECEIVER && activeReceiverTab === RECEIVER_TAB.INBOX) applyReadingPaneLayout(); });
   startPidgeChat({ onReportPaymentRequested: () => { showReceiverTab(RECEIVER_TAB.CASES); openReportPaymentForm(); } });
   const accessToken = resolveAccessToken();

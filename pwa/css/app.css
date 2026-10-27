@@ -317,11 +317,15 @@ button:disabled { cursor: default; }
 .onboarding-dots i.is-on { background: var(--teal); width: 18px; border-radius: 3px; }
 .onboarding-primary-button { width: 100%; min-height: 52px; border: none; border-radius: 16px; background: var(--teal); color: var(--on-teal); font-size: 16px; font-weight: 800; }
 .onboarding-primary-button:disabled { opacity: 0.4; }
-.onboarding-pick-list { width: 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
-.onboarding-pick-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; text-align: left; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; }
-.onboarding-pick-row.is-on { border-color: rgba(58, 166, 142, 0.5); }
-.onboarding-pick-name { flex: 1; font-size: 15px; font-weight: 700; }
-.onboarding-pick-box { width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-3); display: grid; place-items: center; color: var(--teal-light); }
+.onboarding-form { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 14px; text-align: left; }
+.onboarding-field { display: flex; flex-direction: column; gap: 4px; }
+.onboarding-field-label { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.onboarding-input { width: 100%; min-height: 44px; padding: 10px 12px; font: inherit; font-size: 16px; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; }
+.onboarding-input:focus { outline: 2px solid var(--teal); outline-offset: 1px; }
+textarea.onboarding-input { resize: vertical; }
+.onboarding-form-error { font-size: 13px; color: var(--orange); }
+.onboarding-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.onboarding-note-actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
 .onboarding-code-preview { width: 100%; margin-top: 16px; padding: 12px 14px; text-align: left; font-size: 13.5px; line-height: 1.45; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; }
 .onboarding-code-to { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 6px; }
 .onboarding-wait-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 14px 0 6px; font-size: 13.5px; color: var(--text-secondary); }

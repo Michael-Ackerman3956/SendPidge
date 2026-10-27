@@ -1,0 +1,166 @@
+"""Growing the receiver's circle from the app: the Add-someone form is parsed at the boundary, the CONTACT# row is written
+PENDING with a hashed one-time code, and the row turns verified only when that code comes back from the contact's own
+WhatsApp number (or, with CONTACT_VERIFICATION_MOCK on, from the receiver's own labelled demo button). A PENDING contact is
+never asked (graph.list_contacts leaves it out), so a typo in the number can never send an ask to a stranger."""
+
+import hmac
+import re
+import secrets
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+
+from botocore.exceptions import ClientError
+
+from shared import graph
+from shared.enums import ActionOutcome, Relationship, VerifiedVia
+
+CIRCLE_MAXIMUM_SIZE = 10
+CONTACT_NAME_MAXIMUM_LENGTH = 40
+EXTRA_ADDRESSES_MAXIMUM_COUNT = 5
+VERIFICATION_CODE_DIGITS = 6
+VERIFICATION_CODE_LIFETIME = timedelta(hours=24)
+E164_PATTERN = re.compile(r"^\+[1-9]\d{6,14}$")
+EMAIL_ADDRESS_PATTERN = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$")
+EMAIL_ADDRESS_MAXIMUM_LENGTH = 254
+PROFILE_SORT_KEY = "PROFILE"
+
+CONTACT_NOTE_TEMPLATE = (
+    "{receiver_name} is using Pidge to catch fake emails. If something arrives in your name, Pidge will ask you first.\n"
+    "Your code is {code}.{reply_line}\n"
+    "Your Pidge link: {pwa_link}"
+)
+WHATSAPP_REPLY_LINE_TEMPLATE = " Reply with it to Pidge on WhatsApp: https://wa.me/{pidge_digits}?text={code}"
+WELCOME_TEXT_TEMPLATE = ("You're in {receiver_name}'s circle. When an email in your name asks {receiver_name} for something, "
+                         "Pidge will ask you first.")
+
+
+@dataclass(frozen=True)
+class ContactForm:
+    contact_name: str
+    relationship: Relationship
+    whatsapp_number: str
+    email_address: str
+    extra_addresses: tuple[str, ...]
+
+    @property
+    def known_addresses(self) -> list[str]:
+        return list(dict.fromkeys((self.email_address, *self.extra_addresses)))
+
+
+@dataclass(frozen=True)
+class Enrolment:
+    outcome: ActionOutcome
+    contact_row: dict | None = None
+    code: str | None = None
+    access_token: str | None = None
+
+
+def parse_contact_form(body: dict) -> ContactForm:
+    """The form exactly as typed, checked field by field; raises ValueError on any shape the row must not hold."""
+    contact_name = " ".join(require_text(body, "contactName").split())
+    if not 1 <= len(contact_name) <= CONTACT_NAME_MAXIMUM_LENGTH:
+        raise ValueError("contactName length")
+    relationship = Relationship(require_text(body, "relationship"))
+    whatsapp_number = require_text(body, "whatsappNumber").strip()
+    if not E164_PATTERN.match(whatsapp_number):
+        raise ValueError("whatsappNumber is not E.164")
+    extra_addresses = body.get("extraAddresses", [])
+    if not isinstance(extra_addresses, list) or len(extra_addresses) > EXTRA_ADDRESSES_MAXIMUM_COUNT:
+        raise ValueError("extraAddresses")
+    return ContactForm(contact_name, relationship, whatsapp_number, parse_email_address(require_text(body, "emailAddress")),
+                       tuple(parse_email_address(address) for address in extra_addresses))
+
+
+def require_text(body: dict, field_name: str) -> str:
+    value = body.get(field_name)
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} missing")
+    return value
+
+
+def parse_email_address(value) -> str:
+    if not isinstance(value, str):
+        raise ValueError("address is not text")
+    address = value.strip().casefold()
+    if len(address) > EMAIL_ADDRESS_MAXIMUM_LENGTH or not EMAIL_ADDRESS_PATTERN.match(address):
+        raise ValueError("address is not an email address")
+    return address
+
+
+def issue_access_token(user_id: str) -> str:
+    """A fresh PWA token for one user: the TOKEN#<sha256> row the socket checks and the USER#/PROFILE row that remembers the
+    hash (so a later rotation can delete it). Returns the token itself; the caller alone decides where it goes."""
+    access_token = secrets.token_urlsafe(32)
+    token_hash = graph.hash_access_token(access_token)
+    table = graph.get_table()
+    table.put_item(Item={"PK": f"TOKEN#{token_hash}", "SK": graph.METADATA_SORT_KEY, "userId": user_id})
+    table.put_item(Item={"PK": f"USER#{user_id}", "SK": PROFILE_SORT_KEY, "tokenHash": token_hash})
+    return access_token
+
+
+def has_duplicate_name(contact_rows: list[dict], contact_name: str) -> bool:
+    wanted_name = contact_name.casefold()
+    return any(" ".join(row["contactName"].split()).casefold() == wanted_name for row in contact_rows)
+
+
+def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> Enrolment:
+    """Writes the PENDING row with a server-made id, a hashed six-digit code and a PWA token for the in-app channel.
+    Refuses a name already in the circle (asks are matched by name) and a full circle; both write nothing."""
+    contact_rows = graph.list_contact_rows(receiver_address)
+    if has_duplicate_name(contact_rows, form.contact_name):
+        return Enrolment(ActionOutcome.DUPLICATE_NAME)
+    if len(contact_rows) >= CIRCLE_MAXIMUM_SIZE:
+        return Enrolment(ActionOutcome.CIRCLE_FULL)
+    contact_user_id = secrets.token_hex(8)
+    code = f"{secrets.randbelow(10 ** VERIFICATION_CODE_DIGITS):0{VERIFICATION_CODE_DIGITS}d}"
+    contact_row = {
+        "PK": f"RECEIVER#{receiver_address}",
+        "SK": f"CONTACT#{contact_user_id}",
+        "contactName": form.contact_name,
+        "relationship": str(form.relationship),
+        "contactPwaUserId": contact_user_id,
+        "contactWhatsApp": form.whatsapp_number,
+        "contactEmail": form.email_address,
+        "knownAddresses": form.known_addresses,
+        "verifiedVia": str(VerifiedVia.PENDING),
+        "verificationCodeHash": graph.hash_access_token(code),
+        "verificationExpiresAt": graph.iso_timestamp(now + VERIFICATION_CODE_LIFETIME),
+        "addedAt": graph.iso_timestamp(now),
+    }
+    try:
+        graph.get_table().put_item(Item=contact_row, ConditionExpression="attribute_not_exists(PK)")
+    except ClientError as error:
+        if error.response["Error"]["Code"] == graph.CONDITIONAL_CHECK_FAILED:
+            return Enrolment(ActionOutcome.NOT_APPLIED)  # a 64-bit id collision; the caller may simply try again
+        raise
+    return Enrolment(ActionOutcome.RECORDED, contact_row, code, issue_access_token(contact_user_id))
+
+
+def build_contact_note(receiver_name: str, code: str, pwa_link: str, pidge_whatsapp_number: str | None) -> str:
+    """The note the receiver sends from her own phone. The WhatsApp reply line needs Pidge's own number; without it the
+    note carries the code and the link only (then only the labelled demo can verify)."""
+    reply_line = ""
+    if pidge_whatsapp_number:
+        reply_line = WHATSAPP_REPLY_LINE_TEMPLATE.format(pidge_digits=pidge_whatsapp_number.removeprefix("+"), code=code)
+    return CONTACT_NOTE_TEMPLATE.format(receiver_name=receiver_name, code=code, reply_line=reply_line, pwa_link=pwa_link)
+
+
+def build_welcome_text(receiver_name: str) -> str:
+    return WELCOME_TEXT_TEMPLATE.format(receiver_name=receiver_name)
+
+
+def find_pending_contact_by_whatsapp(receiver_address: str, sender_number: str) -> dict | None:
+    return next((row for row in graph.list_contact_rows(receiver_address)
+                 if row.get("verifiedVia") == VerifiedVia.PENDING and row.get("contactWhatsApp") == sender_number), None)
+
+
+def verify_with_code(receiver_address: str, contact_row: dict, code: str, verified_via: VerifiedVia, now: datetime) -> bool:
+    """True when the row is still PENDING, its code has not expired and `code` matches (constant time); the row then turns
+    verified in place. False writes nothing."""
+    if contact_row.get("verifiedVia") != VerifiedVia.PENDING or "verificationCodeHash" not in contact_row:
+        return False
+    if datetime.fromisoformat(contact_row["verificationExpiresAt"].replace("Z", "+00:00")) < now.astimezone(timezone.utc):
+        return False
+    if not hmac.compare_digest(graph.hash_access_token(code.strip()), contact_row["verificationCodeHash"]):
+        return False
+    return graph.mark_contact_verified(receiver_address, contact_row["SK"], verified_via, graph.iso_timestamp(now))

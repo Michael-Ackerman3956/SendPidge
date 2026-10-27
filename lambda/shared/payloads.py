@@ -153,6 +153,7 @@ def circle_entry_for_receiver(contact_row: dict, is_rcs_enabled: bool) -> dict:
     return {
         "contactUserId": contact_row["contactPwaUserId"],
         "contactName": contact_row["contactName"],
+        "relationship": contact_row.get("relationship"),  # a Relationship value; absent on seeded rows
         "verifiedVia": str(verified_via_of(contact_row)),
         "verifiedAt": contact_row.get("verifiedAt"),
         "reach": {
