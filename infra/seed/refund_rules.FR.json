@@ -1,0 +1,158 @@
+[
+  {
+    "jurisdiction": "FR",
+    "paymentRail": "wire",
+    "party": "any",
+    "version": 1,
+    "status": "live",
+    "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "rejectReason": null,
+    "steps": [
+      {
+        "order": 1,
+        "action": "Call your bank now. Say you were tricked into sending a transfer (virement). Ask them to stop it, or if it has gone, to ask for the money back (retour des fonds).",
+        "deadlineDays": null,
+        "contact": "your bank",
+        "organisation": "your bank",
+        "sourceUrl": "https://www.cybermalveillance.gouv.fr/tous-nos-contenus/fiches-reflexes/que-faire-en-cas-de-fraude-au-virement-ou-au-faux-rib"
+      },
+      {
+        "order": 2,
+        "action": "File a complaint (porter plainte) at a police station or gendarmerie; your bank may ask for a copy. For free advice, call Info Escroqueries, the Interior Ministry's scam line.",
+        "deadlineDays": null,
+        "contact": "0 805 805 817",
+        "organisation": "the police or gendarmerie, and Info Escroqueries (ministère de l'Intérieur)",
+        "sourceUrl": "https://www.cybermalveillance.gouv.fr/tous-nos-contenus/fiches-reflexes/que-faire-en-cas-de-fraude-au-virement-ou-au-faux-rib"
+      },
+      {
+        "order": 3,
+        "action": "If your bank refuses, write to its customer service, ideally by registered letter. If it does not answer within 15 days, or you do not accept its answer, contact your bank's mediator (médiateur bancaire). It is free. Do it within 1 year of your written complaint.",
+        "deadlineDays": null,
+        "contact": "your bank's mediator (details on your bank statement or the bank's reply)",
+        "organisation": "the bank mediator (médiateur bancaire)",
+        "sourceUrl": "https://www.service-public.gouv.fr/particuliers/vosdroits/F20523"
+      }
+    ],
+    "extra": {
+      "currency": "EUR",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {
+          "quote": "Alertez immédiatement votre banque de l’opération frauduleuse",
+          "url": "https://www.cybermalveillance.gouv.fr/tous-nos-contenus/fiches-reflexes/que-faire-en-cas-de-fraude-au-virement-ou-au-faux-rib"
+        },
+        {
+          "quote": "Dans le cas contraire, demandez le retour des fonds.",
+          "url": "https://www.cybermalveillance.gouv.fr/tous-nos-contenus/fiches-reflexes/que-faire-en-cas-de-fraude-au-virement-ou-au-faux-rib"
+        },
+        {
+          "quote": "déposez plainte au commissariat de police ou à la brigade de gendarmerie",
+          "url": "https://www.cybermalveillance.gouv.fr/tous-nos-contenus/fiches-reflexes/que-faire-en-cas-de-fraude-au-virement-ou-au-faux-rib"
+        },
+        {
+          "quote": "Info Escroqueries du ministère de l’Intérieur au 0 805 805 817",
+          "url": "https://www.cybermalveillance.gouv.fr/tous-nos-contenus/fiches-reflexes/que-faire-en-cas-de-fraude-au-virement-ou-au-faux-rib"
+        },
+        {
+          "quote": "15 jours pour un différend relatif à un service de paiement",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F20523"
+        },
+        {
+          "quote": "Vous saisissez le médiateur dans un délai supérieur à 1 an",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F20523"
+        },
+        {
+          "quote": "le recours au médiateur bancaire est gratuit",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F20523"
+        }
+      ],
+      "notes": "No French rule obliges a bank to refund a transfer the victim made; the bank can only try to stop it or request the funds back. The mediator refuses a case brought more than 1 year after the written complaint to the bank; kept in the action text (deadlineDays null). The bank has 2 months to answer a complaint, or 15 days for a payment-service dispute such as a transfer. Each bank has its own mediator. Online complaints via THESEE are possible only in some cases (e.g. a hacked mailbox)."
+    }
+  },
+  {
+    "jurisdiction": "FR",
+    "paymentRail": "card",
+    "party": "any",
+    "version": 1,
+    "status": "live",
+    "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "rejectReason": null,
+    "steps": [
+      {
+        "order": 1,
+        "action": "Call your bank now, or the card-blocking line, and block the card (faire opposition). Then ask the bank to refund the fraudulent payment. You have at most 13 months from the payment.",
+        "deadlineDays": null,
+        "contact": "the number on the back of your card, or 0 892 705 705 (paid line, open 24/7)",
+        "organisation": "your card issuer",
+        "sourceUrl": "https://www.service-public.gouv.fr/particuliers/vosdroits/F31324"
+      },
+      {
+        "order": 2,
+        "action": "Report the fraud to the police or gendarmerie. For free advice, call Info Escroqueries, the Interior Ministry's scam line.",
+        "deadlineDays": null,
+        "contact": "0 805 805 817",
+        "organisation": "the police or gendarmerie, and Info Escroqueries (ministère de l'Intérieur)",
+        "sourceUrl": "https://www.service-public.gouv.fr/particuliers/vosdroits/F1520"
+      },
+      {
+        "order": 3,
+        "action": "If your bank refuses, write to its customer service, ideally by registered letter. If it does not answer within 15 days, or you do not accept its answer, contact your bank's mediator (médiateur bancaire). It is free. Do it within 1 year of your written complaint.",
+        "deadlineDays": null,
+        "contact": "your bank's mediator (details on your bank statement or the bank's reply)",
+        "organisation": "the bank mediator (médiateur bancaire)",
+        "sourceUrl": "https://www.service-public.gouv.fr/particuliers/vosdroits/F20523"
+      }
+    ],
+    "extra": {
+      "currency": "EUR",
+      "lawName": "Code monétaire et financier, articles L133-18 and L133-23 to L133-24 (as listed on the page)",
+      "capAmount": null,
+      "evidence": [
+        {
+          "quote": "Vous devez au plus vite faire opposition",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F31324"
+        },
+        {
+          "quote": "0 892 705 705",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F31324"
+        },
+        {
+          "quote": "Ouvert 7 jours/7 et 24h/24.",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F31324"
+        },
+        {
+          "quote": "au plus tard à la fin du premier jour ouvrable",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F31324"
+        },
+        {
+          "quote": "ne peut pas être remboursé s'il date de plus de 13 mois",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F31324"
+        },
+        {
+          "quote": "votre banque peut refuser de vous rembourser",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F31324"
+        },
+        {
+          "quote": "0 805 805 817",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F1520"
+        },
+        {
+          "quote": "15 jours pour un différend relatif à un service de paiement",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F20523"
+        },
+        {
+          "quote": "Vous saisissez le médiateur dans un délai supérieur à 1 an",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F20523"
+        },
+        {
+          "quote": "Code monétaire et financier : articles L133-23 à L133-24",
+          "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F31324"
+        }
+      ],
+      "notes": "The refund duty (by the end of the next working day) covers fraudulent card payments the cardholder did not make, e.g. after giving card details to a scammer; a payment the victim made themselves may be refused. A late block can also lead to refusal. 13 months becomes 70 days for payments outside the European Economic Area. The 0 892 number is a paid line. lawName lists articles the page cites as references; which article sets which rule is not stated on the page. Month and year windows are in the action text (deadlineDays null)."
+    }
+  }
+]

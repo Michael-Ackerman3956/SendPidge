@@ -1,0 +1,349 @@
+[
+  {
+    "jurisdiction": "KR",
+    "paymentRail": "wire",
+    "party": "any",
+    "version": 1,
+    "status": "live",
+    "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "rejectReason": null,
+    "steps": [
+      {
+        "order": 1,
+        "action": "Call your bank, or the bank the money went to, right now. Say it was a phone scam and ask them to freeze the account (지급정지). Police 112 or the FSS 1332 can also put you through.",
+        "organisation": "your bank's call centre",
+        "contact": "your bank's call centre, or 112 / 1332",
+        "deadlineDays": null,
+        "sourceUrl": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200365"
+      },
+      {
+        "order": 2,
+        "action": "Report the scam at your police station (cyber investigation unit) and ask for the incident report certificate (사건사고사실확인원).",
+        "organisation": "the Korean National Police Agency (경찰청)",
+        "contact": "your local police station",
+        "deadlineDays": null,
+        "sourceUrl": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200365"
+      },
+      {
+        "order": 3,
+        "action": "Within 3 business days, take the refund request form (피해구제신청서), a copy of your ID and the police certificate to the bank branch where you asked for the freeze.",
+        "organisation": "the bank that froze the account",
+        "contact": "the bank branch where you asked for the freeze",
+        "deadlineDays": 3,
+        "sourceUrl": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200365"
+      },
+      {
+        "order": 4,
+        "action": "Wait for a letter. The FSS posts a notice; if no one objects for 2 months, it decides your refund within 14 days and your bank pays you.",
+        "organisation": "the Financial Supervisory Service (금융감독원)",
+        "contact": "1332",
+        "deadlineDays": null,
+        "sourceUrl": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200571"
+      }
+    ],
+    "extra": {
+      "currency": "KRW",
+      "lawName": "전기통신금융사기 피해 방지 및 피해자산 환급에 관한 특별법 (통신사기피해환급법)",
+      "notes": "Step 3 deadlineDays 3 means 3 business days (영업일). If the papers are late, the bank may give a further 14 days, after which the request counts as never made. The act was renamed from '...피해금 환급...' to '...피해자산 환급...' by Act No. 21503 (2026-03-31, in force 6 months after promulgation); it now covers crypto-asset transfers. Version in force: Act No. 22047, effective 2026-10-02. Cash handed over in person or withdrawn (대면편취형, Art. 2(2)(c)-(d)) is frozen on a police request (Art. 3(2), added 2023-05-16), not on the victim's own application. 간편송금: prepaid e-money issuers registered with the FSC must share fraud-account data with banks (Art. 15(3), added 2024-02-27; Decree Art. 11-3). Other victims of the same account can still apply within 2 months of the FSS notice (Art. 6(1)). FSS also lists freezing your own accounts at payinfo.or.kr; the police scam centre number 1394 is on counterscam112.go.kr (not an allow-listed domain, so not used as a step source). The FSS refund page still prints the old law name.",
+      "evidence": [
+        {
+          "fact": "Call the receiving or sending bank's call centre at once to freeze the account",
+          "quote": "입금 금융회사 또는 송금 금융회사콜센터에 즉시 전화하여 피해신고 및 계좌 지급정지",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200365"
+        },
+        {
+          "fact": "Police 112 and FSS 1332 can connect you",
+          "quote": "(경찰청 112 및 금감원 1332에서도 연결 가능)",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200365"
+        },
+        {
+          "fact": "FSS also says to ask 112 for an immediate freeze",
+          "quote": "피해발생시 112로 즉시 지급정지 요청",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200914"
+        },
+        {
+          "fact": "The police (cyber unit) issue the incident report certificate",
+          "quote": "경찰서(사이버 수사대)에서 발급한 사건사고사실확인원 등 증빙서류와 함께",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200365"
+        },
+        {
+          "fact": "Written refund request within 3 business days",
+          "quote": "피해구제신청 서면접수(신청일 3영업일이내, 필요서류는 방문 전 금융회사 또는 경찰서 문의)",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200365"
+        },
+        {
+          "fact": "Decree: papers due 3 business days after a phone request",
+          "quote": "그 신청한 날부터 3영업일 이내에 제1항 본문에 따른 신청서류를 해당 금융회사등에 제출해야 한다",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290281"
+        },
+        {
+          "fact": "Decree: the form goes in with a copy of the victim's ID",
+          "quote": "피해구제신청서에 피해자의 신분증 사본을 첨부하여 해당 금융회사등에 제출해야 한다",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290281"
+        },
+        {
+          "fact": "Decree: the bank may ask for the police damage-report confirmation",
+          "quote": "피해자에게 수사기관의 피해신고확인서 등 관련 자료의 제출을 요청할 수 있다",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290281"
+        },
+        {
+          "fact": "Decree: late papers get a further 14-day notice",
+          "quote": "추가로 피해자에 대하여 14일의 기간을 정하여 해당 기간 내에 서류 제출을 통지하였으나",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290281"
+        },
+        {
+          "fact": "The account's claims lapse 2 months after the FSS notice if no objection",
+          "quote": "금융감독원 개시 공고 후 사기이용계좌 명의인의 이의제기 없이 2개월이 경과하면 해당 계좌 채권 소멸",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200571"
+        },
+        {
+          "fact": "The FSS decides the refund within 14 days of the lapse",
+          "quote": "금융감독원은 채권소멸일로부터 14일 이내에 환급금액 결정",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200571"
+        },
+        {
+          "fact": "The bank pays the victim without delay",
+          "quote": "금융회사는 지체없이 피해자에게 환급",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200571"
+        },
+        {
+          "fact": "Act Art. 9(1): claims lapse 2 months after the first notice",
+          "quote": "최초의 채권소멸절차 개시의 공고일부터 2개월이 경과하면 소멸한다",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290245"
+        },
+        {
+          "fact": "Act Art. 10(1): refund decided within 14 days of the lapse",
+          "quote": "채권이 소멸된 날부터 14일 이내에 피해환급자산을 지급받을 자 및 그 금액등을 결정하여",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290245"
+        },
+        {
+          "fact": "FSS 1332 is a paid call",
+          "quote": "금감원콜센터 1332 (유료, 통화료 발신자 부담)",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200365"
+        },
+        {
+          "fact": "Current name and short name of the act",
+          "quote": "전기통신금융사기 피해 방지 및 피해자산 환급에 관한 특별법 ( 약칭: 통신사기피해환급법 )",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290245"
+        },
+        {
+          "fact": "Version in force",
+          "quote": "[시행 2026. 10. 2.] [법률 제22047호, 2026. 9. 29., 일부개정]",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290245"
+        },
+        {
+          "fact": "Act No. 21503 (2026-03-31) took effect 6 months after promulgation",
+          "quote": "이 법은 공포 후 6개월이 경과한 날부터 시행한다.",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290245"
+        },
+        {
+          "fact": "Police can request a freeze for handed-over or withdrawn cash (대면편취형)",
+          "quote": "제2조 제2호 다목 또는 라목 에 해당하는 행위와 관련된 사기이용계좌등의 지급정지를 요청할 수 있다",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290245"
+        },
+        {
+          "fact": "Victims apply themselves for transfers (Art. 2(2)(a)-(b))",
+          "quote": "제2조 제2호 가목 또는 나목 에 해당하는 행위로 인하여 재산상의 피해를 입은 피해자는",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290245"
+        },
+        {
+          "fact": "Prepaid e-money issuers (간편송금) share fraud-account data",
+          "quote": "선불전자지급수단의 발행 및 관리 업무를 하기 위하여 같은 조 에 따라 금융위원회에 등록한 전자금융업자",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290281"
+        },
+        {
+          "fact": "Police integrated scam report number",
+          "quote": "보이스피싱·스미싱 통합신고 1394",
+          "url": "https://www.counterscam112.go.kr/"
+        }
+      ]
+    }
+  },
+  {
+    "jurisdiction": "KR",
+    "paymentRail": "card",
+    "party": "any",
+    "version": 1,
+    "status": "proposed",
+    "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "rejectReason": null,
+    "steps": [
+      {
+        "order": 1,
+        "action": "Call your card company now. Say the payment was a scam and that you dispute it (이의제기). Until they finish checking, they cannot make you pay that amount.",
+        "organisation": "your card company (카드사)",
+        "contact": "the number on the back of your card",
+        "deadlineDays": null,
+        "sourceUrl": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=277267"
+      },
+      {
+        "order": 2,
+        "action": "If the scammer used your card number without you, ask the card company to stop the card and cover that use.",
+        "organisation": "your card company (카드사)",
+        "contact": "the number on the back of your card",
+        "deadlineDays": null,
+        "sourceUrl": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=277267"
+      },
+      {
+        "order": 3,
+        "action": "If the card company says no, file a complaint with the Financial Supervisory Service (금융민원), online or by calling 1332.",
+        "organisation": "the Financial Supervisory Service (금융감독원)",
+        "contact": "1332 or fss.or.kr",
+        "deadlineDays": null,
+        "sourceUrl": "https://www.fss.or.kr/fss/minwon/search.jsp"
+      },
+      {
+        "order": 4,
+        "action": "Report the scam to the police, online or at your police station. Bring your ID and any messages or receipts.",
+        "organisation": "the Korean National Police Agency (경찰청)",
+        "contact": "your local police station or minwon24.police.go.kr",
+        "deadlineDays": null,
+        "sourceUrl": "https://minwon24.police.go.kr/cvlcpt/cvlcptGdInfo.do?cvlcptId=MW-701"
+      }
+    ],
+    "extra": {
+      "currency": "KRW",
+      "lawName": "여신전문금융업법 (Credit Specialized Financial Business Act), Art. 16",
+      "notes": "PROPOSED: no statutory chargeback window for a card payment the victim made to a scammer was found on any allowed page; Art. 16 sets none, and card-scheme chargeback deadlines live in card-company terms. The 60-day period in Decree Art. 6-9 covers misuse of a lost or stolen card before it was reported, not a payment the victim made. Art. 16(5)2 makes the card company liable for use of card details obtained by hacking or other dishonest means. The telecom-fraud refund act excludes acts disguised as supplying goods or services, so a shopping-scam card payment is not on that path.",
+      "evidence": [
+        {
+          "fact": "Art. 16(10): a cardholder may dispute an amount in writing, by phone or electronically",
+          "quote": "신용카드회원이 서면, 전화, 전자문서 등으로 신용카드의 이용금액에 대하여 이의를 제기할 경우",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=277267"
+        },
+        {
+          "fact": "Art. 16(10): no payment can be taken until the investigation ends",
+          "quote": "신용카드업자는 이에 대한 조사를 마칠 때까지 그 신용카드회원으로부터 그 금액을 받을 수 없다",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=277267"
+        },
+        {
+          "fact": "Art. 16(5)2: issuer liable for use of card data obtained dishonestly",
+          "quote": "해킹, 전산장애, 내부자정보유출 등 부정한 방법으로 얻은 신용카드등의 정보를 이용한 신용카드등의 사용",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=277267"
+        },
+        {
+          "fact": "Decree Art. 6-9: issuer covers lost/stolen misuse from 60 days before the report",
+          "quote": "분실ㆍ도난 등의 통지를 받은 날부터 60일 전까지의 기간을 말한다",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=285799"
+        },
+        {
+          "fact": "Version of the act read",
+          "quote": "[시행 2025. 10. 1.] [법률 제21065호, 2025. 10. 1., 타법개정]",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=277267"
+        },
+        {
+          "fact": "FSS complaint form page",
+          "quote": "금융감독원 민원신청",
+          "url": "https://www.fss.or.kr/fss/minwon/search.jsp"
+        },
+        {
+          "fact": "FSS call centre number on the complaints page",
+          "quote": "금감원콜센터 1332 (유료, 통화료 발신자 부담)",
+          "url": "https://www.fss.or.kr/fss/main/sub1.do?menuNo=201287"
+        },
+        {
+          "fact": "Cyber-crime reports are taken online or at a police station",
+          "quote": "가까운 경찰서 민원실에 방문 접수",
+          "url": "https://minwon24.police.go.kr/cvlcpt/cvlcptGdInfo.do?cvlcptId=MW-701"
+        },
+        {
+          "fact": "The police handle a cyber-crime report within 14 days",
+          "quote": "처리기간 14일 이내",
+          "url": "https://minwon24.police.go.kr/cvlcpt/cvlcptGdInfo.do?cvlcptId=MW-701"
+        },
+        {
+          "fact": "Fraud act excludes acts disguised as supplying goods or services",
+          "quote": "재화의 공급 또는 용역의 제공 등을 가장한 행위는 제외하되",
+          "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290245"
+        }
+      ],
+      "unconfirmed": [
+        "a chargeback or dispute deadline for a scam card payment"
+      ]
+    }
+  },
+  {
+    "jurisdiction": "KR",
+    "paymentRail": "gift_card",
+    "party": "any",
+    "version": 1,
+    "status": "proposed",
+    "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "rejectReason": null,
+    "steps": [
+      {
+        "order": 1,
+        "action": "Keep the gift card and receipt. Call the company that issued it (for example a 문화상품권 issuer) and ask them to stop the PIN (사용정지).",
+        "organisation": "the gift card issuer's customer centre",
+        "contact": "the customer centre printed on the gift card or receipt",
+        "deadlineDays": null,
+        "sourceUrl": "https://ecrm.police.go.kr/minwon/crs/quick/qna"
+      },
+      {
+        "order": 2,
+        "action": "Report the scam to the police, online or at your police station. Bring your ID, the card, the receipt and the messages.",
+        "organisation": "the Korean National Police Agency (경찰청)",
+        "contact": "your local police station or minwon24.police.go.kr",
+        "deadlineDays": null,
+        "sourceUrl": "https://minwon24.police.go.kr/cvlcpt/cvlcptGdInfo.do?cvlcptId=MW-701"
+      },
+      {
+        "order": 3,
+        "action": "If you also sent money from a bank account, call 112 at once to freeze the scammer's account.",
+        "organisation": "the Korean National Police Agency (경찰청)",
+        "contact": "112",
+        "deadlineDays": null,
+        "sourceUrl": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200914"
+      }
+    ],
+    "extra": {
+      "currency": "KRW",
+      "lawName": "none specific; 형법 사기죄 (fraud) for the police report",
+      "notes": "PROPOSED: no allowed page confirms that a gift-card issuer will stop a PIN or gives an issuer number. The police eCRM Q&A only advises asking the company to stop stolen cyber cash (account-takeover answer), used here by analogy. Whether a gift-card PIN counts as a 'means storing funds' under the telecom-fraud act Art. 2(2)(c) was not confirmed. The police scam centre (counterscam112.go.kr) lists 상품권결제유도 as a scam type and gives 1394; that domain is not allow-listed.",
+      "evidence": [
+        {
+          "fact": "Police Q&A: ask the company to stop or restore stolen cyber cash",
+          "quote": "관련 업체에 신고하여 도난당한 사이버 캐시 등에 대한 사용정지 또는 재충전 요청",
+          "url": "https://ecrm.police.go.kr/minwon/crs/quick/qna"
+        },
+        {
+          "fact": "Cyber-crime reports are taken online or at a police station",
+          "quote": "가까운 경찰서 민원실에 방문 접수",
+          "url": "https://minwon24.police.go.kr/cvlcpt/cvlcptGdInfo.do?cvlcptId=MW-701"
+        },
+        {
+          "fact": "The police handle a cyber-crime report within 14 days",
+          "quote": "처리기간 14일 이내",
+          "url": "https://minwon24.police.go.kr/cvlcpt/cvlcptGdInfo.do?cvlcptId=MW-701"
+        },
+        {
+          "fact": "Cyber-crime reports cover fraud",
+          "quote": "해킹, 사기, 불법 사이트 등 사이버상에서 일어나는 범죄행위",
+          "url": "https://minwon24.police.go.kr/cvlcpt/cvlcptGdInfo.do?cvlcptId=MW-701"
+        },
+        {
+          "fact": "FSS: ask 112 at once to freeze the account",
+          "quote": "피해발생시 112로 즉시 지급정지 요청",
+          "url": "https://www.fss.or.kr/fss/main/contents.do?menuNo=200914"
+        },
+        {
+          "fact": "Police scam centre lists gift-card payment scams",
+          "quote": "상품권결제유도",
+          "url": "https://www.counterscam112.go.kr/"
+        },
+        {
+          "fact": "Police integrated scam report number",
+          "quote": "보이스피싱·스미싱 통합신고 1394",
+          "url": "https://www.counterscam112.go.kr/"
+        }
+      ],
+      "unconfirmed": [
+        "issuer PIN stop (사용중지) procedure and contact on an official page",
+        "gift-card PIN coverage under 통신사기피해환급법"
+      ]
+    }
+  }
+]

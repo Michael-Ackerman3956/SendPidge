@@ -3,9 +3,9 @@
     "jurisdiction": "US", "paymentRail": "card", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
     "checkedAt": "2026-10-24T00:00:00Z", "rejectReason": null,
     "steps": [
-      {"order": 1, "action": "Call your card issuer and say you were tricked into this payment. Ask for a chargeback and a new card.", "deadlineDays": 60, "contact": "the number on the back of your card", "sourceUrl": "https://consumer.ftc.gov/articles/what-do-if-you-were-scammed"},
-      {"order": 2, "action": "Report the scam to the FTC.", "deadlineDays": null, "contact": "reportfraud.ftc.gov", "sourceUrl": "https://reportfraud.ftc.gov/"},
-      {"order": 3, "action": "If the request came over the internet, file a complaint with the FBI's IC3.", "deadlineDays": null, "contact": "IC3", "sourceUrl": "https://www.ic3.gov/"}
+      {"order": 1, "action": "Call your card issuer and say you were tricked into this payment. Ask for a chargeback and a new card.", "deadlineDays": 60, "contact": "the number on the back of your card", "organisation": "your card issuer", "sourceUrl": "https://consumer.ftc.gov/articles/what-do-if-you-were-scammed"},
+      {"order": 2, "action": "Report the scam to the FTC.", "deadlineDays": null, "contact": "reportfraud.ftc.gov", "organisation": "Federal Trade Commission (FTC)", "sourceUrl": "https://reportfraud.ftc.gov/"},
+      {"order": 3, "action": "If the request came over the internet, file a complaint with the FBI's IC3.", "deadlineDays": null, "contact": "IC3", "organisation": "FBI Internet Crime Complaint Center (IC3)", "sourceUrl": "https://www.ic3.gov/"}
     ],
     "extra": {}
   },
@@ -13,9 +13,9 @@
     "jurisdiction": "US", "paymentRail": "zelle", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
     "checkedAt": "2026-10-24T00:00:00Z", "rejectReason": null,
     "steps": [
-      {"order": 1, "action": "Call your bank's fraud line and say a Zelle payment was an imposter scam. Ask them to open a claim.", "deadlineDays": null, "contact": "your bank", "sourceUrl": "https://www.zellepay.com/pay-it-safe"},
-      {"order": 2, "action": "Report the scam to the FTC.", "deadlineDays": null, "contact": "reportfraud.ftc.gov", "sourceUrl": "https://reportfraud.ftc.gov/"},
-      {"order": 3, "action": "File a complaint with the FBI's IC3.", "deadlineDays": null, "contact": "IC3", "sourceUrl": "https://www.ic3.gov/"}
+      {"order": 1, "action": "Call your bank's fraud line and say a Zelle payment was an imposter scam. Ask them to open a claim.", "deadlineDays": null, "contact": "your bank", "organisation": "your bank", "sourceUrl": "https://www.zellepay.com/pay-it-safe"},
+      {"order": 2, "action": "Report the scam to the FTC.", "deadlineDays": null, "contact": "reportfraud.ftc.gov", "organisation": "Federal Trade Commission (FTC)", "sourceUrl": "https://reportfraud.ftc.gov/"},
+      {"order": 3, "action": "File a complaint with the FBI's IC3.", "deadlineDays": null, "contact": "IC3", "organisation": "FBI Internet Crime Complaint Center (IC3)", "sourceUrl": "https://www.ic3.gov/"}
     ],
     "extra": {}
   },
@@ -23,9 +23,9 @@
     "jurisdiction": "US", "paymentRail": "wire", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
     "checkedAt": "2026-10-24T00:00:00Z", "rejectReason": null,
     "steps": [
-      {"order": 1, "action": "Call your bank right away and ask for a wire recall.", "deadlineHours": 72, "contact": "your bank", "sourceUrl": "https://consumer.ftc.gov/articles/what-do-if-you-were-scammed"},
-      {"order": 2, "action": "File with the FBI's IC3 within 72 hours so the Financial Fraud Kill Chain can try to freeze the money.", "deadlineHours": 72, "contact": "IC3", "sourceUrl": "https://www.ic3.gov/"},
-      {"order": 3, "action": "Report the scam to the FTC.", "deadlineDays": null, "contact": "reportfraud.ftc.gov", "sourceUrl": "https://reportfraud.ftc.gov/"}
+      {"order": 1, "action": "Call your bank right away and ask for a wire recall.", "deadlineHours": 72, "contact": "your bank", "organisation": "your bank", "sourceUrl": "https://consumer.ftc.gov/articles/what-do-if-you-were-scammed"},
+      {"order": 2, "action": "File with the FBI's IC3 within 72 hours so the Financial Fraud Kill Chain can try to freeze the money.", "deadlineHours": 72, "contact": "IC3", "organisation": "FBI Internet Crime Complaint Center (IC3)", "sourceUrl": "https://www.ic3.gov/"},
+      {"order": 3, "action": "Report the scam to the FTC.", "deadlineDays": null, "contact": "reportfraud.ftc.gov", "organisation": "Federal Trade Commission (FTC)", "sourceUrl": "https://reportfraud.ftc.gov/"}
     ],
     "extra": {}
   },
@@ -33,9 +33,9 @@
     "jurisdiction": "US", "paymentRail": "gift_card", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
     "checkedAt": "2026-10-24T00:00:00Z", "rejectReason": null,
     "steps": [
-      {"order": 1, "action": "Keep the gift card and the receipt. Call the card company and say the card was used in a scam.", "deadlineDays": null, "contact": "the number on the back of the gift card", "sourceUrl": "https://consumer.ftc.gov/articles/avoiding-and-reporting-gift-card-scams"},
-      {"order": 2, "action": "Report the scam to the FTC.", "deadlineDays": null, "contact": "reportfraud.ftc.gov", "sourceUrl": "https://reportfraud.ftc.gov/"},
-      {"order": 3, "action": "Tell the store where the card was bought.", "deadlineDays": null, "contact": "retailer", "sourceUrl": "https://consumer.ftc.gov/articles/avoiding-and-reporting-gift-card-scams"}
+      {"order": 1, "action": "Keep the gift card and the receipt. Call the card company and say the card was used in a scam.", "deadlineDays": null, "contact": "the number on the back of the gift card", "organisation": "the gift card company", "sourceUrl": "https://consumer.ftc.gov/articles/avoiding-and-reporting-gift-card-scams"},
+      {"order": 2, "action": "Report the scam to the FTC.", "deadlineDays": null, "contact": "reportfraud.ftc.gov", "organisation": "Federal Trade Commission (FTC)", "sourceUrl": "https://reportfraud.ftc.gov/"},
+      {"order": 3, "action": "Tell the store where the card was bought.", "deadlineDays": null, "contact": "retailer", "organisation": "the store that sold the card", "sourceUrl": "https://consumer.ftc.gov/articles/avoiding-and-reporting-gift-card-scams"}
     ],
     "extra": {}
   }

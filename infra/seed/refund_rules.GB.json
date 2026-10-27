@@ -1,0 +1,326 @@
+[
+  {
+    "jurisdiction": "GB",
+    "paymentRail": "wire",
+    "party": "any",
+    "version": 1,
+    "status": "live",
+    "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "rejectReason": null,
+    "steps": [
+      {
+        "order": 1,
+        "action": "Call your bank now, or dial 159. Say you were tricked into sending a bank transfer and ask them to refund you under the scam reimbursement rules. You must tell them within 13 months of the payment.",
+        "deadlineDays": null,
+        "contact": "159, or the number on the back of your card",
+        "organisation": "your bank",
+        "sourceUrl": "https://www.psr.org.uk/information-for-consumers/app-fraud-reimbursement-protections/"
+      },
+      {
+        "order": 2,
+        "action": "Report the scam to Report Fraud, the police's national fraud line. If you live in Scotland, call Police Scotland on 101 instead.",
+        "deadlineDays": null,
+        "contact": "0300 123 2040",
+        "organisation": "Report Fraud (police national fraud reporting centre)",
+        "sourceUrl": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+      },
+      {
+        "order": 3,
+        "action": "If your bank says no, or does not answer in time, complain to the Financial Ombudsman Service. It is free. Do it within 6 months of the date on the bank's final letter.",
+        "deadlineDays": null,
+        "contact": "0800 023 4567",
+        "organisation": "the Financial Ombudsman Service",
+        "sourceUrl": "https://www.financial-ombudsman.org.uk/consumers/how-to-complain"
+      }
+    ],
+    "extra": {
+      "currency": "GBP",
+      "lawName": "Faster Payments Scheme and CHAPS reimbursement rules (PSR, in force 7 October 2024)",
+      "capAmount": 85000,
+      "evidence": [
+        {
+          "quote": "The maximum amount of money people can claim is £85,000",
+          "url": "https://www.psr.org.uk/information-for-consumers/app-fraud-reimbursement-protections/"
+        },
+        {
+          "quote": "within 13 months of making the fraudulent payment",
+          "url": "https://www.psr.org.uk/information-for-consumers/app-fraud-reimbursement-protections/"
+        },
+        {
+          "quote": "you can expect to be reimbursed within 5 business days of making your claim",
+          "url": "https://www.psr.org.uk/information-for-consumers/app-fraud-reimbursement-protections/"
+        },
+        {
+          "quote": "the payment firm must arrive at an outcome within 35 business days",
+          "url": "https://www.psr.org.uk/information-for-consumers/app-fraud-reimbursement-protections/"
+        },
+        {
+          "quote": "There is an optional £100 excess that firms can apply",
+          "url": "https://www.psr.org.uk/information-for-consumers/app-fraud-reimbursement-protections/"
+        },
+        {
+          "quote": "over the Faster Payments system or CHAPS",
+          "url": "https://www.psr.org.uk/information-for-consumers/app-fraud-reimbursement-protections/"
+        },
+        {
+          "quote": "the back of your card, or call 159",
+          "url": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+        },
+        {
+          "quote": "Report Fraud online or by calling 0300 123 2040",
+          "url": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+        },
+        {
+          "quote": "should be reported to Police Scotland by calling 101",
+          "url": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+        },
+        {
+          "quote": "a business has only 15 days to consider complaints about",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/how-to-complain"
+        },
+        {
+          "quote": "within 6 months from the date on your final response",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/how-to-complain"
+        },
+        {
+          "quote": "calling us on 0800 023 4567",
+          "url": "https://www.financial-ombudsman.org.uk/contact-us"
+        }
+      ],
+      "notes": "Covers transfers to another UK account by Faster Payments or CHAPS on or after 7 October 2024. Firms may deduct an excess of up to £100, never from vulnerable customers. Above £85,000 the Ombudsman can still look at the case. Action Fraud is now called Report Fraud. Month-based windows (13 months to claim, 6 months to go to the Ombudsman) are in the action text with deadlineDays null, because the app renders deadlineDays as 'within N days'."
+    }
+  },
+  {
+    "jurisdiction": "GB",
+    "paymentRail": "card",
+    "party": "any",
+    "version": 1,
+    "status": "live",
+    "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "rejectReason": null,
+    "steps": [
+      {
+        "order": 1,
+        "action": "Call your card company now. Say you were tricked into paying by card and ask for a chargeback. If you paid by credit card for something costing more than £100 and up to £30,000, also ask for a Section 75 claim.",
+        "deadlineDays": null,
+        "contact": "the number on the back of your card",
+        "organisation": "your card issuer",
+        "sourceUrl": "https://www.financial-ombudsman.org.uk/consumers/complaints-can-help/credit-borrowing-money/goods-services-bought-credit"
+      },
+      {
+        "order": 2,
+        "action": "Report the scam to Report Fraud, the police's national fraud line. If you live in Scotland, call Police Scotland on 101 instead.",
+        "deadlineDays": null,
+        "contact": "0300 123 2040",
+        "organisation": "Report Fraud (police national fraud reporting centre)",
+        "sourceUrl": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+      },
+      {
+        "order": 3,
+        "action": "If your card company says no, tell them you want to make a complaint. If you are still unhappy, contact the Financial Ombudsman Service. It is free. Do it within 6 months of the date on their final letter.",
+        "deadlineDays": null,
+        "contact": "0800 023 4567",
+        "organisation": "the Financial Ombudsman Service",
+        "sourceUrl": "https://www.financial-ombudsman.org.uk/consumers/how-to-complain"
+      }
+    ],
+    "extra": {
+      "currency": "GBP",
+      "lawName": "Section 75 of the Consumer Credit Act 1974; card-scheme chargeback",
+      "capAmount": null,
+      "evidence": [
+        {
+          "quote": "A chargeback lets you challenge and ‘claw back’ payments",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/complaints-can-help/credit-borrowing-money/goods-services-bought-credit"
+        },
+        {
+          "quote": "You usually have around 120 days to raise a chargeback about goods or services.",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/complaints-can-help/credit-borrowing-money/goods-services-bought-credit"
+        },
+        {
+          "quote": "is more than £100 but not more than £30,000",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/complaints-can-help/credit-borrowing-money/goods-services-bought-credit"
+        },
+        {
+          "quote": "you paid with a debit card or a charge card",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/complaints-can-help/credit-borrowing-money/goods-services-bought-credit"
+        },
+        {
+          "quote": "using your credit or debit card to pay into a fake investment",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/complaints-can-help/fraud-scams/scams-youve-tricked-making-payment"
+        },
+        {
+          "quote": "Other payment types, including card, cash, and cheque have their own protections",
+          "url": "https://www.psr.org.uk/information-for-consumers/app-fraud-reimbursement-protections/"
+        },
+        {
+          "quote": "Report Fraud online or by calling 0300 123 2040",
+          "url": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+        },
+        {
+          "quote": "should be reported to Police Scotland by calling 101",
+          "url": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+        },
+        {
+          "quote": "within 6 months from the date on your final response",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/how-to-complain"
+        },
+        {
+          "quote": "calling us on 0800 023 4567",
+          "url": "https://www.financial-ombudsman.org.uk/contact-us"
+        }
+      ],
+      "notes": "The APP-scam reimbursement rules do not cover card payments. Section 75 does not apply to debit cards; chargeback can. The Ombudsman says a chargeback window is 'usually around 120 days' and can be shorter, so no deadlineDays is set; the step says 'now'. capAmount null: £100 to £30,000 is the Section 75 eligibility band, not a cap. Month-based windows are in the action text because the app renders deadlineDays as days."
+    }
+  },
+  {
+    "jurisdiction": "GB",
+    "paymentRail": "gift_card",
+    "party": "any",
+    "version": 1,
+    "status": "proposed",
+    "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "rejectReason": null,
+    "steps": [
+      {
+        "order": 1,
+        "action": "Keep the gift card and the receipt. Call the gift card company, say the card was used in a scam, and ask them to freeze what is left on it.",
+        "deadlineDays": null,
+        "contact": "the number on the back of the gift card",
+        "organisation": "the gift card company",
+        "sourceUrl": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+      },
+      {
+        "order": 2,
+        "action": "Report the scam to Report Fraud, the police's national fraud line. If you live in Scotland, call Police Scotland on 101 instead.",
+        "deadlineDays": null,
+        "contact": "0300 123 2040",
+        "organisation": "Report Fraud (police national fraud reporting centre)",
+        "sourceUrl": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+      },
+      {
+        "order": 3,
+        "action": "Tell the shop where you bought the card.",
+        "deadlineDays": null,
+        "contact": "the shop that sold the card",
+        "organisation": "the shop that sold the card",
+        "sourceUrl": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+      }
+    ],
+    "extra": {
+      "currency": "GBP",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {
+          "quote": "Report Fraud online or by calling 0300 123 2040",
+          "url": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+        },
+        {
+          "quote": "should be reported to Police Scotland by calling 101",
+          "url": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+        }
+      ],
+      "notes": "PROPOSED: steps 1 and 3 are not stated on any official UK page fetched. Report Fraud's A-Z has no gift-card scam page (only counterfeit gift certificates); gov.uk Stop! Think Fraud, FCA and Financial Ombudsman pages do not mention gift-card payment scams. Police pages that may (PSNI) return 403 to automated fetches. Step sourceUrl points at the reporting page, which supports step 2 only. No refund law or ombudsman route found for gift cards."
+    }
+  },
+  {
+    "jurisdiction": "GB",
+    "paymentRail": "crypto",
+    "party": "any",
+    "version": 1,
+    "status": "live",
+    "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "rejectReason": null,
+    "steps": [
+      {
+        "order": 1,
+        "action": "Call your bank now, or dial 159. Say you were tricked into buying or sending crypto, and ask them to block any more payments and try to get your money back.",
+        "deadlineDays": null,
+        "contact": "159, or the number on the back of your card",
+        "organisation": "your bank",
+        "sourceUrl": "https://www.fca.org.uk/consumers/report-scam-us"
+      },
+      {
+        "order": 2,
+        "action": "Report the scam to Report Fraud, the police's national fraud line. If you live in Scotland, call Police Scotland on 101 instead.",
+        "deadlineDays": null,
+        "contact": "0300 123 2040",
+        "organisation": "Report Fraud (police national fraud reporting centre)",
+        "sourceUrl": "https://www.reportfraud.police.uk/cryptocurrency/"
+      },
+      {
+        "order": 3,
+        "action": "If your bank will not help, complain to the bank first. If you are still unhappy, contact the Financial Ombudsman Service within 6 months of the bank's final letter. It can look at what your bank did, but usually not at the crypto company.",
+        "deadlineDays": null,
+        "contact": "0800 023 4567",
+        "organisation": "the Financial Ombudsman Service",
+        "sourceUrl": "https://www.financial-ombudsman.org.uk/consumers/complaints-can-help/fraud-scams/scams-youve-tricked-making-payment"
+      },
+      {
+        "order": 4,
+        "action": "Also tell the Financial Conduct Authority about the scam. Be careful: anyone who calls offering to recover your crypto for a fee is likely another scammer.",
+        "deadlineDays": null,
+        "contact": "0800 111 6768",
+        "organisation": "the Financial Conduct Authority (FCA)",
+        "sourceUrl": "https://www.fca.org.uk/consumers/crypto-investment-scams"
+      }
+    ],
+    "extra": {
+      "currency": "GBP",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {
+          "quote": "tell your bank immediately using the contact details on your card or statements",
+          "url": "https://www.fca.org.uk/consumers/report-scam-us"
+        },
+        {
+          "quote": "the back of your card, or call 159",
+          "url": "https://stopthinkfraud.campaign.gov.uk/reporting-fraud/"
+        },
+        {
+          "quote": "contact Report Fraud and then report it to us",
+          "url": "https://www.fca.org.uk/consumers/report-scam-us"
+        },
+        {
+          "quote": "please report it to Report Fraud on 0300 123 2040",
+          "url": "https://www.reportfraud.police.uk/cryptocurrency/"
+        },
+        {
+          "quote": "please report to Police Scotland directly by calling 101",
+          "url": "https://www.reportfraud.police.uk/cryptocurrency/"
+        },
+        {
+          "quote": "such as a crypto currency account before sending cryptocurrency to the fraudster",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/complaints-can-help/fraud-scams/scams-youve-tricked-making-payment"
+        },
+        {
+          "quote": "you generally won't have access to the Financial Ombudsman Service",
+          "url": "https://www.fca.org.uk/consumers/crypto-investment-scams"
+        },
+        {
+          "quote": "within 6 months from the date on your final response",
+          "url": "https://www.financial-ombudsman.org.uk/consumers/how-to-complain"
+        },
+        {
+          "quote": "calling us on 0800 023 4567",
+          "url": "https://www.financial-ombudsman.org.uk/contact-us"
+        },
+        {
+          "quote": "Call us on 0800 111 6768 or use our contact form",
+          "url": "https://www.fca.org.uk/consumers/crypto-investment-scams"
+        },
+        {
+          "quote": "potentially by recovery room scammers who pretend to be legitimate firms",
+          "url": "https://www.fca.org.uk/consumers/report-scam-us"
+        }
+      ],
+      "notes": "No reimbursement scheme covers crypto itself; the FCA says most crypto activity is unregulated, with no Ombudsman or FSCS cover for the crypto firm. The Ombudsman can still review the bank that sent the money (including 'me-to-me' transfers to your own crypto account). No official page found naming an exchange freeze step, so none is listed. FCA pages disagree on order (Report Fraud then FCA, or FCA then Report Fraud); both say do both. lawName null: no statute grants a refund."
+    }
+  }
+]

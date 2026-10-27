@@ -151,7 +151,8 @@ def record_answer(
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row, contact_row)
     if answer is VerdictAnswer.REVERSE:
         email_row = graph.get_email(request_row["emailId"])
-        graph.delete_listed_address(email_row["senderAddress"])  # the Confirm row, if Grandma had already reported it
+        if not graph.delete_listed_address(email_row["senderAddress"], request_id):  # only the row this request's Confirm wrote
+            logger.info("reverse on %s left LIST#address as it was: no Confirm row from this request", request_id)
     return ActionResult(ActionOutcome.RECORDED, graph.get_request(request_id), contact_row, status=STATUS_FOR_ANSWER[answer])
 
 
@@ -220,7 +221,7 @@ def confirm_quarantine(
     s3_client.put_object_tagging(Bucket=bucket_name, Key=email_row["s3Key"], Tagging={"TagSet": [QUARANTINE_TAG]})
     if not graph.mark_email_quarantined(request_row["emailId"]):
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row, email_row=email_row)
-    graph.write_listed_address(email_row["senderAddress"], "Reported after the real contact said they did not send it")
+    graph.write_listed_address(email_row["senderAddress"], "Reported after the real contact said they did not send it", request_id)
     return ActionResult(ActionOutcome.RECORDED, request_row, email_row=email_row, status=RequestState.DENIED)
 
 

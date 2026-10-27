@@ -1,0 +1,50 @@
+[
+  {
+    "jurisdiction": "CA", "paymentRail": "wire", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z", "rejectReason": null,
+    "steps": [
+      {"order": 1, "action": "Call your bank now. Say you were tricked into sending money by e-Transfer or bank transfer, and ask them to try to stop it and get it back.", "deadlineDays": null, "contact": "your bank", "organisation": "your bank", "sourceUrl": "https://antifraudcentre-centreantifraude.ca/scams-fraudes/victim-victime-eng.htm"},
+      {"order": 2, "action": "Report the scam to your local police and get a file number. Then report it to the Canadian Anti-Fraud Centre by phone or online.", "deadlineDays": null, "contact": "1-888-495-8501", "organisation": "the Canadian Anti-Fraud Centre", "sourceUrl": "https://antifraudcentre-centreantifraude.ca/report-signalez-eng.htm"},
+      {"order": 3, "action": "If your bank will not help, make a complaint to the bank. If it has not answered in 56 days, or you do not accept its final answer, contact the Ombudsman for Banking Services and Investments. It is free. Do it within 180 days of the bank's final answer.", "deadlineDays": 180, "contact": "1-888-451-4519", "organisation": "the Ombudsman for Banking Services and Investments (OBSI)", "sourceUrl": "https://www.obsi.ca/en/for-consumers/how-the-complaint-process-works/"}
+    ],
+    "extra": {
+      "currency": "CAD",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {"quote": "Report the incident to the financial institution that transferred the money.", "url": "https://antifraudcentre-centreantifraude.ca/scams-fraudes/victim-victime-eng.htm"},
+        {"quote": "Report the incident to your local police and get a file number", "url": "https://antifraudcentre-centreantifraude.ca/scams-fraudes/victim-victime-eng.htm"},
+        {"quote": "Toll free: 1-888-495-8501", "url": "https://antifraudcentre-centreantifraude.ca/report-signalez-eng.htm"},
+        {"quote": "Your bank must provide you with a detailed written response within 56 calendar days", "url": "https://www.canada.ca/en/financial-consumer-agency/services/complaints/file-complaint-financial-institution.html"},
+        {"quote": "It provides a free and impartial review of complaints between consumers and banks.", "url": "https://www.canada.ca/en/financial-consumer-agency/services/complaints/file-complaint-financial-institution.html"},
+        {"quote": "You have 180 days to bring your complaint to us", "url": "https://www.obsi.ca/en/for-consumers/how-the-complaint-process-works/"},
+        {"quote": "Toll-Free Phone: 1 (888) 451-4519", "url": "https://www.obsi.ca/en/index.aspx"}
+      ],
+      "notes": "Canada has no scam-reimbursement law for authorised transfers; recovery depends on the bank. deadlineDays 180 is OBSI's limit counted from the bank's final response, not from the payment. CAFC phone hours are Monday to Friday, 10 am to 4:45 pm Eastern; online reporting is at reportcyberandfraud.canada.ca. Provincial credit unions have a different process (90 days, or 60 in Quebec, and a provincial regulator)."
+    }
+  },
+  {
+    "jurisdiction": "CA", "paymentRail": "card", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z", "rejectReason": null,
+    "steps": [
+      {"order": 1, "action": "Call your card company now. Say you were tricked into this card payment and ask them to reverse it.", "deadlineDays": null, "contact": "the number on the back of your card", "organisation": "your card issuer", "sourceUrl": "https://antifraudcentre-centreantifraude.ca/scams-fraudes/victim-victime-eng.htm"},
+      {"order": 2, "action": "Report the scam to your local police and get a file number. Then report it to the Canadian Anti-Fraud Centre by phone or online.", "deadlineDays": null, "contact": "1-888-495-8501", "organisation": "the Canadian Anti-Fraud Centre", "sourceUrl": "https://antifraudcentre-centreantifraude.ca/report-signalez-eng.htm"},
+      {"order": 3, "action": "If your card company is a bank and will not help, make a complaint to it. If it has not answered in 56 days, or you do not accept its final answer, contact the Ombudsman for Banking Services and Investments. It is free. Do it within 180 days of the bank's final answer.", "deadlineDays": 180, "contact": "1-888-451-4519", "organisation": "the Ombudsman for Banking Services and Investments (OBSI)", "sourceUrl": "https://www.obsi.ca/en/for-consumers/how-the-complaint-process-works/"}
+    ],
+    "extra": {
+      "currency": "CAD",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {"quote": "Report the incident to the financial institution that transferred the money.", "url": "https://antifraudcentre-centreantifraude.ca/scams-fraudes/victim-victime-eng.htm"},
+        {"quote": "calling the phone number on the back of your credit card", "url": "https://antifraudcentre-centreantifraude.ca/protect-protegez-eng.htm"},
+        {"quote": "Report the incident to your local police and get a file number", "url": "https://antifraudcentre-centreantifraude.ca/scams-fraudes/victim-victime-eng.htm"},
+        {"quote": "Toll free: 1-888-495-8501", "url": "https://antifraudcentre-centreantifraude.ca/report-signalez-eng.htm"},
+        {"quote": "Your bank must provide you with a detailed written response within 56 calendar days", "url": "https://www.canada.ca/en/financial-consumer-agency/services/complaints/file-complaint-financial-institution.html"},
+        {"quote": "You have 180 days to bring your complaint to us", "url": "https://www.obsi.ca/en/for-consumers/how-the-complaint-process-works/"},
+        {"quote": "Toll-Free Phone: 1 (888) 451-4519", "url": "https://www.obsi.ca/en/index.aspx"}
+      ],
+      "notes": "The word 'chargeback' does not appear on any official Canadian consumer page fetched, so step 1 asks the issuer to 'reverse it' instead. No refund cap applies to a card payment the victim made, so capAmount is null. OBSI covers bank-issued cards; other issuers follow their provincial process. deadlineDays 180 counts from the bank's final response."
+    }
+  }
+]

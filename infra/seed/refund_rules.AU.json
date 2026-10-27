@@ -1,0 +1,50 @@
+[
+  {
+    "jurisdiction": "AU", "paymentRail": "wire", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z", "rejectReason": null,
+    "steps": [
+      {"order": 1, "action": "Call your bank now and say you were tricked into sending a bank transfer. Ask them to stop any transactions and ask what else you should do.", "deadlineDays": null, "contact": "your bank", "organisation": "your bank", "sourceUrl": "https://moneysmart.gov.au/check-and-report-scams/what-to-do-if-youve-been-scammed"},
+      {"order": 2, "action": "Report the scam to Scamwatch. You can also report it to the police online through ReportCyber.", "deadlineDays": null, "contact": "https://www.scamwatch.gov.au/report-a-scam", "organisation": "Scamwatch (National Anti-Scam Centre, ACCC)", "sourceUrl": "https://www.scamwatch.gov.au/report-a-scam"},
+      {"order": 3, "action": "If your bank does not help, make a formal complaint to the bank. If you are still unhappy, contact the Australian Financial Complaints Authority. It is free. Do it within 2 years of the bank's reply. You can also complain about the bank that received the money.", "deadlineDays": null, "contact": "1800 931 678", "organisation": "the Australian Financial Complaints Authority (AFCA)", "sourceUrl": "https://www.afca.org.au/what-to-expect/the-process-we-follow"}
+    ],
+    "extra": {
+      "currency": "AUD",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {"quote": "Contact your bank or card provider immediately to report the scam.", "url": "https://moneysmart.gov.au/check-and-report-scams/what-to-do-if-youve-been-scammed"},
+        {"quote": "Ask them to stop any transactions and ask what other action you should take.", "url": "https://moneysmart.gov.au/check-and-report-scams/what-to-do-if-youve-been-scammed"},
+        {"quote": "Report all scams to Scamwatch.", "url": "https://moneysmart.gov.au/check-and-report-scams/what-to-do-if-youve-been-scammed"},
+        {"quote": "You can also make an official report to the police online.", "url": "https://www.scamwatch.gov.au/stop-check-protect/what-to-do-if-youve-been-scammed"},
+        {"quote": "You can make a complaint against your bank, or a receiving bank", "url": "https://moneysmart.gov.au/check-and-report-scams/what-to-do-if-youve-been-scammed"},
+        {"quote": "you should complain to us within two years of getting this response", "url": "https://www.afca.org.au/what-to-expect/the-process-we-follow"},
+        {"quote": "We are available on 1800 931 678", "url": "https://www.afca.org.au/make-a-complaint"},
+        {"quote": "Most obligations will apply from 31 March 2027", "url": "https://www.accc.gov.au/about-us/scams-prevention-framework"}
+      ],
+      "notes": "No scam-reimbursement law or cap is in force yet: the Scams Prevention Framework's main obligations, and AFCA's role under it, start 31 March 2027, and its codes are still being drafted. AFCA time limit is 2 years from the bank's internal-dispute reply or 6 years from becoming aware of the loss, whichever comes first; kept in the action text with deadlineDays null because the app renders days. Police report is via ReportCyber (https://www.cyber.gov.au/submit-a-report). Scamwatch names IDCARE (1800 595 160) for identity help; omitted as a step because IDCARE is a not-for-profit, not a government body."
+    }
+  },
+  {
+    "jurisdiction": "AU", "paymentRail": "card", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z", "rejectReason": null,
+    "steps": [
+      {"order": 1, "action": "Call your card provider now and say you were tricked into paying by card. Ask them to stop any transactions and ask for a chargeback.", "deadlineDays": null, "contact": "the number on the back of your card", "organisation": "your card issuer", "sourceUrl": "https://moneysmart.gov.au/check-and-report-scams/what-to-do-if-youve-been-scammed"},
+      {"order": 2, "action": "Report the scam to Scamwatch. You can also report it to the police online through ReportCyber.", "deadlineDays": null, "contact": "https://www.scamwatch.gov.au/report-a-scam", "organisation": "Scamwatch (National Anti-Scam Centre, ACCC)", "sourceUrl": "https://www.scamwatch.gov.au/report-a-scam"},
+      {"order": 3, "action": "If your card provider says no, make a formal complaint to them. If you are still unhappy, contact the Australian Financial Complaints Authority. It is free. Do it within 2 years of their reply.", "deadlineDays": null, "contact": "1800 931 678", "organisation": "the Australian Financial Complaints Authority (AFCA)", "sourceUrl": "https://www.afca.org.au/what-to-expect/the-process-we-follow"}
+    ],
+    "extra": {
+      "currency": "AUD",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {"quote": "Contact your bank or card provider immediately to report the scam.", "url": "https://moneysmart.gov.au/check-and-report-scams/what-to-do-if-youve-been-scammed"},
+        {"quote": "They may be able to give you a chargeback.", "url": "https://moneysmart.gov.au/online-safety/online-shopping-safety"},
+        {"quote": "Report all scams to Scamwatch.", "url": "https://moneysmart.gov.au/check-and-report-scams/what-to-do-if-youve-been-scammed"},
+        {"quote": "You can also make an official report to the police online.", "url": "https://www.scamwatch.gov.au/stop-check-protect/what-to-do-if-youve-been-scammed"},
+        {"quote": "you should complain to us within two years of getting this response", "url": "https://www.afca.org.au/what-to-expect/the-process-we-follow"},
+        {"quote": "We are available on 1800 931 678", "url": "https://www.afca.org.au/make-a-complaint"}
+      ],
+      "notes": "Chargeback is a card-scheme process; no official AU page fetched states a chargeback deadline, so none is set and the step says 'now'. No card-specific scam refund law. AFCA time limit kept in the action text (deadlineDays null). Police report via ReportCyber (https://www.cyber.gov.au/submit-a-report)."
+    }
+  }
+]

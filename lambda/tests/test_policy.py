@@ -2,12 +2,14 @@
 
 import pytest
 
+from shared import sanitize
 from shared.auth import authentication_reasons
 from shared.enums import EscalationDecision, Friction, GateFired, Intent, PolicyDecision, ReasonCode, WarnReason
+from shared.escalation import EscalationVerdict, escalation_fields
 from shared.graph import Contact
 from shared.policy import (
     CLAIMED_PERSON_MAX_LENGTH, UNREADABLE_SUMMARY, EscalationAnswer, EscalationFailure, PolicyOutcome, ReaderFailure,
-    apply_escalation, decide, needs_escalation, verdict_fields_for_request,
+    apply_escalation, decide, needs_escalation, stored_claimed_person, verdict_fields_for_request,
 )
 from tests.policy_golden import (
     AUTHENTICATION_ROWS, GATE_1_ROWS, GATE_2_ROWS, JIMIN, JIMIN_ADDRESS, STRANGER_ADDRESS, make_verdict,
@@ -149,3 +151,19 @@ def test_claimed_person_is_sanitised_and_capped_when_stored():
     assert not any(character.isdigit() for character in stored) and "bank-help" not in stored
     assert stored.startswith("Jimin call") and len(stored) <= CLAIMED_PERSON_MAX_LENGTH == 60
     assert verdict_fields_for_request(make_verdict(Intent.MONEY, 0.9, claimed_person=None), "summary")["claimed_person"] is None
+
+
+def test_a_claimed_name_that_falls_back_is_stored_as_no_name(monkeypatch):
+    monkeypatch.setattr(sanitize, "strip_links_and_addresses", lambda text: text)  # a span survives the strip
+    raw_claim = "Jimin at evil.com"
+    assert sanitize.sanitize_summary(raw_claim) == sanitize.SUMMARY_FALLBACK_TEXT
+    assert stored_claimed_person(raw_claim) is None
+
+
+def test_the_second_reviewers_claimed_name_is_stored_like_the_readers():
+    raw_claim = "Jimin call 010-1234-5678 at bank-help.example " + "x" * 200
+    reviewer_verdict = EscalationVerdict(claimed_person=raw_claim, intent=Intent.MONEY, confidence=0.9,
+                                         decision=EscalationDecision.HOLD, rationale="asks for money")
+    stored = escalation_fields(reviewer_verdict)["claimed_person"]
+    assert not any(character.isdigit() for character in stored) and "bank-help" not in stored
+    assert stored.startswith("Jimin call") and len(stored) <= CLAIMED_PERSON_MAX_LENGTH

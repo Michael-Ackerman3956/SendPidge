@@ -34,6 +34,15 @@ Explain briefly, carrying forward what they already know:
 
 Use the current form for exact fields and video constraints; don't invent a duration limit or additional requirements. If it is inaccessible, ask the learner to share its prompts. If it contradicts these requirements, surface the discrepancy rather than silently reinstating old rules.
 
+## Hackathon README (AWS CDS Agentic AI Partner Hackathon, Oct 2026)
+
+The organiser README and the Devpost rules add to the requirements above; the detail and the judge steps are in `devpost/checklist.md > Submission Paperwork`.
+
+- Repository: public (recommended), or private with collaborator `aws-cds-partner` and shared with `testing@devpost.com` and `aws-cds-partner@amazon.com`. Nothing is revoked before 2026-11-19. Judges read the latest commit on `main`.
+- Secrets: no keys, tokens, `.pem` or `.env` in any commit; run `gitleaks` on the history before publishing; `.env.example` lists every variable with a placeholder.
+- Licence: an OSS licence the repo "About" box can detect. This project switches `LICENSE` and the README's License line from MIT to Apache 2.0 at publication.
+- Judge path: the testing-instructions field on Devpost holds the two per-person links and the steps; the README points there and never carries a token.
+
 ## 1. Confirm It's Ready
 
 Start the project as documented, run existing relevant checks, and verify the core journey and kernel. Be honest about checks you cannot perform; ask the learner to do those and report results. The thorough kick-the-tires review and learning wrap-up belong in `5-build`, not here again.

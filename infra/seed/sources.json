@@ -1,0 +1,414 @@
+[
+  {
+    "id": "kr-kisa-phishing-2024",
+    "name": "KISA phishing site URLs 2024 [한국인터넷진흥원_피싱사이트]",
+    "kind": "feed",
+    "indicatorKinds": [
+      "domain",
+      "url"
+    ],
+    "licenceTag": "commercial-ok",
+    "licenceQuote": "이용허락범위 제한 없음",
+    "licenceUrl": "https://www.data.go.kr/ugs/selectPortalPolicyView.do",
+    "attribution": {
+      "text": "KISA 피싱사이트 URL · data.go.kr 15143094 · 이용허락범위 제한 없음",
+      "url": "https://www.data.go.kr/data/15143094/fileData.do"
+    },
+    "syncIntervalMinutes": 525600,
+    "ttlDays": 180,
+    "status": "live",
+    "proposedBy": "seed",
+    "rejectReason": null,
+    "mapping": {
+      "url": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003126636&fileDetailSn=1&insertDataPrcus=N",
+      "format": "csv",
+      "columns": [
+        "날짜",
+        "홈페이지주소"
+      ],
+      "columnMeaning": {
+        "날짜": "detection date",
+        "홈페이지주소": "phishing URL"
+      },
+      "delimiter": ",",
+      "encoding": "utf-8-sig",
+      "dateFormat": "%Y-%m-%d",
+      "trim": true
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": "2026-10-27T14:02:53Z",
+    "lastGeneration": 0,
+    "hits90d": 0,
+    "rows": 147
+  },
+  {
+    "id": "kr-kisa-phishing-2023",
+    "name": "KISA phishing site URLs 2023 [한국인터넷진흥원_피싱사이트 URL]",
+    "kind": "feed",
+    "indicatorKinds": [
+      "domain",
+      "url"
+    ],
+    "licenceTag": "commercial-ok",
+    "licenceQuote": "이용허락범위 제한 없음",
+    "licenceUrl": "https://www.data.go.kr/ugs/selectPortalPolicyView.do",
+    "attribution": {
+      "text": "KISA 피싱사이트 URL · data.go.kr 15109780 · 이용허락범위 제한 없음",
+      "url": "https://www.data.go.kr/data/15109780/fileData.do"
+    },
+    "syncIntervalMinutes": 525600,
+    "ttlDays": 180,
+    "status": "live",
+    "proposedBy": "seed",
+    "rejectReason": null,
+    "mapping": {
+      "url": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003031431&fileDetailSn=1&insertDataPrcus=N",
+      "format": "csv",
+      "columns": [
+        "날짜",
+        "홈페이지주소"
+      ],
+      "columnMeaning": {
+        "날짜": "detection date",
+        "홈페이지주소": "phishing URL"
+      },
+      "delimiter": ",",
+      "encoding": "utf-8-sig",
+      "dateFormat": "%Y-%m-%d",
+      "trim": true
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": "2026-10-27T14:03:19Z",
+    "lastGeneration": 0,
+    "hits90d": 0,
+    "rows": 50
+  },
+  {
+    "id": "kr-msit-spam-url-sample",
+    "name": "MSIT illegal spam URL dataset, sample [과학기술정보통신부_통신 빅데이터플랫폼_불법 스팸 URL 데이터셋]",
+    "kind": "feed",
+    "indicatorKinds": [
+      "domain",
+      "url"
+    ],
+    "licenceTag": "commercial-ok",
+    "licenceQuote": "이용허락범위 공공저작물 : 출처표시 (제 1유형)",
+    "licenceUrl": "https://www.data.go.kr/ugs/selectPortalPolicyView.do",
+    "attribution": {
+      "text": "과학기술정보통신부 불법 스팸 URL 데이터셋(샘플) · data.go.kr 15134609 · 공공저작물 출처표시(제1유형)",
+      "url": "https://www.data.go.kr/data/15134609/fileData.do"
+    },
+    "syncIntervalMinutes": 525600,
+    "ttlDays": 180,
+    "status": "live",
+    "proposedBy": "seed",
+    "rejectReason": null,
+    "mapping": {
+      "url": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003022304&fileDetailSn=1&insertDataPrcus=N",
+      "format": "csv",
+      "columns": [
+        "수신년도",
+        "수신월",
+        "수신일",
+        "수신시분초",
+        "신고년도",
+        "신고월",
+        "신고일",
+        "신고시분초",
+        "URL주소"
+      ],
+      "columnMeaning": {
+        "수신*": "received year/month/day/HHMMSS",
+        "신고*": "reported year/month/day/HHMMSS",
+        "URL주소": "URL (defanged hxxp)"
+      },
+      "delimiter": ",",
+      "encoding": "utf-8-sig",
+      "dateFormat": "신고년도+신고월+신고일 as %Y/%m/%d (not zero-padded), time HHMMSS",
+      "trim": true
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": "2026-10-27T14:03:19Z",
+    "lastGeneration": 0,
+    "hits90d": 0,
+    "rows": 20
+  },
+  {
+    "id": "kr-posa-spam-mail-block",
+    "name": "Korea Post spam mail block list [한국우편사업진흥원_스팸메일 수신차단 목록]",
+    "kind": "feed",
+    "indicatorKinds": [],
+    "licenceTag": "commercial-ok",
+    "licenceQuote": "이용허락범위 제한 없음",
+    "licenceUrl": "https://www.data.go.kr/ugs/selectPortalPolicyView.do",
+    "attribution": {
+      "text": "한국우편사업진흥원 스팸메일 수신차단 목록 · data.go.kr 15090173 · 이용허락범위 제한 없음",
+      "url": "https://www.data.go.kr/data/15090173/fileData.do"
+    },
+    "syncIntervalMinutes": 525600,
+    "ttlDays": 180,
+    "status": "proposed",
+    "proposedBy": "seed",
+    "rejectReason": null,
+    "mapping": {
+      "url": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000007657802&fileDetailSn=1&insertDataPrcus=N",
+      "format": "csv",
+      "columns": [
+        "수신일자",
+        "수신시간",
+        "메일 종류",
+        "제목",
+        "첨부"
+      ],
+      "columnMeaning": {
+        "수신일자": "received date",
+        "수신시간": "received time",
+        "메일 종류": "mail type",
+        "제목": "subject line",
+        "첨부": "attachment file names"
+      },
+      "delimiter": ",",
+      "encoding": "cp949",
+      "dateFormat": "%Y-%m-%d",
+      "trim": true
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": null,
+    "lastGeneration": null,
+    "hits90d": 0,
+    "rows": 0
+  },
+  {
+    "id": "amf-listes-noires",
+    "name": "AMF Listes noires (France)",
+    "kind": "feed",
+    "ttlDays": 180,
+    "status": "live",
+    "proposedBy": "seed",
+    "rejectReason": null,
+    "indicatorKinds": [
+      "domain",
+      "url"
+    ],
+    "licenceTag": "commercial-ok",
+    "licenceQuote": "de la diffuser, la redistribuer, la publier et la transmettre, de l’exploiter à titre commercial, par exemple en la combinant avec d’autres informations",
+    "licenceUrl": "https://github.com/etalab/Licence-Ouverte/blob/master/LO.md",
+    "attribution": {
+      "text": "AMF Listes noires · Licence Ouverte 2.0",
+      "url": "https://www.data.gouv.fr/datasets/listes-noires-des-entites-non-autorisees-a-proposer-des-produits-ou-services-financiers-en-france"
+    },
+    "syncIntervalMinutes": 1440,
+    "mapping": {
+      "url": "https://www.data.gouv.fr/api/1/datasets/r/d2d9df6d-1cd2-41a8-96f5-684cb3057ecb",
+      "format": "csv",
+      "columns": {
+        "nom": "indicator: website, generalised email or actor name",
+        "categorie": "AMF category, '|'-separated (Usurpation, Forex, Crypto-actifs…)",
+        "date_inscription": "date the entry was published on the blacklist"
+      },
+      "delimiter": ";",
+      "encoding": "utf-8-sig",
+      "dateFormat": "%Y-%m-%d",
+      "trim": "Website entries only (no '@', parseable as host or URL), stable-sorted by date_inscription descending (file order within a date); walked newest first, normalised with lists.py, deduped, until 150 rows were kept: 156 entries examined, oldest kept 2026-05-06. Shared-platform hosts become url rows with 'https://' prefixed (AMF writes no scheme); other hosts become registrable-domain rows and any path is dropped. Snapshot export_od_listesnoires_20261026080000_20261026083000.csv, fetched 2026-10-27."
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": "2026-10-27T14:03:05Z",
+    "lastGeneration": 0,
+    "hits90d": 0,
+    "rows": 145
+  },
+  {
+    "id": "jfsa-mutouroku",
+    "name": "金融庁 無登録で金融商品取引業を行う者 (Japan FSA warning list)",
+    "kind": "feed",
+    "ttlDays": 180,
+    "status": "rejected",
+    "proposedBy": "seed",
+    "rejectReason": "The warning list carries company names only, no website column in any of the three Excel files (checked 2026-10-27)",
+    "indicatorKinds": [],
+    "licenceTag": "commercial-ok",
+    "licenceQuote": "権利表記の記載がない限り「公共データ利用規約（第1.0版）」（PDL1.0）に準拠した利用条件の下で、利用することができます。",
+    "licenceUrl": "https://www.fsa.go.jp/rules/index.html",
+    "attribution": {
+      "text": "出典：金融庁ウェブサイト（https://www.fsa.go.jp/ordinary/chuui/mutouroku.html）（2026-10-27に利用）· PDL1.0",
+      "url": "https://www.fsa.go.jp/ordinary/chuui/mutouroku.html"
+    },
+    "syncIntervalMinutes": 10080,
+    "mapping": {
+      "url": "https://www.fsa.go.jp/ordinary/chuui/mutouroku/01.xlsx",
+      "format": "xlsx",
+      "columns": {
+        "商号、名称又は氏名等": "trade name or personal name (never an indicator)",
+        "所在地又は住所": "address (dropped)",
+        "金融商品取引業の内容等": "business described",
+        "備考": "notes",
+        "掲載時期": "publication month"
+      },
+      "delimiter": null,
+      "encoding": "OOXML (utf-8)",
+      "dateFormat": "Japanese era year and month, e.g. 令和8年10月",
+      "trim": "No rows: the three published Excel files have no website column, so every row is skipped. Trade names that look like domains (XM.com, FXGT.com…) are names, not websites, and were not used."
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": null,
+    "lastGeneration": null,
+    "hits90d": 0,
+    "rows": 0
+  },
+  {
+    "id": "phishing-database",
+    "name": "Phishing.Database (active phishing domains)",
+    "kind": "feed",
+    "ttlDays": 180,
+    "status": "live",
+    "proposedBy": "seed",
+    "rejectReason": null,
+    "indicatorKinds": [
+      "domain",
+      "url"
+    ],
+    "licenceTag": "commercial-ok",
+    "licenceQuote": "to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
+    "licenceUrl": "https://github.com/Phishing-Database/Phishing.Database/blob/master/LICENSE",
+    "attribution": {
+      "text": "Phishing.Database · MIT License · Copyright (c) 2018-2025 Mitchell Krog",
+      "url": "https://github.com/Phishing-Database/Phishing.Database"
+    },
+    "syncIntervalMinutes": 1440,
+    "mapping": {
+      "url": "https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt",
+      "format": "text",
+      "columns": {
+        "line": "one host per line"
+      },
+      "delimiter": "\n",
+      "encoding": "utf-8",
+      "dateFormat": null,
+      "trim": "The ACTIVE file carries no dates and the NEW-today file has not changed since 2025-12-23, so 'newest' = hosts in phishing-domains-ACTIVE.txt at the newest pinned commit but not at the oldest, each dated by the first pinned snapshot that holds it; sorted by that date descending, then host ascending; kept only hosts whose own labels carry a brand or lure token (anywhere: ledger, legdr, trezor, exodus, excodus, safepal, safepol, tronlink, tronscan, tronscon, metamask, dexscreener, dex-screener, defillama, stargate, uniswap, pancakeswap, coinbase, binance, wallet, entropy, forticlient, fortigate, fortinet, fortivpn, globalprotect, sonicwall, netextender, watchguard, openvpn, nordlayer, citrix, cisco, big-ip, 1password, bitwarden, lastpass, microsoftonl, sportisimo, login, secure, verify, verification, refill, claim; at a word edge: mmda, ncap, lto, vpn, tron, dydx, 1inch, sushi, auth) so compromised small-business and personal sites are never listed; normalised with lists.py, deduped, until 150 rows were kept (318 candidates examined of 437). Shared-platform hosts become url rows 'https://<host>/' (the domain file has no paths; links files were not used because their query strings can carry victim emails). Pinned commits, oldest first: e1a5170da66a (2026-09-13), 90c9dc351888 (2026-09-16), 5835491b2886 (2026-09-22), 5ea6aec6982c (2026-09-26), 28e59b7cbd65 (2026-09-30), 0108a8fa4595 (2026-10-01), 6874727d671b (2026-10-02), 12a20bf8dd2b (2026-10-02)."
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": "2026-10-27T14:04:46Z",
+    "lastGeneration": 0,
+    "hits90d": 0,
+    "rows": 142
+  },
+  {
+    "id": "bnetza-massnahmenliste",
+    "name": "Bundesnetzagentur Maßnahmenliste (Rufnummernmissbrauch)",
+    "kind": "feed",
+    "ttlDays": 180,
+    "status": "rejected",
+    "proposedBy": "seed",
+    "rejectReason": "CC BY-ND 4.0 allows no changes; the spec stores phone numbers hashed, which is a change (checked 2026-10-27)",
+    "indicatorKinds": [
+      "phone"
+    ],
+    "licenceTag": "commercial-ok",
+    "licenceQuote": "Die Inhalte des Internetauftritts stehen, soweit nicht anders gekennzeichnet, unter der Creative Commons Namensnennung-Keine Bearbeitung 4.0 Deutschland Lizenz.",
+    "licenceUrl": "https://www.bundesnetzagentur.de/DE/Service/Impressum/start.html",
+    "attribution": {
+      "text": "Bundesnetzagentur, Maßnahmenliste · CC BY-ND 4.0 (unverändert)",
+      "url": "https://www.bundesnetzagentur.de/DE/Vportal/TK/Aerger/Aktuelles/Ma%C3%9Fnahmen/start_RM.html"
+    },
+    "syncIntervalMinutes": 1440,
+    "mapping": {
+      "url": "https://www.bundesnetzagentur.de/DE/Vportal/TK/Aerger/Aktuelles/Ma%C3%9Fnahmen/start_RM.html",
+      "format": "html table (last six months); yearly PDFs for 10 years",
+      "columns": {
+        "Bescheid vom": "decision date",
+        "Rufnummer": "phone number (E.164, then salted SHA-256)",
+        "Kategorie": "abuse type (Spam-Fax, Ping-Anruf…)",
+        "Maßnahme": "measure taken"
+      },
+      "delimiter": null,
+      "encoding": "utf-8",
+      "dateFormat": "%d.%m.%Y",
+      "trim": "No rows emitted: CC BY-ND 4.0 allows only unchanged reuse, and the spec stores phone numbers normalised and hashed. Page fetched for its licence and columns only."
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": null,
+    "lastGeneration": null,
+    "hits90d": 0,
+    "rows": 0
+  },
+  {
+    "id": "fcc-cgb-complaints",
+    "name": "FCC CGB Consumer Complaints (unwanted calls and texts)",
+    "kind": "feed",
+    "ttlDays": 180,
+    "status": "proposed",
+    "proposedBy": "seed",
+    "rejectReason": null,
+    "indicatorKinds": [
+      "phone"
+    ],
+    "licenceTag": "commercial-ok",
+    "licenceQuote": "Public Domain U.S. Government",
+    "licenceUrl": "https://www.usa.gov/government-works",
+    "attribution": {
+      "text": "FCC Consumer and Governmental Affairs Bureau · Public Domain U.S. Government",
+      "url": "https://opendata.fcc.gov/Consumer/CGB-Consumer-Complaints-Data/3xyp-aqkj"
+    },
+    "syncIntervalMinutes": 1440,
+    "mapping": {
+      "url": "https://opendata.fcc.gov/resource/3xyp-aqkj.json",
+      "format": "json (Socrata SODA, SoQL paging)",
+      "columns": {
+        "caller_id_number": "phone (E.164, then salted SHA-256)",
+        "advertiser_business_phone_number": "phone (E.164, then salted SHA-256)",
+        "issue": "complaint issue, kept for the reason",
+        "type_of_call_or_messge": "call or text type (source spelling, sic)",
+        "date_created": "complaint date",
+        "city|state|zip|location_1": "dropped on ingest (reporter location)"
+      },
+      "delimiter": null,
+      "encoding": "utf-8",
+      "dateFormat": "%Y-%m-%dT%H:%M:%S.%f",
+      "trim": "No rows emitted: raw caller numbers must not sit in a public repo; the spec stores phone numbers hashed. Dataset metadata fetched for its licence and columns only."
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": null,
+    "lastGeneration": null,
+    "hits90d": 0,
+    "rows": 0
+  },
+  {
+    "id": "ftc-dnc-reported-calls",
+    "name": "FTC Do Not Call reported calls",
+    "kind": "feed",
+    "ttlDays": 180,
+    "status": "proposed",
+    "proposedBy": "seed",
+    "rejectReason": null,
+    "indicatorKinds": [
+      "phone"
+    ],
+    "licenceTag": "unverified",
+    "licenceQuote": null,
+    "licenceUrl": "https://www.ftc.gov/developer/api/v0/endpoints/do-not-call-dnc-reported-calls-data-api",
+    "attribution": {
+      "text": "U.S. Federal Trade Commission, Do Not Call reported calls data",
+      "url": "https://www.ftc.gov/developer/api/v0/endpoints/do-not-call-dnc-reported-calls-data-api"
+    },
+    "syncIntervalMinutes": 1440,
+    "mapping": {
+      "url": "https://www.ftc.gov/developer/api/v0/endpoints/do-not-call-dnc-reported-calls-data-api",
+      "format": "json API (api.data.gov key) or daily csv; not fetched this session",
+      "columns": {
+        "originating phone number": "phone (E.164, then salted SHA-256)",
+        "subject": "kept for the reason",
+        "created and violation dates": "dates",
+        "consumer city, state, area code": "dropped on ingest"
+      },
+      "delimiter": null,
+      "encoding": "utf-8",
+      "dateFormat": null,
+      "trim": "No rows emitted and nothing fetched: the documented API page returned 'Page Not Found' to a scripted fetch, and the API needs an api.data.gov key (none created)."
+    },
+    "checkedAt": "2026-10-27T00:00:00Z",
+    "lastSyncAt": null,
+    "lastGeneration": null,
+    "hits90d": 0,
+    "rows": 0
+  }
+]

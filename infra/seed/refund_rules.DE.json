@@ -1,0 +1,49 @@
+[
+  {
+    "jurisdiction": "DE", "paymentRail": "wire", "party": "any", "version": 1, "status": "proposed", "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z", "rejectReason": null,
+    "steps": [
+      {"order": 1, "action": "Call your bank now. Say you were tricked into sending a transfer (Überweisung) and ask them to try to stop it or recall it. If the scammer has your banking details, ask them to block your online banking too.", "deadlineDays": null, "contact": "your bank, or the blocking line 116 116", "organisation": "your bank", "sourceUrl": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+      {"order": 2, "action": "Report the scam to the police (Anzeige erstatten) at your local police station.", "deadlineDays": null, "contact": "your local police station", "organisation": "the police (Polizei)", "sourceUrl": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+      {"order": 3, "action": "If your bank will not help, complain to the bank. If you are still unhappy, apply to the arbitration board at the Deutsche Bundesbank (Schlichtungsstelle). It handles disputes about transfers, or passes your case to the right board.", "deadlineDays": null, "contact": "https://www.bundesbank.de/schlichtungsantrag", "organisation": "the arbitration board at the Deutsche Bundesbank (Schlichtungsstelle)", "sourceUrl": "https://www.bundesbank.de/de/service/schlichtungsstelle/-/organisation-und-zustaendigkeit-613610"}
+    ],
+    "extra": {
+      "currency": "EUR",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {"quote": "informieren Sie sofort Ihre Bank", "url": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+        {"quote": "entweder über Ihre Bank oder den Sperrnotruf 116 116", "url": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+        {"quote": "Erstatten Sie unbedingt Anzeige bei der Polizei.", "url": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+        {"quote": "Überweisungen, Lastschriften und Kartenzahlungen", "url": "https://www.bundesbank.de/de/service/schlichtungsstelle/-/organisation-und-zustaendigkeit-613610"},
+        {"quote": "wird er an die jeweilige Verbraucherschlichtungsstelle abgegeben", "url": "https://www.bundesbank.de/de/service/schlichtungsstelle/-/organisation-und-zustaendigkeit-613610"},
+        {"quote": "Derzeit sind wir telefonisch leider nicht erreichbar.", "url": "https://www.bundesbank.de/de/service/schlichtungsstelle"}
+      ],
+      "notes": "PROPOSED: no official German page fetched tells a victim to ask the bank to stop or recall a transfer they made; the BaFin advice covers disclosed banking data, blocking and police. No refund law covers an authorised transfer. Real-time transfers (Echtzeitüberweisungen) execute instantly. The Bundesbank board has no working phone line now, so the contact is its online form; it is only a fallback and forwards cases to private boards (e.g. for private banks or savings banks)."
+    }
+  },
+  {
+    "jurisdiction": "DE", "paymentRail": "card", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z", "rejectReason": null,
+    "steps": [
+      {"order": 1, "action": "Block your card now, through your bank or the blocking line 116 116. Then tell your bank you were tricked into this card payment and ask whether it can be reversed.", "deadlineDays": null, "contact": "116 116, or the number on the back of your card", "organisation": "your card issuer", "sourceUrl": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+      {"order": 2, "action": "Report the scam to the police (Anzeige erstatten) at your local police station. The police can also stop your card being misused for direct debits (KUNO block).", "deadlineDays": null, "contact": "your local police station", "organisation": "the police (Polizei)", "sourceUrl": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+      {"order": 3, "action": "If your bank will not help, complain to the bank. If you are still unhappy, apply to the arbitration board at the Deutsche Bundesbank (Schlichtungsstelle). It handles disputes about card payments, or passes your case to the right board.", "deadlineDays": null, "contact": "https://www.bundesbank.de/schlichtungsantrag", "organisation": "the arbitration board at the Deutsche Bundesbank (Schlichtungsstelle)", "sourceUrl": "https://www.bundesbank.de/de/service/schlichtungsstelle/-/organisation-und-zustaendigkeit-613610"}
+    ],
+    "extra": {
+      "currency": "EUR",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {"quote": "Sperren Sie bei Verdacht auf einen Betrug sofort Ihre Zahlungskarten", "url": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+        {"quote": "entweder über Ihre Bank oder den Sperrnotruf 116 116", "url": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+        {"quote": "Erstatten Sie unbedingt Anzeige bei der Polizei.", "url": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+        {"quote": "Diese kann eine sogenannte KUNO-Sperrung veranlassen", "url": "https://www.bafin.de/DE/verbraucherinnen-verbraucher/themen-finanzprodukte/finanzbetrug-erkennen/datendiebstahl/datendiebstahl_node.html"},
+        {"quote": "Überweisungen, Lastschriften und Kartenzahlungen", "url": "https://www.bundesbank.de/de/service/schlichtungsstelle/-/organisation-und-zustaendigkeit-613610"},
+        {"quote": "wird er an die jeweilige Verbraucherschlichtungsstelle abgegeben", "url": "https://www.bundesbank.de/de/service/schlichtungsstelle/-/organisation-und-zustaendigkeit-613610"},
+        {"quote": "Derzeit sind wir telefonisch leider nicht erreichbar.", "url": "https://www.bundesbank.de/de/service/schlichtungsstelle"}
+      ],
+      "notes": "No official page fetched states a chargeback or a refund deadline for a card payment the victim made, so step 1 only asks whether it can be reversed and no deadline is set. BaFin's 13-month figure on the same page applies to unauthorised debits (Abbuchungen), not to card payments the victim made, so it is not used. The Bundesbank board has no working phone line now; contact is its online form, and it forwards cases to the competent private board."
+    }
+  }
+]

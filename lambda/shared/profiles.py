@@ -1,7 +1,7 @@
 """Who a resident is and who a PWA user is, read from their PROFILE rows: RECEIVER#<address>/PROFILE {receiverUserId,
 residentName, orgId, timezone} and USER#<id>/PROFILE {tokenHash, role, and for a resident receiverEmail, orgId}. A missing or
-incomplete row is never filled with a default: a receiver profile is counted and raised; a user profile or a resident
-caller is None, logged with the reason and counted as ProfileRejected."""
+incomplete row is never filled with a default: a required receiver profile is counted and raised (a found one is None,
+uncounted); a user profile or a resident caller is None, logged with the reason and counted as ProfileRejected."""
 
 import hmac
 import logging
@@ -67,15 +67,24 @@ def reject_profile(user_id: str, reason: ProfileRejectionReason) -> None:
     emit_count_metric(PROFILE_REJECTED_METRIC_NAME, PROFILE_REJECTED_DIMENSION_NAME, str(reason))
 
 
-def require_receiver_profile(receiver_address: str) -> ReceiverProfile:
-    """The resident behind this address. No row, or any field absent, empty or not text: counts UnknownReceiver (no
-    dimension, never the address) and raises UnknownReceiverError."""
+def find_receiver_profile(receiver_address: str) -> ReceiverProfile | None:
+    """The resident behind this address, or None when there is no row or any field is absent, empty or not text. Counts
+    nothing: a caller for whom a missing resident is expected (a stale WACODE# row) reads through here."""
     address = normalize_receiver_address(receiver_address)
     row = read_profile_row(f"RECEIVER#{address}")
     if row is None or not all(is_filled_text(row, field_name) for field_name in RECEIVER_PROFILE_FIELDS):
+        return None
+    return ReceiverProfile(address, row["receiverUserId"], row["residentName"], row["orgId"], row["timezone"])
+
+
+def require_receiver_profile(receiver_address: str) -> ReceiverProfile:
+    """The resident behind this address. No complete profile (find_receiver_profile is None): counts UnknownReceiver (no
+    dimension, never the address) and raises UnknownReceiverError."""
+    resident = find_receiver_profile(receiver_address)
+    if resident is None:
         emit_count_metric(UNKNOWN_RECEIVER_METRIC_NAME)
         raise UnknownReceiverError("no complete RECEIVER# profile for this address")
-    return ReceiverProfile(address, row["receiverUserId"], row["residentName"], row["orgId"], row["timezone"])
+    return resident
 
 
 def get_user_profile(user_id: str) -> UserProfile | None:

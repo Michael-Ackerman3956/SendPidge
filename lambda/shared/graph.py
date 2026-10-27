@@ -366,19 +366,33 @@ def mark_email_quarantined(email_id: str) -> bool:
         raise
 
 
-def write_listed_address(sender_address: str, reason: str) -> None:
-    """Tier 0 scam-list row from a Confirm: the full address, never the domain; the same shape as every other LIST# row."""
+def write_listed_address(sender_address: str, reason: str, request_id: str) -> None:
+    """Tier 0 scam-list row from a Confirm: the full address, never the domain; the same shape as every other LIST# row plus
+    requestId, the request whose Confirm wrote it. The put is unconditional: a later Confirm for the same address, by any
+    resident, takes the row over."""
     get_table().put_item(Item={
         "PK": "LIST#address", "SK": sender_address.lower(),
         "category": str(ListCategory.SCAM), "strength": str(ListStrength.LISTED), "source": str(ListSource.PIDGE_CONFIRMED),
         "tier": 0, "reason": reason, "attribution": "Reported by the receiver after the contact denied it",
-        "addedAt": iso_timestamp(datetime.now(timezone.utc)), "expiresAt": None, "generation": 0,
+        "addedAt": iso_timestamp(datetime.now(timezone.utc)), "expiresAt": None, "generation": 0, "requestId": request_id,
     })
 
 
-def delete_listed_address(sender_address: str) -> None:
-    """Removes the Confirm row for an address; a reversed No means the report no longer stands."""
-    get_table().delete_item(Key={"PK": "LIST#address", "SK": sender_address.lower()})
+def delete_listed_address(sender_address: str, request_id: str) -> bool:
+    """Removes the LIST#address row only while it is the Confirm row this request wrote (source pidge-confirmed, same
+    requestId). False, nothing removed, for a row another resident's Confirm rewrote, a sample or feed row, or no row."""
+    try:
+        get_table().delete_item(
+            Key={"PK": "LIST#address", "SK": sender_address.lower()},
+            ConditionExpression="#source = :pidgeConfirmed AND requestId = :requestId",
+            ExpressionAttributeNames={"#source": "source"},
+            ExpressionAttributeValues={":pidgeConfirmed": str(ListSource.PIDGE_CONFIRMED), ":requestId": request_id},
+        )
+        return True
+    except ClientError as error:
+        if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
+            return False
+        raise
 
 
 def write_case_note(request_id: str, receiver_user_id: str, note_text: str, recovery_pack: dict | None, note_for: str) -> dict:

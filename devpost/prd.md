@@ -145,7 +145,7 @@ Source: `scope.md > The Unique Kernel`.
 ## Deferred From the POC
 
 - **Multiple guardians** — POC has one receiver + one trusted person. Multi-member disambiguation ("which grandchild?") is later.
-- **Real SMS/messenger inbound** — only email via SES is real. Other inbound channels are mocked.
+- **Real SMS/messenger inbound** — only email via SES is real. Other inbound channels are mocked (checklist slice 15, stretch since 2026-10-27).
 - **Automatic fallback across channels** — POC sends via WhatsApp; fallback cascade (WhatsApp → SMS → call) is later.
 - **Full onboarding consent flow as product surface** — POC onboarding works but isn't polished as a standalone feature.
 - **Pidge calling Jimin** — voice verification is a post-deadline stretch on Amazon Connect (`scope.md > Stretch`, re-ruled 2026-10-25): scripted keypad / spoken yes/no is feasible; a free-form AI conversation is feasible with caveats.
@@ -155,7 +155,7 @@ Source: `scope.md > The Unique Kernel`.
 - Top future expansion (2026-10-27, outside the stretch goal): a sealed mailbox. Pidge reads each email once when it arrives, to decide hold or pass, then stores it so only Grandma's own phone can open it, and her retirement home only if she allows it. Nobody at SendPidge can read it afterwards; who wrote, what Pidge decided and why stay visible. Losing the phone must not mean losing the mail. (`spec.md > Future expansion — sealed mailbox`)
 - B2B version: supplier PO fraud, CEO wire requests, fake insurance claims — same relationship graph, different personas.
 - Institution impersonation ("fake police", "fake bank") as the known party.
-- Consolidated omni-inbox with real integrations across all channels.
+- Consolidated omni-inbox with real integrations across all channels (checklist slices 15 and 16 stretch, 17 future expansion, since 2026-10-27).
 - Mail Manager as a relay in front of an existing mailbox (MX or forwarding → ingress endpoint → deliver on to Gmail/O365), so no inbox switch is needed.
 - Stretch, platform level: the "was this you?" check offered by the carrier or OS (Apple/Google/telco), the way TheCheat syncs with Korean carriers — requires platform partnership, out of our hands.
 - Onboarding the trust circle as a product surface with invite flows.
@@ -185,6 +185,8 @@ Source: `scope.md > The Unique Kernel`.
 ## Stretch goal: Organisation dashboard and command center (roadmap 4–5)
 
 > **STRETCH GOAL. Not in the Oct 28 build, not built, not scheduled.** Added 2026-10-26 so the stretch slices have a PRD to point at. Source: `scope.md` roadmap 4–5 and the requirements in `devpost/research/org-dashboard/06-architect-requirements.md > A` (gitignored). Technical design: `spec.md > Stretch: Organisation dashboard and command center`. Slices: `checklist.md > Stretch slices`. The hold-and-ask kernel above is unchanged.
+
+> **Tiers (founder ruling 2026-10-27).** The org journey, roles, boundary and the read side (S1–S3: multi-receiver inbound, org model, resident consent, safety overview) stay stretch. The sending and aggregate behaviours described below (broadcast, events and RSVP, reminders, aggregate feed, command center, admin passkey; S4–S9 and slice 13 for admins) moved to future expansion, `checklist.md > Future expansion slices`. The text below is unchanged.
 
 ### Stretch: Org journey
 1. The home's admin signs in to the same PWA as an organisation admin and sees a dashboard. They never see a resident's inbox. In the demo, a pre-issued sign-in link opens the dashboard but can never send; every send needs a passkey.

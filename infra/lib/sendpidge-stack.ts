@@ -25,6 +25,13 @@ const ASK_LINK_PATH_PATTERN = "/no/*";
 // lambda/shared/metrics.py METRIC_NAMESPACE and lambda/shared/profiles.py UNKNOWN_RECEIVER_METRIC_NAME (EMF on stdout, no dimension).
 const LAMBDA_METRIC_NAMESPACE = "SendPidge";
 const UNKNOWN_RECEIVER_METRIC_NAME = "UnknownReceiver";
+// lambda/shared/profiles.py PROFILE_REJECTED_METRIC_NAME, its dimension and ProfileRejectionReason.RECEIVER_MISMATCH.
+const PROFILE_REJECTED_METRIC_NAME = "ProfileRejected";
+const PROFILE_REJECTED_DIMENSION_NAME = "reason";
+const RECEIVER_MISMATCH_REASON = "receiver_mismatch";
+// lambda/shared/sanitize.py SUMMARY_FALLBACK_METRIC_NAME and AGENT_OUTPUT_REFUSED_METRIC_NAME (the alarm reads the dimensionless count).
+const SUMMARY_FALLBACK_METRIC_NAME = "SummaryFallback";
+const AGENT_OUTPUT_REFUSED_METRIC_NAME = "AgentOutputRefused";
 
 // CDK stack: the declaration of every AWS resource SendPidge deploys (`cdk deploy` turns this into CloudFormation).
 // The whole SendPidge deployment: table → email store → the Lambdas → the Mail Manager ingress (it names the Reader) → the case
@@ -120,6 +127,37 @@ export class SendPidgeStack extends Stack {
       alarmDescription: "mail or an action named an address with no complete RECEIVER# profile; it was dropped or refused",
       metric: new Metric({
         namespace: LAMBDA_METRIC_NAMESPACE, metricName: UNKNOWN_RECEIVER_METRIC_NAME, statistic: Stats.SUM, period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
+    });
+    new Alarm(this, "ReceiverMismatchAlarm", {
+      alarmDescription: "a resident action came from a user whose PROFILE names another resident's address; it was refused",
+      metric: new Metric({
+        namespace: LAMBDA_METRIC_NAMESPACE, metricName: PROFILE_REJECTED_METRIC_NAME,
+        dimensionsMap: { [PROFILE_REJECTED_DIMENSION_NAME]: RECEIVER_MISMATCH_REASON }, statistic: Stats.SUM, period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
+    });
+    new Alarm(this, "SummaryFallbackAlarm", {
+      alarmDescription: "a sanitised summary still held a link, address or number; the fixed fallback sentence was stored",
+      metric: new Metric({
+        namespace: LAMBDA_METRIC_NAMESPACE, metricName: SUMMARY_FALLBACK_METRIC_NAME, statistic: Stats.SUM, period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
+    });
+    new Alarm(this, "AgentOutputRefusedAlarm", {
+      alarmDescription: "an agent's text held a link, address, handle or long number and the gate refused it",
+      metric: new Metric({
+        namespace: LAMBDA_METRIC_NAMESPACE, metricName: AGENT_OUTPUT_REFUSED_METRIC_NAME, statistic: Stats.SUM, period: Duration.minutes(5),
       }),
       threshold: 1,
       evaluationPeriods: 1,

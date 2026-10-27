@@ -1,0 +1,27 @@
+[
+  {
+    "jurisdiction": "JP", "paymentRail": "wire", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z", "rejectReason": null,
+    "steps": [
+      {"order": 1, "action": "Call the bank you sent the money to right away. Say it was a scam (振り込め詐欺) and ask them to freeze the account that got your money. Once the scammer takes the money out, it cannot be paid back.", "deadlineDays": null, "contact": "the bank you sent the money to", "organisation": "the receiving bank (振込先の金融機関)", "sourceUrl": "https://www.fsa.go.jp/policy/kyuusai/furikome/index.html"},
+      {"order": 2, "action": "Call the police on 110, or go to your nearest police station, and report the scam.", "deadlineDays": null, "contact": "110", "organisation": "the police (警察)", "sourceUrl": "https://www.fsa.go.jp/policy/kyuusai/furikome/index.html"},
+      {"order": 3, "action": "Ask the bank for the refund claim form (被害回復分配金支払申請書). When the frozen account is announced, send the form to the bank before the deadline. The claim period is at least 30 days after the notice, and the bank will tell you the dates.", "deadlineDays": null, "contact": "https://furikomesagi.dic.go.jp/", "organisation": "the receiving bank, with notices published by the Deposit Insurance Corporation of Japan (預金保険機構)", "sourceUrl": "https://www.fsa.go.jp/policy/kyuusai/furikome/index.html"},
+      {"order": 4, "action": "If you need help with the bank, call the Financial Services Agency's consumer line (金融サービス利用者相談室).", "deadlineDays": null, "contact": "0570-016811", "organisation": "the Financial Services Agency (金融庁)", "sourceUrl": "https://www.fsa.go.jp/receipt/soudansitu/index.html"}
+    ],
+    "extra": {
+      "currency": "JPY",
+      "lawName": "振り込め詐欺救済法 (犯罪利用預金口座等に係る資金による被害回復分配金の支払等に関する法律)",
+      "capAmount": null,
+      "evidence": [
+        {"quote": "警察と振込先の金融機関に連絡してください。", "url": "https://www.fsa.go.jp/policy/kyuusai/furikome/index.html"},
+        {"quote": "犯人が預金口座等からお金を引き出してしまうと支払は受けられません。", "url": "https://www.fsa.go.jp/policy/kyuusai/furikome/index.html"},
+        {"quote": "お近くの警察署又は110番にお電話ください。", "url": "https://www.fsa.go.jp/policy/kyuusai/furikome/index.html"},
+        {"quote": "公告があった日の翌日から30日以上設けられます。", "url": "https://www.fsa.go.jp/policy/kyuusai/furikome/index.html"},
+        {"quote": "少なくとも半年以上かかるのが一般的です。", "url": "https://www.fsa.go.jp/policy/kyuusai/furikome/index.html"},
+        {"quote": "振り込め詐欺救済法に基づく公告", "url": "https://furikomesagi.dic.go.jp/"},
+        {"quote": "０５７０－０１６８１１", "url": "https://www.fsa.go.jp/receipt/soudansitu/index.html"}
+      ],
+      "notes": "Refunds come only from money left in the frozen receiving account, shared among victims in proportion to loss; balances under 1,000 yen are not paid out, and payment usually takes at least six months. No fixed cap: capAmount null. The claim window is 'at least 30 days' from the public notice, so deadlineDays is null and the bank gives the exact dates. The claim form can also be handed in through the victim's own bank. FSA phone number written with half-width digits; from IP phones use 03-5251-6811. Actions are in English with Japanese terms in brackets so the person can say them to the bank."
+    }
+  }
+]

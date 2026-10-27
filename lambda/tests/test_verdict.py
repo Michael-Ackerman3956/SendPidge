@@ -7,8 +7,8 @@ import pytest
 from botocore.stub import Stubber
 from moto import mock_aws
 
-from shared import graph, payloads, verdict
-from shared.enums import ActionOutcome, Channel, Friction, RequestState, VerdictAnswer
+from shared import graph, lists, payloads, verdict
+from shared.enums import ActionOutcome, Channel, Friction, ListSource, RequestState, VerdictAnswer
 
 RECEIVER_ADDRESS = "grandma@example.com"
 RECEIVER_USER_ID = "grandma"
@@ -60,6 +60,31 @@ def seed_contact(contact_email: str | None = CONTACT_EMAIL) -> graph.Contact:
 def new_request() -> str:
     graph.claim_email(EMAIL_ID, {"s3Key": EMAIL_ID, "senderAddress": "Scammer@Lookalike.example", "quarantined": False})
     return graph.request_id_of(graph.create_request(EMAIL_ID, RECEIVER_ADDRESS, seed_contact(), VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+
+
+BOB_ADDRESS = "bob@example.com"
+BOB_USER_ID = "bob"
+BOB_EMAIL_ID = "inbox/bob.eml"
+
+
+def new_request_to_bob_from_the_same_sender() -> str:
+    """The same scammer writing to a second resident, Bob, who also has Jimin as a contact."""
+    graph.claim_email(BOB_EMAIL_ID, {"s3Key": BOB_EMAIL_ID, "senderAddress": "Scammer@Lookalike.example", "quarantined": False})
+    graph.get_table().put_item(Item={"PK": f"RECEIVER#{BOB_ADDRESS}", "SK": "CONTACT#jimin", "contactName": "Jimin",
+                                     "contactPwaUserId": "jimin"})
+    bobs_contact = graph.Contact("CONTACT#jimin", "Jimin", "jimin")
+    return graph.request_id_of(graph.create_request(BOB_EMAIL_ID, BOB_ADDRESS, bobs_contact, VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+
+
+def confirm_as_grandma(request_id: str, s3_client) -> None:
+    confirmed = verdict.confirm_quarantine(request_id, RECEIVER_USER_ID, RECEIVER_USER_ID, RECEIVER_ADDRESS, s3_client, BUCKET_NAME)
+    assert confirmed.outcome is ActionOutcome.RECORDED
+
+
+def read_listed_sender() -> dict | None:
+    """LIST#address/<the scammer's address>, or None when there is no row."""
+    response = graph.get_table().get_item(Key={"PK": "LIST#address", "SK": "scammer@lookalike.example"})
+    return response["Item"] if "Item" in response else None
 
 
 def at(seconds_from_now: int) -> str:
@@ -118,13 +143,50 @@ def test_release_confirms_only_while_still_pending(aws):
     assert (verdict.release_if_still_pending(undone_id).outcome, status_of(undone_id)) == (ActionOutcome.NOT_APPLIED, "denied")
 
 
-def test_reverse_within_five_minutes_takes_the_no_back_and_drops_the_list_row(aws):
+def test_reverse_within_five_minutes_takes_the_no_back_and_drops_the_row_its_own_confirm_wrote(aws):
+    s3_client = make_bucket_with_email()
     request_id = new_request()
-    graph.write_listed_address("Scammer@Lookalike.example", "reported")
     verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    confirm_as_grandma(request_id, s3_client)
+    assert read_listed_sender()["requestId"] == request_id
     result = verdict.record_answer(request_id, VerdictAnswer.REVERSE, JIMIN, "m2", at(verdict.REVERSE_WINDOW_SECONDS - 1))
     assert (result.outcome, result.status, status_of(request_id)) == (ActionOutcome.RECORDED, RequestState.REVERSED_NO, "reversed_no")
-    assert "Item" not in graph.get_table().get_item(Key={"PK": "LIST#address", "SK": "scammer@lookalike.example"})
+    assert read_listed_sender() is None
+
+
+def test_reverse_leaves_the_row_another_residents_confirm_wrote_for_the_same_sender(aws):
+    s3_client = make_bucket_with_email()
+    s3_client.put_object(Bucket=BUCKET_NAME, Key=BOB_EMAIL_ID, Body=b"raw")
+    grandmas_request_id = new_request()
+    verdict.record_answer(grandmas_request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    confirm_as_grandma(grandmas_request_id, s3_client)
+    bobs_request_id = new_request_to_bob_from_the_same_sender()
+    verdict.record_answer(bobs_request_id, VerdictAnswer.NO, JIMIN, "m2", at(0))
+    bobs_confirm = verdict.confirm_quarantine(bobs_request_id, BOB_USER_ID, BOB_USER_ID, BOB_ADDRESS, s3_client, BUCKET_NAME)
+    assert bobs_confirm.outcome is ActionOutcome.RECORDED
+
+    reversed_answer = verdict.record_answer(grandmas_request_id, VerdictAnswer.REVERSE, JIMIN, "m3", at(1))
+
+    assert reversed_answer.outcome is ActionOutcome.RECORDED
+    listed_row = read_listed_sender()
+    assert (listed_row["source"], listed_row["requestId"]) == (ListSource.PIDGE_CONFIRMED, bobs_request_id)
+
+
+# Feeds write only domain and url rows (lists.PUBLIC_FEED_INDICATOR_KINDS), so the feed-sourced address row is hand-built.
+@pytest.mark.parametrize("listed_row", [
+    lists.list_row_from_seed({"kind": "address", "value": "scammer@lookalike.example", "category": "scam", "strength": "listed",
+                              "reason": "Sample impersonation address", "addedAt": "2026-10-25T00:00:00Z"}),
+    {"PK": "LIST#address", "SK": "scammer@lookalike.example", "category": "scam", "strength": "listed",
+     "source": str(ListSource.PUBLIC_FEED), "sourceId": "feed-test", "tier": 1, "reason": "Listed by a feed",
+     "attribution": "feed-test", "addedAt": "2026-10-25T00:00:00Z", "expiresAt": None, "generation": 1},
+], ids=["sample", "public-feed"])
+def test_reverse_leaves_a_sample_or_feed_row_for_the_sender(aws, listed_row):
+    graph.get_table().put_item(Item=listed_row)
+    request_id = new_request()
+    verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
+    result = verdict.record_answer(request_id, VerdictAnswer.REVERSE, JIMIN, "m2", at(1))
+    assert result.outcome is ActionOutcome.RECORDED
+    assert read_listed_sender() == listed_row
 
 
 def test_reverse_after_five_minutes_or_without_a_no_is_ignored(aws):

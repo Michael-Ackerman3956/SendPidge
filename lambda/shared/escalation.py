@@ -9,7 +9,7 @@ from strands import Agent
 
 from shared.email_parse import ParsedEmail
 from shared.enums import EscalationDecision, GateFired, Intent, ReaderModelChoice, ReasonCode
-from shared.policy import EscalationFailure
+from shared.policy import EscalationFailure, stored_claimed_person
 from shared.reader_agent import SUMMARY_MAX_LENGTH, EmailVerdict, build_bedrock_model, format_email_as_data
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,9 @@ def escalate(reviewer: Agent, parsed_email: ParsedEmail, facts: EscalationFacts)
 
 
 def escalation_fields(verdict: EscalationVerdict | EscalationFailure) -> dict:
-    """The REQUEST#.escalation / EMAIL#.escalation value: the reviewer's answer without the rationale, or the failure."""
+    """The REQUEST#.escalation / EMAIL#.escalation value: the reviewer's answer without the rationale, its claimed_person
+    stored like the Reader's (policy.stored_claimed_person), or the failure."""
     if isinstance(verdict, EscalationFailure):
         return {"decision": str(EscalationDecision.HOLD), "failed": True}
-    return {**verdict.model_dump(mode="json", exclude={"rationale"}), "failed": False}
+    return {**verdict.model_dump(mode="json", exclude={"rationale"}),
+            "claimed_person": stored_claimed_person(verdict.claimed_person), "failed": False}

@@ -1,0 +1,51 @@
+[
+  {
+    "jurisdiction": "SG", "paymentRail": "wire", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z", "rejectReason": null,
+    "steps": [
+      {"order": 1, "action": "Call your bank's anti-scam hotline now. Say you were tricked into sending a transfer. Ask them to stop it, and to freeze your accounts if the scammer may still get in.", "deadlineDays": null, "contact": "your bank's anti-scam hotline (DBS/POSB 1800 339 6963, OCBC 6363 3333, UOB 6255 0160)", "organisation": "your bank", "sourceUrl": "https://www.scamshield.gov.sg/bank-s-anti-scam-hotline/"},
+      {"order": 2, "action": "File a police report online, or at your nearest Neighbourhood Police Centre. For urgent help, call 999.", "deadlineDays": null, "contact": "https://eservices1.police.gov.sg/phub/eservices/landingpage/police-report", "organisation": "the Singapore Police Force", "sourceUrl": "https://www.scamshield.gov.sg/i-have-been-scammed/"},
+      {"order": 3, "action": "If your bank will not help, make a complaint to the bank. If you are not happy with its final reply, file a claim with FIDReC. It must be within 6 months of the bank's final reply.", "deadlineDays": null, "contact": "(65) 6327 8878", "organisation": "the Financial Industry Disputes Resolution Centre (FIDReC)", "sourceUrl": "https://www.fidrec.com.sg/knowledgebase/article/KA-01013"}
+    ],
+    "extra": {
+      "currency": "SGD",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {"quote": "Contact your bank immediately", "url": "https://www.scamshield.gov.sg/i-have-been-scammed/"},
+        {"quote": "DBS / POSB Dial 1800 339 6963 (from Singapore)", "url": "https://www.scamshield.gov.sg/bank-s-anti-scam-hotline/"},
+        {"quote": "OCBC Dial 6363 3333", "url": "https://www.scamshield.gov.sg/bank-s-anti-scam-hotline/"},
+        {"quote": "UOB Dial 6255 0160", "url": "https://www.scamshield.gov.sg/bank-s-anti-scam-hotline/"},
+        {"quote": "You may file a police report online or in person", "url": "https://www.scamshield.gov.sg/i-have-been-scammed/"},
+        {"quote": "the Police Hotline at 1800-255-0000", "url": "https://www.scamshield.gov.sg/i-have-been-scammed/"},
+        {"quote": "The consumer must file the claim within 6 months of receiving a final reply", "url": "https://www.fidrec.com.sg/knowledgebase/article/KA-01013"},
+        {"quote": "there is a limit of S$150,000 per claim for adjudication of disputes", "url": "https://www.fidrec.com.sg/"},
+        {"quote": "(65) 6327 8878", "url": "https://www.fidrec.com.sg/contact-us/"},
+        {"quote": "the Shared Responsibility Framework for phishing scams", "url": "https://www.mas.gov.sg/regulation/guidelines/guidelines-on-shared-responsibility-framework"}
+      ],
+      "notes": "No reimbursement rule covers a transfer the victim made. The MAS/IMDA Shared Responsibility Framework (from 16 December 2024) covers phishing scams only, so it is not listed as the law. capAmount null: S$150,000 is FIDReC's adjudication limit, not a refund cap. The Police Hotline 1800-255-0000 takes scam information; the report itself is filed online or at a police centre. ScamShield says a bank's Kill Switch can freeze all accounts. FIDReC's 6-month window is in the action text with deadlineDays null."
+    }
+  },
+  {
+    "jurisdiction": "SG", "paymentRail": "card", "party": "any", "version": 1, "status": "live", "proposedBy": "seed",
+    "checkedAt": "2026-10-27T00:00:00Z", "rejectReason": null,
+    "steps": [
+      {"order": 1, "action": "Call your card bank's anti-scam hotline now. Say you were tricked into a card payment and ask them to stop it and block the card.", "deadlineDays": null, "contact": "your bank's anti-scam hotline (DBS/POSB 1800 339 6963, OCBC 6363 3333, UOB 6255 0160)", "organisation": "your card issuer", "sourceUrl": "https://www.scamshield.gov.sg/i-have-been-scammed/"},
+      {"order": 2, "action": "File a police report online, or at your nearest Neighbourhood Police Centre. For urgent help, call 999.", "deadlineDays": null, "contact": "https://eservices1.police.gov.sg/phub/eservices/landingpage/police-report", "organisation": "the Singapore Police Force", "sourceUrl": "https://www.scamshield.gov.sg/i-have-been-scammed/"},
+      {"order": 3, "action": "If your bank will not help, make a complaint to the bank. If you are not happy with its final reply, file a claim with FIDReC. It must be within 6 months of the bank's final reply.", "deadlineDays": null, "contact": "(65) 6327 8878", "organisation": "the Financial Industry Disputes Resolution Centre (FIDReC)", "sourceUrl": "https://www.fidrec.com.sg/knowledgebase/article/KA-01013"}
+    ],
+    "extra": {
+      "currency": "SGD",
+      "lawName": null,
+      "capAmount": null,
+      "evidence": [
+        {"quote": "the bank can take immediate actions to prevent further monetary loss", "url": "https://www.scamshield.gov.sg/i-have-been-scammed/"},
+        {"quote": "DBS / POSB Dial 1800 339 6963 (from Singapore)", "url": "https://www.scamshield.gov.sg/bank-s-anti-scam-hotline/"},
+        {"quote": "You may file a police report online or in person", "url": "https://www.scamshield.gov.sg/i-have-been-scammed/"},
+        {"quote": "The consumer must file the claim within 6 months of receiving a final reply", "url": "https://www.fidrec.com.sg/knowledgebase/article/KA-01013"},
+        {"quote": "(65) 6327 8878", "url": "https://www.fidrec.com.sg/contact-us/"}
+      ],
+      "notes": "No official SG page fetched names a chargeback, so step 1 asks the bank to stop the payment and block the card. No refund law covers a card payment the victim made. FIDReC's 6-month window is in the action text with deadlineDays null."
+    }
+  }
+]

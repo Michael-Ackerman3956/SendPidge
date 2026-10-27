@@ -34,12 +34,19 @@ bash scripts/run_tests.sh
 
 This runs pytest from `lambda/` (including the grep gate and `test_stack.py`, which synthesises the CDK stack with fake mailboxes and needs no AWS credentials or `.env`), then `infra/node_modules/.bin/tsc --noEmit`. It needs `.venv` and `infra/node_modules` installed and exits non-zero on the first failure.
 
+## Try it
+
+The app is per person: each link carries that person's access token, so the two test links (a resident and a contact) and the steps are in the Devpost submission's testing instructions, not here.
+
 ## Deploy
 
 ```
+bash infra/scripts/build_layer.sh
 bash infra/scripts/build_case_agent.sh
 cd infra && npx cdk deploy --require-approval never
 ```
+
+Another account changes the account-specific context in `infra/cdk.json` (`mailboxResidentAddress`, `receiverDomain`, `pwaDomain`, `landingDomain`, `receiptSender`, `rcsAgentArn` / `rcsAgentId`, `whatsappPhoneNumberArn` / `whatsappPhoneNumberId`) and fills `.env` from `.env.example` before the deploy.
 
 The demo family is written once by `scripts/seed_graph.py` (see its usage line: the contact's numbers and addresses come from environment variables, and a re-run without them drops them).
 
