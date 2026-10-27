@@ -32,7 +32,6 @@ RECEIPT_SENDER = os.environ["RECEIPT_SENDER"]
 RCS_TOPIC_ARN = os.environ["RCS_TOPIC_ARN"]
 WHATSAPP_TOPIC_ARN = os.environ["WHATSAPP_TOPIC_ARN"]
 RELEASE_SCHEDULER_ENABLED = os.environ.get("RELEASE_SCHEDULER_ENABLED") == "true"
-RCS_ENABLED = os.environ.get("RCS_ENABLED") == "true"  # the circle shows RCS as a reach only when the stack sends on it
 RELEASE_FUNCTION_ARN = os.environ.get("RELEASE_FUNCTION_ARN", "")
 MOCK_BANK_MAILBOX = os.environ.get("MOCK_BANK_MAILBOX", "")  # the SIMULATED bank; empty → Send to my bank is refused
 CASES_ADDRESS = os.environ.get("CASES_ADDRESS", "")  # Reply-To on the report; Mail Manager stores replies under cases/

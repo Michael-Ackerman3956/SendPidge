@@ -62,10 +62,17 @@ function handleUserTappedSuggestionChip(suggestionChip) {
   }
 }
 
-// A fixed note to the first person in her circle, written by code; she copies it into her own mail app.
+// A fixed note to the first person in her circle, written by code; she copies it into her own mail app. An empty circle gets
+// one sentence and no draft: no name is ever invented.
 function appendDraftReplyBubble() {
   const [firstContact] = listCircleEntries();
-  const contactName = firstContact === undefined ? "Jimin" : firstContact.contactName;
+  if (firstContact === undefined) {
+    const emptyBubble = buildBubbleElement({ role: CHAT_ROLE.PIDGE, text: "Nobody is in your circle yet. Add someone on the Circle tab first.", isRefusal: false });
+    pageElements.chatThread.append(emptyBubble);
+    emptyBubble.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  const contactName = firstContact.contactName;
   const bubble = buildBubbleElement({ role: CHAT_ROLE.PIDGE, text: `Here is a note to ${contactName}. You send it.`, isRefusal: false });
   const draftCard = createElementWithText("div", "pidge-chat-draft");
   const draftText = DRAFT_REPLY_TEMPLATE(contactName);

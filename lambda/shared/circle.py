@@ -23,6 +23,7 @@ E164_PATTERN = re.compile(r"^\+[1-9]\d{6,14}$")
 EMAIL_ADDRESS_PATTERN = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$")
 EMAIL_ADDRESS_MAXIMUM_LENGTH = 254
 PROFILE_SORT_KEY = "PROFILE"
+TRANSACTION_CANCELLED = "TransactionCanceledException"
 
 CONTACT_NOTE_TEMPLATE = (
     "{receiver_name} is using Pidge to catch fake emails. If something arrives in your name, Pidge will ask you first.\n"
@@ -87,14 +88,22 @@ def parse_email_address(value) -> str:
     return address
 
 
-def issue_access_token(user_id: str) -> str:
-    """A fresh PWA token for one user: the TOKEN#<sha256> row the socket checks and the USER#/PROFILE row that remembers the
-    hash (so a later rotation can delete it). Returns the token itself; the caller alone decides where it goes."""
+def access_token_rows(user_id: str) -> tuple[str, list[dict]]:
+    """A fresh PWA token for one user and its two rows: TOKEN#<sha256> (what the socket checks) and USER#/PROFILE (remembers
+    the hash so a later rotation can delete it). The token itself is returned once; the caller alone decides where it goes."""
     access_token = secrets.token_urlsafe(32)
     token_hash = graph.hash_access_token(access_token)
-    table = graph.get_table()
-    table.put_item(Item={"PK": f"TOKEN#{token_hash}", "SK": graph.METADATA_SORT_KEY, "userId": user_id})
-    table.put_item(Item={"PK": f"USER#{user_id}", "SK": PROFILE_SORT_KEY, "tokenHash": token_hash})
+    return access_token, [
+        {"PK": f"TOKEN#{token_hash}", "SK": graph.METADATA_SORT_KEY, "userId": user_id},
+        {"PK": f"USER#{user_id}", "SK": PROFILE_SORT_KEY, "tokenHash": token_hash},
+    ]
+
+
+def issue_access_token(user_id: str) -> str:
+    """Writes a fresh token's rows for an existing user (scripts/seed_graph.py); returns the token."""
+    access_token, rows = access_token_rows(user_id)
+    for row in rows:
+        graph.get_table().put_item(Item=row)
     return access_token
 
 
@@ -104,8 +113,9 @@ def has_duplicate_name(contact_rows: list[dict], contact_name: str) -> bool:
 
 
 def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> Enrolment:
-    """Writes the PENDING row with a server-made id, a hashed six-digit code and a PWA token for the in-app channel.
-    Refuses a name already in the circle (asks are matched by name) and a full circle; both write nothing."""
+    """Writes the PENDING row with a server-made id, a hashed six-digit code and a PWA token for the in-app channel, in one
+    transaction (no row without its token, no token without its row). Refuses a name already in the circle (asks are matched
+    by name) and a full circle; both write nothing."""
     contact_rows = graph.list_contact_rows(receiver_address)
     if has_duplicate_name(contact_rows, form.contact_name):
         return Enrolment(ActionOutcome.DUPLICATE_NAME)
@@ -127,13 +137,19 @@ def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> En
         "verificationExpiresAt": graph.iso_timestamp(now + VERIFICATION_CODE_LIFETIME),
         "addedAt": graph.iso_timestamp(now),
     }
+    access_token, token_rows = access_token_rows(contact_user_id)
+    table = graph.get_table()
     try:
-        graph.get_table().put_item(Item=contact_row, ConditionExpression="attribute_not_exists(PK)")
+        # The table resource's client takes plain Python values (boto3 converts them), unlike a bare dynamodb client.
+        table.meta.client.transact_write_items(TransactItems=[
+            {"Put": {"TableName": table.name, "Item": contact_row, "ConditionExpression": "attribute_not_exists(PK)"}},
+            *({"Put": {"TableName": table.name, "Item": row}} for row in token_rows),
+        ])
     except ClientError as error:
-        if error.response["Error"]["Code"] == graph.CONDITIONAL_CHECK_FAILED:
+        if error.response["Error"]["Code"] == TRANSACTION_CANCELLED:
             return Enrolment(ActionOutcome.NOT_APPLIED)  # a 64-bit id collision; the caller may simply try again
         raise
-    return Enrolment(ActionOutcome.RECORDED, contact_row, code, issue_access_token(contact_user_id))
+    return Enrolment(ActionOutcome.RECORDED, contact_row, code, access_token)
 
 
 def build_contact_note(receiver_name: str, code: str, pwa_link: str, pidge_whatsapp_number: str | None) -> str:

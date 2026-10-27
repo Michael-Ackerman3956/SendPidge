@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from boto3.dynamodb.conditions import Key
 
 from shared import circle, graph
 from shared.enums import ActionOutcome, VerifiedVia
@@ -156,3 +157,14 @@ def test_the_demo_button_verifies_a_pending_row_with_its_own_code_and_never_a_se
 
 def test_enrolment_outcomes_are_enum_members():
     assert ActionOutcome("duplicate_name") is ActionOutcome.DUPLICATE_NAME and ActionOutcome("circle_full") is ActionOutcome.CIRCLE_FULL
+
+
+def test_an_id_collision_writes_neither_the_row_nor_a_token(circle_handler, monkeypatch):
+    handler, pushed_messages, _user_pushes, _sent = circle_handler
+    _contact_added, row = added_contact(circle_handler)
+    monkeypatch.setattr(circle.secrets, "token_hex", lambda _byte_count: row["contactPwaUserId"])
+    token_rows_before = graph.get_table().scan(FilterExpression=Key("PK").begins_with("TOKEN#"))["Count"]
+    send_action(handler, RECEIVER_USER_ID, {**MINSOO_FORM, "contactName": "Someone Else"})
+    assert pushed_messages[-1] == rejection("not_applied")
+    assert [r["contactName"] for r in graph.list_contact_rows(RECEIVER_ADDRESS)] == ["Minsoo Kim"]
+    assert graph.get_table().scan(FilterExpression=Key("PK").begins_with("TOKEN#"))["Count"] == token_rows_before
