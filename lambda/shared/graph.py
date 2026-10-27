@@ -24,9 +24,6 @@ REQUEST_RETENTION_SECONDS = 30 * 24 * 3600
 EMAIL_RETENTION_SECONDS = 90 * 24 * 3600
 CONNECTION_RETENTION_SECONDS = 24 * 3600
 READER_RECLAIM_AFTER_SECONDS = 55  # just under pidge-reader's 60 s Lambda timeout; its first async retry comes a minute after a crash
-HOURLY_COUNTER_RETENTION_SECONDS = 2 * 3600
-ASK_COUNTER_PARTITION_PREFIX = "ASKRATE#"
-HOUR_SORT_KEY_PREFIX = "HOUR#"
 CONDITIONAL_CHECK_FAILED = "ConditionalCheckFailedException"
 logger = logging.getLogger(__name__)
 METADATA_SORT_KEY = "META"
@@ -138,10 +135,19 @@ def find_contact_among(contacts: list[Contact], person_name: str | None) -> Cont
     return next((contact for contact in contacts if " ".join(contact.contact_name.split()).casefold() == wanted_name), None)
 
 
+def verified_via_of(contact_row: dict) -> VerifiedVia:
+    """A row without the field is a seeded one (scripts/seed_graph.py wrote it before the field existed); it is logged, never
+    silent. An unknown value raises."""
+    if "verifiedVia" not in contact_row:
+        logger.warning("contact row %s has no verifiedVia; treating as seed (re-run scripts/seed_graph.py)", contact_row["SK"])
+        return VerifiedVia.SEED
+    return VerifiedVia(contact_row["verifiedVia"])
+
+
 def list_contacts(receiver_address: str) -> list[Contact]:
     """The contacts Pidge may match and ask: a PENDING row (added from the app, code not back yet) is left out, so its name
     reads as unknown and its number is never asked."""
-    return [contact_from_row(item) for item in list_contact_rows(receiver_address) if item.get("verifiedVia") != VerifiedVia.PENDING]
+    return [contact_from_row(item) for item in list_contact_rows(receiver_address) if verified_via_of(item) is not VerifiedVia.PENDING]
 
 
 def list_contact_rows(receiver_address: str) -> list[dict]:
@@ -157,15 +163,18 @@ def find_contact_row_for_user(receiver_address: str, contact_user_id: str) -> di
     return next((row for row in list_contact_rows(receiver_address) if row["contactPwaUserId"] == contact_user_id), None)
 
 
-def mark_contact_verified(receiver_address: str, contact_sort_key: str, verified_via: VerifiedVia, verified_at: str) -> bool:
-    """Sets verifiedVia and verifiedAt on an existing CONTACT# row in place (the row keeps its numbers and addresses) and drops
-    the one-time code; False if the row is gone. New rows are put by shared/circle.py only."""
+def mark_contact_verified(receiver_address: str, contact_sort_key: str, verified_via: VerifiedVia, verified_at: str,
+                          expected_code_hash: str) -> bool:
+    """Sets verifiedVia and verifiedAt on a PENDING CONTACT# row in place (the row keeps its numbers and addresses) and drops
+    the one-time code, only while the row still holds that code: a redelivered text or a mock/WhatsApp race verifies once.
+    False when the row is gone or already verified. Rows are put by shared/circle.py and scripts/seed_graph.py only."""
     try:
         get_table().update_item(
             Key={"PK": f"RECEIVER#{receiver_address}", "SK": contact_sort_key},
             UpdateExpression="SET verifiedVia = :via, verifiedAt = :at REMOVE verificationCodeHash, verificationExpiresAt",
-            ConditionExpression="attribute_exists(PK)",
-            ExpressionAttributeValues={":via": str(verified_via), ":at": verified_at},
+            ConditionExpression="attribute_exists(PK) AND verifiedVia = :pending AND verificationCodeHash = :hash",
+            ExpressionAttributeValues={":via": str(verified_via), ":at": verified_at, ":pending": str(VerifiedVia.PENDING),
+                                       ":hash": expected_code_hash},
         )
         return True
     except ClientError as error:
@@ -177,31 +186,6 @@ def mark_contact_verified(receiver_address: str, contact_sort_key: str, verified
 def domains_of(contacts: list[Contact]) -> frozenset[str]:
     """The domains the family writes from (every contact's knownAddresses); link lookalikes are judged against these."""
     return frozenset(address.rpartition("@")[2] for contact in contacts for address in contact.known_addresses if "@" in address)
-
-
-def current_hour_label() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
-
-
-def take_hourly_slot(partition_key: str, limit: int) -> bool:
-    """One conditional increment of this hour's counter under the partition. False at the cap or on any write failure (fail closed)."""
-    try:
-        get_table().update_item(
-            Key={"PK": partition_key, "SK": f"{HOUR_SORT_KEY_PREFIX}{current_hour_label()}"},
-            UpdateExpression="ADD slotCount :one SET ttlEpochSeconds = :expiry",
-            ConditionExpression="attribute_not_exists(slotCount) OR slotCount < :limit",
-            ExpressionAttributeValues={":one": 1, ":limit": limit, ":expiry": retention_epoch(HOURLY_COUNTER_RETENTION_SECONDS)},
-        )
-        return True
-    except ClientError as error:
-        if error.response["Error"]["Code"] != CONDITIONAL_CHECK_FAILED:
-            logger.error("hourly counter write failed for %s; refusing: %s", partition_key, error)
-        return False
-
-
-def take_ask_slot(contact_key: str, asks_per_hour_limit: int) -> bool:
-    """The ask cap: a contact is asked at most this many times an hour; past it the hold stays and nothing is sent."""
-    return take_hourly_slot(f"{ASK_COUNTER_PARTITION_PREFIX}{contact_key}", asks_per_hour_limit)
 
 
 def record_ask_capped(request_id: str) -> None:

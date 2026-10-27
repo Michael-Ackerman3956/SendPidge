@@ -56,7 +56,7 @@ I have kept the email and my payment record and can provide both."""
 def format_amount(case_row: dict) -> str:
     amount = case_row["amount"]
     amount_text = f"{amount:,.2f}" if isinstance(amount, Decimal) else str(amount)
-    return f"{amount_text} {case_row.get('currency', '')}".strip()
+    return f"{amount_text} {case_row['currency']}"
 
 
 def payee_clause_for(case_row: dict) -> str:
@@ -94,7 +94,7 @@ def describe_pack_step(step: dict) -> str:
 
 def build_pack_email_body(recovery_pack: dict) -> str:
     """The steps in order, then the three drafts. Only the pack's own fields go in."""
-    steps = sorted(recovery_pack.get("steps", []), key=lambda step: step["order"])
+    steps = sorted(recovery_pack["steps"], key=lambda step: step["order"])
     step_lines = "\n".join(describe_pack_step(step) for step in steps) or "Pidge has no steps for this country and payment yet."
     drafts = recovery_pack["drafts"]
     return (

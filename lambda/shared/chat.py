@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from shared import graph
+from shared import graph, hourly_counters
 from shared.metrics import emit_count_metric
 from shared.enums import ChatCardKind, ChatRole, ChatVia, GuardrailOutcome, PushMessageType
 
@@ -54,7 +54,7 @@ def chat_partition(user_id: str) -> str:
 
 def take_question_slot(user_id: str) -> bool:
     """One conditional increment of this hour's counter. False when the cap is reached or the write fails (fail closed)."""
-    return graph.take_hourly_slot(chat_partition(user_id), QUESTIONS_PER_HOUR_LIMIT)
+    return hourly_counters.take_hourly_slot(chat_partition(user_id), QUESTIONS_PER_HOUR_LIMIT)
 
 
 def write_message(user_id: str, role: ChatRole, via: ChatVia, text: str, extra_fields: dict | None = None) -> dict:

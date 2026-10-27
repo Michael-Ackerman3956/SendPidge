@@ -9,7 +9,7 @@ import pytest
 from boto3.dynamodb.conditions import Key
 
 from shared import circle, graph
-from shared.enums import ActionOutcome, VerifiedVia
+from shared.enums import VerifiedVia
 from tests.test_verdict import RECEIVER_ADDRESS, RECEIVER_USER_ID, aws  # noqa: F401
 from tests.test_verify_contact import rejection, seed_circle_contact, send_action, verdict_handler  # noqa: F401
 from tests.test_whatsapp import inbound_message, sns_message
@@ -111,7 +111,7 @@ def test_a_pending_contact_is_never_asked(circle_handler):
     seed_circle_contact()
     assert [contact.contact_name for contact in graph.list_contacts(RECEIVER_ADDRESS)] == ["Jimin"]
     assert graph.find_contact_among(graph.list_contacts(RECEIVER_ADDRESS), "Minsoo Kim") is None
-    graph.mark_contact_verified(RECEIVER_ADDRESS, row["SK"], VerifiedVia.WHATSAPP, graph.now_timestamp())
+    graph.mark_contact_verified(RECEIVER_ADDRESS, row["SK"], VerifiedVia.WHATSAPP, graph.now_timestamp(), row["verificationCodeHash"])
     assert graph.find_contact_among(graph.list_contacts(RECEIVER_ADDRESS), "minsoo kim") is not None
 
 
@@ -155,8 +155,61 @@ def test_the_demo_button_verifies_a_pending_row_with_its_own_code_and_never_a_se
     assert sorted(entry["verifiedVia"] for entry in user_pushes[-1][1]["circle"]) == ["mock", "seed"]
 
 
-def test_enrolment_outcomes_are_enum_members():
-    assert ActionOutcome("duplicate_name") is ActionOutcome.DUPLICATE_NAME and ActionOutcome("circle_full") is ActionOutcome.CIRCLE_FULL
+def test_adding_a_pending_name_again_re_issues_the_code_and_the_token(circle_handler):
+    handler, pushed_messages, user_pushes, _sent = circle_handler
+    first_added, first_row = added_contact(circle_handler)
+    first_token = first_added["noteText"].split("?token=")[1].split()[0]
+    send_action(handler, RECEIVER_USER_ID, {**MINSOO_FORM, "whatsappNumber": "+821000000000"})
+    second_added = [message for message in pushed_messages if message["type"] == "contact_added"][-1]
+    second_row = graph.get_contact_row(RECEIVER_ADDRESS, first_row["SK"])
+    assert second_row["contactPwaUserId"] == first_row["contactPwaUserId"] and second_row["contactWhatsApp"] == "+821000000000"
+    assert second_added["code"] != first_added["code"] and second_row["verificationCodeHash"] == graph.hash_access_token(second_added["code"])
+    second_token = second_added["noteText"].split("?token=")[1].split()[0]
+    assert graph.find_user_id_for_access_token(first_token) is None and graph.find_user_id_for_access_token(second_token) == first_row["contactPwaUserId"]
+    assert len(graph.list_contact_rows(RECEIVER_ADDRESS)) == 1 and len(user_pushes) == 2
+
+
+def test_a_lost_note_push_keeps_the_row_counts_the_loss_and_still_pushes_the_circle(circle_handler, monkeypatch):
+    handler, _pushed, user_pushes, _sent = circle_handler
+    counted = []
+    monkeypatch.setattr(handler.circle_handlers, "emit_count_metric", lambda metric_name, *_: counted.append(metric_name))
+    def socket_gone(_connection_id, _message):
+        raise RuntimeError("GoneException")
+    monkeypatch.setattr(handler.channels, "push_to_connection", socket_gone)
+    send_action(handler, RECEIVER_USER_ID, MINSOO_FORM)
+    assert [row["verifiedVia"] for row in graph.list_contact_rows(RECEIVER_ADDRESS)] == ["pending"]
+    assert counted == ["ContactNotePushFailed"] and [entry["verifiedVia"] for entry in user_pushes[-1][1]["circle"]] == ["pending"]
+
+
+def test_a_failed_welcome_leaves_the_contact_verified_and_the_circle_pushed(circle_handler, monkeypatch):
+    handler, _pushed, user_pushes, _sent = circle_handler
+    contact_added, row = added_contact(circle_handler)
+    counted = []
+    monkeypatch.setattr(handler.circle_handlers, "emit_count_metric", lambda metric_name, *_: counted.append(metric_name))
+    def meta_refuses(_message):
+        raise RuntimeError("131047 re-engagement")
+    monkeypatch.setattr(handler.channels, "send_whatsapp_message", meta_refuses)
+    handler.handle(whatsapp_text_event(MINSOO_NUMBER.removeprefix("+"), contact_added["code"]), None)
+    assert graph.get_contact_row(RECEIVER_ADDRESS, row["SK"])["verifiedVia"] == "whatsapp"
+    assert counted == ["WelcomeSendFailed"] and [entry["verifiedVia"] for entry in user_pushes[-1][1]["circle"]] == ["whatsapp"]
+
+
+def test_a_stale_row_cannot_verify_twice(circle_handler):
+    _handler, _pushed, _user_pushes, _sent = circle_handler
+    contact_added, row = added_contact(circle_handler)
+    now = datetime.now(timezone.utc)
+    assert circle.verify_with_code(RECEIVER_ADDRESS, row, contact_added["code"], VerifiedVia.MOCK, now) is True
+    assert circle.verify_with_code(RECEIVER_ADDRESS, row, contact_added["code"], VerifiedVia.WHATSAPP, now) is False  # same stale read
+    assert graph.get_contact_row(RECEIVER_ADDRESS, row["SK"])["verifiedVia"] == "mock"
+
+
+def test_the_circle_entry_says_when_a_pending_code_dies_and_a_bad_relationship_is_not_echoed(circle_handler, caplog):
+    handler, pushed_messages, _user_pushes, _sent = circle_handler
+    contact_added, row = added_contact(circle_handler)
+    assert contact_added["contact"]["codeExpiresAt"] == row["verificationExpiresAt"]
+    with caplog.at_level("INFO"):
+        send_action(handler, RECEIVER_USER_ID, {**MINSOO_FORM, "contactName": "Other", "relationship": "secret-cousin"})
+    assert pushed_messages[-1] == rejection("bad_message") and "secret-cousin" not in caplog.text
 
 
 def test_an_id_collision_writes_neither_the_row_nor_a_token(circle_handler, monkeypatch):

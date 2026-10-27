@@ -9,8 +9,11 @@ from datetime import datetime, timezone
 
 from shared import channels, circle, graph, payloads, whatsapp
 from shared.enums import ActionOutcome, PushMessageType, VerifiedVia
+from shared.metrics import emit_count_metric
 
 logger = logging.getLogger(__name__)
+CONTACT_NOTE_PUSH_FAILED_METRIC_NAME = "ContactNotePushFailed"  # the note never reached her socket; adding the name again re-issues it
+WELCOME_SEND_FAILED_METRIC_NAME = "WelcomeSendFailed"
 
 
 @dataclass(frozen=True)
@@ -39,7 +42,7 @@ def read_settings() -> CircleSettings:
         receiver_address=os.environ["RECEIVER_ADDRESS"],
         receiver_user_id=os.environ["RECEIVER_USER_ID"],
         receiver_name=os.environ["RECEIVER_NAME"],
-        pwa_base_url=os.environ.get("PWA_BASE_URL", ""),
+        pwa_base_url=os.environ["PWA_BASE_URL"],
         pidge_whatsapp_number=os.environ.get("PIDGE_WHATSAPP_NUMBER", ""),
         is_rcs_enabled=os.environ.get("RCS_ENABLED") == "true",
         is_whatsapp_enabled=os.environ.get("WHATSAPP_ENABLED") == "true",
@@ -82,13 +85,17 @@ def handle_add_contact(connection_id: str, user_id: str, body: dict) -> None:
     pwa_link = f"{settings.pwa_base_url}/?token={enrolment.access_token}"
     note_text = circle.build_contact_note(settings.receiver_name, enrolment.code, pwa_link,
                                           settings.pidge_whatsapp_number if settings.is_whatsapp_verification_on else None)
-    channels.push_to_connection(connection_id, {
-        "type": PushMessageType.CONTACT_ADDED,
-        "contact": payloads.circle_entry_for_receiver(enrolment.contact_row, settings.reach_flags),
-        "noteText": note_text,
-        "code": enrolment.code,
-    })
-    logger.info("contact %s added as %s", enrolment.contact_row["SK"], VerifiedVia.PENDING)
+    try:
+        channels.push_to_connection(connection_id, {
+            "type": PushMessageType.CONTACT_ADDED,
+            "contact": payloads.circle_entry_for_receiver(enrolment.contact_row, settings.reach_flags),
+            "noteText": note_text,
+            "code": enrolment.code,
+        })
+    except Exception:  # the socket went away after the write: the row stays pending and adding the name again re-issues the note
+        logger.exception("contact_added for %s could not be pushed", enrolment.contact_row["SK"])
+        emit_count_metric(CONTACT_NOTE_PUSH_FAILED_METRIC_NAME)
+    logger.info("contact %s added or re-issued as %s", enrolment.contact_row["SK"], VerifiedVia.PENDING)
     push_circle_state(settings)
 
 
@@ -135,3 +142,4 @@ def send_welcome(destination_number: str, receiver_name: str) -> None:
         channels.send_whatsapp_message(whatsapp.build_text_message(destination_number, circle.build_welcome_text(receiver_name)))
     except Exception:
         logger.exception("whatsapp welcome to the new contact failed")
+        emit_count_metric(WELCOME_SEND_FAILED_METRIC_NAME)

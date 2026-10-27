@@ -9,7 +9,8 @@ from urllib.parse import unquote_plus
 
 import boto3
 
-from shared import channels, graph, lists, payloads, schedules
+from shared import channels, graph, hourly_counters, lists, payloads, schedules
+from shared.metrics import emit_count_metric
 from shared.auth import authentication_reasons
 from shared import links as link_checks
 from shared.email_parse import ParsedEmail, parse_eml
@@ -21,6 +22,8 @@ from shared.policy import (
 )
 from shared.reader_agent import EmailVerdict, build_reader, read_email
 from shared.sanitize import sanitize_summary
+
+READING_PUSH_FAILED_METRIC_NAME = "ReadingPushFailed"
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -127,7 +130,7 @@ def hold_and_ask(
     request_id = graph.request_id_of(request_row)
     graph.record_email_outcome(email_id, outcome.decision, None, outcome.reasons, request_id)
     push_email_state(email_row, outcome, request_row, contact.contact_name)
-    if not graph.take_ask_slot(contact.contact_key, ASKS_PER_CONTACT_PER_HOUR):
+    if not hourly_counters.take_ask_slot(contact.contact_key, ASKS_PER_CONTACT_PER_HOUR):
         # The hold stays; no channel is tried and no re-ask is booked, so a flood of asks never reaches the contact.
         logger.info("ask cap reached for %s; %s held without an ask", contact.contact_key, request_id)
         graph.record_ask_capped(request_id)
@@ -185,6 +188,7 @@ def push_email_reading(email_row: dict) -> None:
         logger.info("pushed reading state to %d receiver connection(s)", delivered_count)
     except Exception:
         logger.exception("reading push for %s failed; the verdict push follows", email_row["s3Key"])
+        emit_count_metric(READING_PUSH_FAILED_METRIC_NAME)
 
 
 def push_email_state(

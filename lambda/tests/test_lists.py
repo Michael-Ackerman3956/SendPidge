@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from botocore.exceptions import ClientError
 
-from shared import graph, lists
+from shared import graph, hourly_counters, lists
 from shared.enums import Friction, IndicatorKind, ListSource, PolicyDecision, ReasonCode, RequestState, WarnReason
 from shared.lists import (
     DynamoListStore, ListLookupFailed, SeedListStore, confusable_skeleton, is_lookalike_name,
@@ -112,15 +112,15 @@ def test_list_reasons_mark_but_never_hold_on_their_own():
 
 def test_the_ask_cap_holds_the_fourth_ask_and_fails_closed(aws, monkeypatch):  # noqa: F811
     for _ in range(3):
-        assert graph.take_ask_slot("CONTACT#jimin", 3)
-    assert not graph.take_ask_slot("CONTACT#jimin", 3)
-    assert graph.take_ask_slot("CONTACT#minho", 3)  # the cap is per contact
+        assert hourly_counters.take_ask_slot("CONTACT#jimin", 3)
+    assert not hourly_counters.take_ask_slot("CONTACT#jimin", 3)
+    assert hourly_counters.take_ask_slot("CONTACT#minho", 3)  # the cap is per contact
 
     def failing_update_item(**_):
         raise ClientError({"Error": {"Code": "ProvisionedThroughputExceededException", "Message": "slow"}}, "UpdateItem")
 
     monkeypatch.setattr(graph.get_table(), "update_item", failing_update_item)
-    assert not graph.take_ask_slot("CONTACT#other", 3)
+    assert not hourly_counters.take_ask_slot("CONTACT#other", 3)
 
 
 def test_record_ask_capped_leaves_the_request_held_with_nothing_sent(aws):  # noqa: F811
@@ -168,7 +168,7 @@ def test_a_capped_ask_is_stored_as_the_same_warn_the_receiver_saw(reader_handler
                  "textBody": "Send money", "quarantined": False}
     graph.claim_email(EMAIL_ID, email_row)
     for _ in range(3):
-        assert graph.take_ask_slot(contact.contact_key, 3)
+        assert hourly_counters.take_ask_slot(contact.contact_key, 3)
     asked = []
     monkeypatch.setattr(handler.channels, "ask_on_every_channel", lambda *_: asked.append(True))
     verdict = EmailVerdict(**VERDICT_FIELDS)

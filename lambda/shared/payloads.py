@@ -1,14 +1,16 @@
 """The JSON shapes pushed to the PWAs. One place, so the Reader, the verdict handler and sync agree."""
 
-import logging
 from dataclasses import dataclass
 
 from shared import graph
-from shared.enums import CaseEvent, Channel, Friction, PushMessageType, RequestState, VerifiedVia
-
-logger = logging.getLogger(__name__)
+from shared.enums import CaseEvent, Channel, Friction, PushMessageType, Relationship, RequestState
 
 EMAIL_FIELDS_FOR_PWA = ("senderName", "senderAddress", "subject", "receivedAt", "textBody")
+
+
+def optional_enum_value(enum_type, stored_value) -> str | None:
+    """A stored closed-set value parsed through its Enum (an unknown value raises), or None when the row has none."""
+    return None if stored_value is None else str(enum_type(stored_value))
 
 
 def request_timing(request_row: dict) -> dict:
@@ -27,14 +29,14 @@ def request_for_receiver(request_row: dict, contact_name: str, status: RequestSt
         "intent": request_row["verdict"]["intent"],
         "summary": request_row["verdict"]["summary"],
         "status": status,
-        "repliedVia": request_row.get("repliedVia"),  # the channel the answer came on; None until answered
+        "repliedVia": optional_enum_value(Channel, request_row.get("repliedVia")),  # the channel the answer came on; None until answered
         **request_timing(request_row),
     }
 
 
 def reading_email_for_receiver(email_row: dict) -> dict:
-    """The row while the Reader is still on it: state None, no body, no links, so nothing from the email is shown before the
-    verdict. The email_state push after the policy run replaces it (same emailId)."""
+    """The row while the Reader is still on it: state None, no body, no links; only the sender line and the subject show before
+    the verdict. The email_state push after the policy run replaces it (same emailId)."""
     return {
         "emailId": email_row["s3Key"],
         **{field: email_row[field] for field in EMAIL_FIELDS_FOR_PWA},
@@ -97,7 +99,7 @@ def request_state_message(request_row: dict, status: RequestState, contact_name:
             "status": status,
             "contactName": contact_name,
             "quarantined": quarantined,
-            "repliedVia": request_row.get("repliedVia"),
+            "repliedVia": optional_enum_value(Channel, request_row.get("repliedVia")),
             **request_timing(request_row),
         },
     }
@@ -139,15 +141,6 @@ def contact_notice_message(text: str) -> dict:
     return {"type": PushMessageType.CONTACT_NOTICE, "text": text}
 
 
-def verified_via_of(contact_row: dict) -> VerifiedVia:
-    """Only scripts/seed_graph.py writes CONTACT# rows, so a row without the field is a seeded one; it is logged, never silent.
-    An unknown value still raises."""
-    if "verifiedVia" not in contact_row:
-        logger.warning("contact row %s has no verifiedVia; treating as seed (re-run scripts/seed_graph.py)", contact_row["SK"])
-        return VerifiedVia.SEED
-    return VerifiedVia(contact_row["verifiedVia"])
-
-
 @dataclass(frozen=True)
 class ReachFlags:
     """Which phone and mail channels this stack sends asks on (the RCS_ENABLED / WHATSAPP_ENABLED / EMAIL_ASK_ENABLED flags)."""
@@ -163,9 +156,10 @@ def circle_entry_for_receiver(contact_row: dict, reach_flags: ReachFlags) -> dic
     return {
         "contactUserId": contact_row["contactPwaUserId"],
         "contactName": contact_row["contactName"],
-        "relationship": contact_row.get("relationship"),  # a Relationship value; absent on seeded rows
-        "verifiedVia": str(verified_via_of(contact_row)),
+        "relationship": optional_enum_value(Relationship, contact_row.get("relationship")),  # absent on seeded rows
+        "verifiedVia": str(graph.verified_via_of(contact_row)),
         "verifiedAt": contact_row.get("verifiedAt"),
+        "codeExpiresAt": contact_row.get("verificationExpiresAt"),  # pending rows only: past it, the code is dead
         "reach": {
             str(Channel.INAPP): True,  # every row has a PWA token: seeded by scripts/seed_graph.py, or minted with the row
             str(Channel.RCS): reach_flags.is_rcs_enabled and "contactRcs" in contact_row,

@@ -25,8 +25,13 @@ function isValidCircleEntry(entry) {
   return isValid;
 }
 
+function isCodeExpired(entry) {
+  const expiresAtMilliseconds = parseTimestampMilliseconds(entry.codeExpiresAt);
+  return expiresAtMilliseconds !== null && expiresAtMilliseconds < Date.now();
+}
+
 function describeVerification(entry) {
-  if (entry.verifiedVia === VERIFIED_VIA.PENDING) return "Waiting for their code";
+  if (entry.verifiedVia === VERIFIED_VIA.PENDING) return isCodeExpired(entry) ? "Code expired. Add them again" : "Waiting for their code";
   if (entry.verifiedVia === VERIFIED_VIA.SEED) return "Set up for the demo";
   const verifiedAtMilliseconds = parseTimestampMilliseconds(entry.verifiedAt);
   const dayText = verifiedAtMilliseconds === null ? "" : ` ${new Date(verifiedAtMilliseconds).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;

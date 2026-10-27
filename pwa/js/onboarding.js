@@ -42,7 +42,11 @@ let addedContact = null; // {contactUserId, contactName, noteText, code} from th
 let isAddInFlight = false;
 let isVerifyInFlight = false;
 let formErrorText = "";
-let formDraft = { contactName: "", relationship: RELATIONSHIP.GRANDSON, whatsappNumber: "", emailAddress: "", extraAddressesText: "" };
+function emptyFormDraft() {
+  return { contactName: "", relationship: RELATIONSHIP.GRANDSON, whatsappNumber: "", emailAddress: "", extraAddressesText: "" };
+}
+
+let formDraft = emptyFormDraft();
 let onFinished = () => {};
 
 const pageElements = {
@@ -232,8 +236,10 @@ function buildWaitStep() {
     demoButton.disabled = isVerifyInFlight;
     children.push(createElementWithText("p", "onboarding-demo-note", "Demo: nothing is sent. The reply is played by the button."), demoButton);
   }
-  return buildStepFrame(`Send ${addedContact.contactName} this note`,
-    "Send it from your own phone. When they reply to Pidge with the code, they are in.", ...children);
+  const subtitleText = getContactVerificationFlags().whatsapp
+    ? "Send it from your own phone. When they reply to Pidge with the code, they are in."
+    : "Send it from your own phone. This stack cannot take their reply on WhatsApp yet.";
+  return buildStepFrame(`Send ${addedContact.contactName} this note`, subtitleText, ...children);
 }
 
 function buildStepElement() {
@@ -261,17 +267,20 @@ function renderOnboarding() {
 
 // The contact_added reply to this socket's add_contact: the note to send, shown once.
 export function handleContactAddedPush(pushMessage) {
-  if (pageElements.onboardingScreen.hidden || activeStep !== ONBOARDING_STEP.ADD_CONTACT || !isAddInFlight) return;
+  if (pageElements.onboardingScreen.hidden || activeStep !== ONBOARDING_STEP.ADD_CONTACT || !isAddInFlight) {
+    console.warn("SendPidge: contact_added arrived with no add in flight (reload or late reply); add the person again for a new note");
+    return;
+  }
   const contact = pushMessage.contact;
   if (typeof contact?.contactUserId !== "string" || typeof contact.contactName !== "string"
     || typeof pushMessage.noteText !== "string" || typeof pushMessage.code !== "string") {
-    console.error("SendPidge: contact_added has a missing field", pushMessage);
+    console.error("SendPidge: contact_added has a missing field", Object.keys(pushMessage)); // never the note or the code
     showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
     return;
   }
   isAddInFlight = false;
   addedContact = { contactUserId: contact.contactUserId, contactName: contact.contactName, noteText: pushMessage.noteText, code: pushMessage.code };
-  formDraft = { contactName: "", relationship: RELATIONSHIP.GRANDSON, whatsappNumber: "", emailAddress: "", extraAddressesText: "" };
+  formDraft = emptyFormDraft();
   advanceToStep(ONBOARDING_STEP.WAIT_FOR_CODE);
 }
 

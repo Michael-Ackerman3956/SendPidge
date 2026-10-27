@@ -13,6 +13,7 @@ from botocore.exceptions import ClientError
 
 from shared import graph
 from shared.enums import ActionOutcome, Relationship, VerifiedVia
+from shared.graph import verified_via_of
 
 CIRCLE_MAXIMUM_SIZE = 10
 CONTACT_NAME_MAXIMUM_LENGTH = 40
@@ -61,7 +62,10 @@ def parse_contact_form(body: dict) -> ContactForm:
     contact_name = " ".join(require_text(body, "contactName").split())
     if not 1 <= len(contact_name) <= CONTACT_NAME_MAXIMUM_LENGTH:
         raise ValueError("contactName length")
-    relationship = Relationship(require_text(body, "relationship"))
+    try:
+        relationship = Relationship(require_text(body, "relationship"))
+    except ValueError:
+        raise ValueError("relationship") from None  # never echo the typed value into a log
     whatsapp_number = require_text(body, "whatsappNumber").strip()
     if not E164_PATTERN.match(whatsapp_number):
         raise ValueError("whatsappNumber is not E.164")
@@ -107,21 +111,23 @@ def issue_access_token(user_id: str) -> str:
     return access_token
 
 
-def has_duplicate_name(contact_rows: list[dict], contact_name: str) -> bool:
+def find_same_name_row(contact_rows: list[dict], contact_name: str) -> dict | None:
     wanted_name = contact_name.casefold()
-    return any(" ".join(row["contactName"].split()).casefold() == wanted_name for row in contact_rows)
+    return next((row for row in contact_rows if " ".join(row["contactName"].split()).casefold() == wanted_name), None)
 
 
 def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> Enrolment:
     """Writes the PENDING row with a server-made id, a hashed six-digit code and a PWA token for the in-app channel, in one
-    transaction (no row without its token, no token without its row). Refuses a name already in the circle (asks are matched
-    by name) and a full circle; both write nothing."""
+    transaction (no row without its token, no token without its row). Adding a name that is still PENDING re-issues it: the
+    row takes the new form, a new code and a new token, and the old token dies, so a lost note or an expired code is recovered
+    by adding the person again. A verified name is refused (asks are matched by name), as is a full circle; both write nothing."""
     contact_rows = graph.list_contact_rows(receiver_address)
-    if has_duplicate_name(contact_rows, form.contact_name):
+    same_name_row = find_same_name_row(contact_rows, form.contact_name)
+    if same_name_row is not None and verified_via_of(same_name_row) is not VerifiedVia.PENDING:
         return Enrolment(ActionOutcome.DUPLICATE_NAME)
-    if len(contact_rows) >= CIRCLE_MAXIMUM_SIZE:
+    if same_name_row is None and len(contact_rows) >= CIRCLE_MAXIMUM_SIZE:
         return Enrolment(ActionOutcome.CIRCLE_FULL)
-    contact_user_id = secrets.token_hex(8)
+    contact_user_id = same_name_row["contactPwaUserId"] if same_name_row is not None else secrets.token_hex(8)
     code = f"{secrets.randbelow(10 ** VERIFICATION_CODE_DIGITS):0{VERIFICATION_CODE_DIGITS}d}"
     contact_row = {
         "PK": f"RECEIVER#{receiver_address}",
@@ -135,21 +141,35 @@ def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> En
         "verifiedVia": str(VerifiedVia.PENDING),
         "verificationCodeHash": graph.hash_access_token(code),
         "verificationExpiresAt": graph.iso_timestamp(now + VERIFICATION_CODE_LIFETIME),
-        "addedAt": graph.iso_timestamp(now),
+        "addedAt": same_name_row["addedAt"] if same_name_row is not None else graph.iso_timestamp(now),
     }
     access_token, token_rows = access_token_rows(contact_user_id)
     table = graph.get_table()
+    # The table resource's client takes plain Python values (boto3 converts them), unlike a bare dynamodb client.
+    row_condition = ({"ConditionExpression": "attribute_not_exists(PK)"} if same_name_row is None else
+                     {"ConditionExpression": "verifiedVia = :pending", "ExpressionAttributeValues": {":pending": str(VerifiedVia.PENDING)}})
+    transaction_items = [
+        {"Put": {"TableName": table.name, "Item": contact_row, **row_condition}},
+        *({"Put": {"TableName": table.name, "Item": row}} for row in token_rows),
+        *dead_token_deletions(table.name, contact_user_id, same_name_row),
+    ]
     try:
-        # The table resource's client takes plain Python values (boto3 converts them), unlike a bare dynamodb client.
-        table.meta.client.transact_write_items(TransactItems=[
-            {"Put": {"TableName": table.name, "Item": contact_row, "ConditionExpression": "attribute_not_exists(PK)"}},
-            *({"Put": {"TableName": table.name, "Item": row}} for row in token_rows),
-        ])
+        table.meta.client.transact_write_items(TransactItems=transaction_items)
     except ClientError as error:
         if error.response["Error"]["Code"] == TRANSACTION_CANCELLED:
-            return Enrolment(ActionOutcome.NOT_APPLIED)  # a 64-bit id collision; the caller may simply try again
+            return Enrolment(ActionOutcome.NOT_APPLIED)  # a 64-bit id collision, or the row was verified meanwhile; try again
         raise
     return Enrolment(ActionOutcome.RECORDED, contact_row, code, access_token)
+
+
+def dead_token_deletions(table_name: str, contact_user_id: str, same_name_row: dict | None) -> list[dict]:
+    """On a re-issue, the previous token row is deleted in the same transaction, so the old link stops opening the PWA."""
+    if same_name_row is None:
+        return []
+    profile = graph.get_table().get_item(Key={"PK": f"USER#{contact_user_id}", "SK": PROFILE_SORT_KEY}).get("Item")
+    if profile is None:
+        return []
+    return [{"Delete": {"TableName": table_name, "Key": {"PK": f"TOKEN#{profile['tokenHash']}", "SK": graph.METADATA_SORT_KEY}}}]
 
 
 def build_contact_note(receiver_name: str, code: str, pwa_link: str, pidge_whatsapp_number: str | None) -> str:
@@ -167,16 +187,17 @@ def build_welcome_text(receiver_name: str) -> str:
 
 def find_pending_contact_by_whatsapp(receiver_address: str, sender_number: str) -> dict | None:
     return next((row for row in graph.list_contact_rows(receiver_address)
-                 if row.get("verifiedVia") == VerifiedVia.PENDING and row.get("contactWhatsApp") == sender_number), None)
+                 if verified_via_of(row) is VerifiedVia.PENDING and row.get("contactWhatsApp") == sender_number), None)
 
 
 def verify_with_code(receiver_address: str, contact_row: dict, code: str, verified_via: VerifiedVia, now: datetime) -> bool:
     """True when the row is still PENDING, its code has not expired and `code` matches (constant time); the row then turns
     verified in place. False writes nothing."""
-    if contact_row.get("verifiedVia") != VerifiedVia.PENDING or "verificationCodeHash" not in contact_row:
+    if verified_via_of(contact_row) is not VerifiedVia.PENDING or "verificationCodeHash" not in contact_row:
         return False
     if datetime.fromisoformat(contact_row["verificationExpiresAt"].replace("Z", "+00:00")) < now.astimezone(timezone.utc):
         return False
     if not hmac.compare_digest(graph.hash_access_token(code.strip()), contact_row["verificationCodeHash"]):
         return False
-    return graph.mark_contact_verified(receiver_address, contact_row["SK"], verified_via, graph.iso_timestamp(now))
+    return graph.mark_contact_verified(receiver_address, contact_row["SK"], verified_via, graph.iso_timestamp(now),
+                                       contact_row["verificationCodeHash"])

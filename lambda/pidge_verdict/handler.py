@@ -210,8 +210,8 @@ def whatsapp_text_of(record: dict) -> whatsapp.InboundText | None:
 
 
 def handle_sns_records(records: list) -> None:
-    """Taps from the phone channels, and a pending contact's code typed on WhatsApp. Nothing here raises: SNS would only
-    redeliver the same message."""
+    """Taps from the phone channels, and a pending contact's code typed on WhatsApp. An unreadable record is skipped, never
+    raised (SNS would only redeliver it); a failing table write still raises so the record is redelivered."""
     for record in records:
         try:
             inbound_text = whatsapp_text_of(record)

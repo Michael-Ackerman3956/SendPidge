@@ -100,6 +100,15 @@ def test_a_refused_pack_email_leaves_the_note_unstamped_and_counts_the_failure(d
     assert "recovery pack email" in caplog.text and counted == ["PackMailFailed"]
 
 
+def test_no_receiver_mailbox_leaves_the_note_unstamped_and_says_so(dispatch, caplog, monkeypatch):
+    handler, _ses_client = dispatch
+    monkeypatch.setattr(handler, "RECEIVER_MAILBOX", "")
+    note_row = stored_note()
+    with caplog.at_level("WARNING"):
+        unmailed_row = handler.mail_recovery_pack(note_row)
+    assert "packMailedAt" not in unmailed_row and "RECEIVER_MAILBOX is not set" in caplog.text
+
+
 def test_write_and_push_note_keeps_the_drafts_from_the_model_mails_the_pack_and_pushes_the_stamped_note(dispatch, monkeypatch):
     handler, ses_client = dispatch
     seed_rules()

@@ -40,6 +40,21 @@ def test_the_reading_push_precedes_the_verdict_push_and_carries_no_body(reader_h
     assert pushed[1]["textBody"] != ""
 
 
+def test_a_failed_reading_push_is_counted_and_the_verdict_still_goes_out(reader_handler, monkeypatch):  # noqa: F811
+    handler, pushed = reader_handler
+    seed_jimin_for_the_reader()
+    counted = []
+    monkeypatch.setattr(handler, "emit_count_metric", lambda metric_name, *_: counted.append(metric_name))
+    original_push = handler.channels.push_to_user
+    def first_push_fails(user_id, message):
+        if message["email"]["state"] is None:
+            raise RuntimeError("socket management API down")
+        return original_push(user_id, message)
+    monkeypatch.setattr(handler.channels, "push_to_user", first_push_fails)
+    run_reader_on_the_sample(handler, monkeypatch)
+    assert [email["state"] for email in pushed] == ["hold"] and counted == ["ReadingPushFailed"]
+
+
 def test_a_retry_runs_an_email_the_crashed_reader_claimed_but_a_fresh_duplicate_is_refused(reader_handler, monkeypatch):  # noqa: F811
     handler, pushed = reader_handler
     seed_jimin_for_the_reader()

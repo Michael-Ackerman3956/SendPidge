@@ -124,7 +124,7 @@ export function buildDispatchFunction(
   dispatchFunction.addToRolePolicy(
     new PolicyStatement({ actions: ["bedrock:ApplyGuardrail"], resources: [guardrail.chatGuardrail.attrGuardrailArn] }),
   );
-  // Answers to emailed questions go to her real mailbox only.
+  // Answers to emailed questions and the recovery pack go to her real mailbox only.
   dispatchFunction.addToRolePolicy(
     buildSendEmailStatement(stack, settings.sendingDomain, { "ForAllValues:StringEquals": { "ses:Recipients": [settings.receiverMailbox] } }),
   );

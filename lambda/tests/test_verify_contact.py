@@ -29,6 +29,7 @@ def verdict_handler(aws, monkeypatch):  # noqa: F811
     monkeypatch.delenv("CONTACT_VERIFICATION_MOCK", raising=False)
     monkeypatch.setenv("WHATSAPP_ENABLED", "true")  # the reach chips follow the stack's channel flags
     monkeypatch.setenv("EMAIL_ASK_ENABLED", "true")
+    monkeypatch.setenv("PWA_BASE_URL", "https://app.sendpidge.example")
     handler = importlib.import_module("pidge_verdict.handler")
     importlib.reload(handler)
     pushed_messages: list[dict] = []
