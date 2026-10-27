@@ -243,3 +243,48 @@ def test_an_area_inside_an_open_anchor_counts_against_the_cap():
     anchors = "".join(f'<a href="https://site{index}.example/">s{index}</a>' for index in range(LINKS_MAX_COUNT - 1))
     parsed = parse_eml(html_email(anchors + '<a href="https://a.example/"><area href="https://b.example/" alt="b"></a>'))
     assert (len(parsed.links), parsed.links_truncated) == (LINKS_MAX_COUNT, True)
+
+
+WHOLE_BODY_ANCHOR = '<a href="https://evil.example/">Your account is locked. Tap to unlock.</a>'
+HIDDEN_PADDING = "x" * 540
+
+
+def test_a_fullwidth_slash_in_the_userinfo_still_finds_the_host():
+    expected_domain_by_href = {
+        "https://zelle.com／login@evil.example/pay": "evil.example",
+        "https://zelle.com？@evil.example/": "evil.example",
+        "https://ｅｖｉｌ．example/": "evil.example",
+    }
+    anchors = "".join(f'<a href="{href}">www.zelle.com</a>' for href in expected_domain_by_href)
+    links = parse_eml(html_email(anchors)).links
+    assert [link.registrable_domain for link in links] == list(expected_domain_by_href.values())
+
+
+def test_content_past_the_open_element_cap_counts_as_hidden():
+    too_deep = parse_eml(html_email("<div>" * 300 + "y" * 200))
+    assert too_deep.visible_html_characters == 0
+    padded = parse_eml(html_email(WHOLE_BODY_ANCHOR + "<div>" * 256 + f'<p style="display:none">{HIDDEN_PADDING}</p>'))
+    assert padded.links[0].body_share >= 0.6
+
+
+def test_an_ignored_end_tag_keeps_the_padding_hidden():
+    padded = parse_eml(html_email(WHOLE_BODY_ANCHOR + f'<span style="display:none"><div></span>{HIDDEN_PADDING}'))
+    assert padded.links[0].body_share >= 0.6
+    unmatched = parse_eml(html_email('<div style="display:none"></i></b><a href="https://evil.example/">x</a></div>'))
+    assert [link.hidden_by for link in unmatched.links] == [HiddenBy.CSS]
+
+
+def test_more_inline_hiding_forms():
+    for style in ("max-height:0;overflow:hidden", "height:0;overflow:hidden", "position:absolute;left:-9999px",
+                  "color:transparent"):
+        parsed = parse_eml(html_email(WHOLE_BODY_ANCHOR + f'<div style="{style}">{HIDDEN_PADDING}</div>'))
+        assert parsed.links[0].body_share >= 0.6, style
+
+
+def test_body_closes_an_unclosed_head():
+    sloppy_document = (
+        '<html><head><title>t</title><body><a href="https://shop.example/">click here now to see the sale</a><img src=x>'
+    )
+    parsed = parse_eml(html_email(sloppy_document))
+    assert [link.hidden_by for link in parsed.links] == [HiddenBy.NONE]
+    assert parsed.visible_html_characters > 0

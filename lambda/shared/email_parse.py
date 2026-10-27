@@ -6,10 +6,11 @@ from email import message_from_bytes, policy
 from email.message import EmailMessage
 from email.utils import parseaddr
 from html.parser import HTMLParser
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote
 
 from shared.enums import HiddenBy, LinkKind, LinkSource
 from shared.html_links import SKIPPED_TEXT_TAGS, ExtractedHtmlDocument, FoundLink, collapse_whitespace, extract_links_from_html
+from shared.sanitize import normalize_for_matching
 
 PIDGE_AUTH_HEADER_NAME = "X-Pidge-Auth"
 LINKS_MAX_COUNT = 20
@@ -23,6 +24,7 @@ URL_SCHEME_PATTERN = re.compile(r"([a-z][a-z0-9+.\-]*):", re.IGNORECASE)
 URL_IGNORED_CHARACTERS = re.compile(r"[\t\n\r]")  # a browser drops these anywhere in a URL
 URL_EDGE_IGNORED_CHARACTERS = "".join(chr(code_point) for code_point in range(0x21))  # and C0 controls and spaces at either end
 PUNYCODE_LABEL_PREFIX = "xn--"
+AUTHORITY_END_PATTERN = re.compile(r"[/?#]")  # only the ASCII characters end a URL's authority
 HTML_DOCUMENT_CONTENT_TYPES = frozenset({"text/html", "image/svg+xml"})
 HTML_DOCUMENT_FILENAME_SUFFIXES = (".htm", ".html", ".shtml", ".svg")
 # Approximate: the public suffix list is not shipped; these two-part suffixes cover the family's likely domains.
@@ -145,19 +147,27 @@ def link_kind_of_href(href: str) -> LinkKind:
     return LINK_KIND_BY_SCHEME[scheme] if scheme in LINK_KIND_BY_SCHEME else LinkKind.OTHER  # any other scheme is named OTHER
 
 
+def host_of_authority(authority: str) -> str:
+    """The text after the last '@'; a '[...]' host keeps its brackets (an unclosed '[' is no host), any other drops ':port'."""
+    host_part = authority.rpartition("@")[2]
+    if host_part.startswith("["):
+        closing_bracket_index = host_part.find("]")
+        return host_part[:closing_bracket_index + 1] if closing_bracket_index >= 0 else ""
+    return host_part.partition(":")[0]
+
+
 def web_hostname_of_href(href: str) -> str:
-    """The lower-cased, percent-decoded host of an http(s) href read the WHATWG way: every backslash is a slash and any run
-    of slashes after the scheme is '//'. '' for anything that is not a web URL or will not split."""
+    """The host of an http(s) href read the WHATWG way, by hand: every backslash is a slash, any run of slashes after the
+    scheme is '//', the authority ends at the first ASCII '/', '?' or '#' (a fullwidth one does not end it), the host is
+    the text after its last '@'. The host is percent-decoded, then fullwidth letters and dots fold to ASCII (as a browser's
+    IDNA mapping does) and it is lower-cased. '' for anything that is not a web URL, or when that host is empty."""
     cleaned_href = browser_cleaned_href(href)
     scheme_match = URL_SCHEME_PATTERN.match(cleaned_href)
     if scheme_match is None or scheme_match.group(1).lower() not in WEB_SCHEMES:
         return ""
     after_scheme = cleaned_href[scheme_match.end():].replace("\\", "/").lstrip("/")
-    try:
-        hostname = urlsplit(f"{scheme_match.group(1).lower()}://{after_scheme}").hostname
-    except ValueError:
-        return ""
-    return unquote(hostname).lower() if hostname else ""
+    authority = AUTHORITY_END_PATTERN.split(after_scheme, maxsplit=1)[0]
+    return normalize_for_matching(unquote(host_of_authority(authority))).lower()
 
 
 def registrable_domain_of_href(href: str) -> str:

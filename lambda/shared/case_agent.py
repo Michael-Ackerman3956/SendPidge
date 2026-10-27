@@ -14,11 +14,12 @@ from shared import graph, recovery_drafts, refund_rules
 from shared.agent_run import run_agent_once
 from shared.enums import CaseTrigger, Jurisdiction, PaymentRail, ReaderModelChoice, RequestState
 from shared.reader_agent import build_bedrock_model
-from shared.sanitize import find_unsafe_spans, refuse_unsafe_agent_text
+from shared.sanitize import AgentOutputRefused, find_unsafe_spans, refuse_unsafe_agent_text
 
 logger = logging.getLogger(__name__)
 
 NOTE_MAX_LENGTH = 600
+CASE_NOTE_REFUSED_TEXT = "Pidge couldn't write a safe note for this one."  # stored in place of a note the output gate refused
 FAMILY_HISTORY_LIMIT = 10
 CASE_METADATA_FIELDS = ("status", "response", "repliedVia", "friction", "claimedPerson", "createdAt", "resolvedAt")
 
@@ -181,11 +182,16 @@ def run_case_agent(agent: Agent, scope: CaseScope) -> CaseNote:
 def store_case_note(scope: CaseScope, note: CaseNote) -> dict:
     """Code writes the NOTE# row; the pack inside it is code's, never the model's, and only the payment note carries it.
 
-    The note passes the output gate first: a link, an address or a long number raises AgentOutputRefused and writes no
-    DynamoDB row, so the stream retry runs the agent again. On AgentCore, Memory has already saved the run's messages."""
-    refuse_unsafe_agent_text(note.note_text)
+    The note passes the output gate first: on a link, an address or a long number the gate logs and counts the kinds,
+    and the row stores CASE_NOTE_REFUSED_TEXT instead of the model's text, which is never stored or logged. The pack is
+    still built and stored either way. On AgentCore, Memory has already saved the run's messages."""
+    try:
+        refuse_unsafe_agent_text(note.note_text)
+        note_text = note.note_text
+    except AgentOutputRefused:
+        note_text = CASE_NOTE_REFUSED_TEXT
     recovery_pack = recovery_pack_with_drafts(scope) if scope.trigger is CaseTrigger.CASE else None
-    return graph.write_case_note(scope.request_id, scope.receiver_user_id, note.note_text, recovery_pack, note_for_label(scope))
+    return graph.write_case_note(scope.request_id, scope.receiver_user_id, note_text, recovery_pack, note_for_label(scope))
 
 
 def recovery_pack_with_drafts(scope: CaseScope) -> dict | None:

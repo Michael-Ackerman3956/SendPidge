@@ -390,3 +390,18 @@ def test_store_rules_match_only_their_own_recipient(synthesized_template):
         assert len(recipient_conditions[0]["Values"]) == 1, rule["Name"]
         stored_by_rule[rule["Name"]] = (recipient_conditions[0]["Values"][0], write_actions[0]["S3Prefix"])
     assert stored_by_rule == EXPECTED_STORE_RULES
+
+
+def test_dispatch_failures_reach_a_dead_letter_queue(synthesized_template):
+    dispatch_logical_id, _dispatch_function = find_function_by_handler(synthesized_template, "pidge_dispatch.handler.handle")
+    queue_logical_ids = [logical_id for logical_id in resources_of_type(synthesized_template, "AWS::SQS::Queue")
+                         if strip_trailing_logical_id_hash(logical_id) == "DispatchDeadLetterQueue"]
+    assert len(queue_logical_ids) == 1
+    queue_logical_id = queue_logical_ids[0]
+    [event_source_mapping] = [mapping["Properties"] for mapping in resources_of_type(synthesized_template, "AWS::Lambda::EventSourceMapping").values()
+                              if mapping["Properties"]["FunctionName"] == {"Ref": dispatch_logical_id}]
+    assert event_source_mapping["DestinationConfig"]["OnFailure"]["Destination"] == {"Fn::GetAtt": [queue_logical_id, "Arn"]}
+    queue_alarms = [alarm["Properties"] for alarm in resources_of_type(synthesized_template, "AWS::CloudWatch::Alarm").values()
+                    if alarm["Properties"].get("MetricName") == "ApproximateNumberOfMessagesVisible"
+                    and {"Name": "QueueName", "Value": {"Fn::GetAtt": [queue_logical_id, "QueueName"]}} in alarm["Properties"].get("Dimensions", [])]
+    assert len(queue_alarms) == 1 and queue_alarms[0]["Threshold"] == 1

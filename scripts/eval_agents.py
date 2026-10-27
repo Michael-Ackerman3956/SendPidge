@@ -8,8 +8,8 @@ calls per run, so this is not part of pytest.
 Usage: AWS_PROFILE=sendpidge .venv/bin/python scripts/eval_agents.py
 Exit: 0 every case passed, 1 a case failed, 2 the judge disagreed with the founder's calibration labels (no agent ran),
 3 the run crashed (any other exception, printed by type only; no report).
-Writes docs/evals/REPORT-<run_id>.json and docs/evals/latest.json; latest.json is deleted before seeding, so it exists only
-after a run that graded every case.
+Writes docs/evals/REPORT-<run_id>.json and docs/evals/latest.json; latest.json is deleted first, before any guard, so it
+exists only after a run that graded every case.
 """
 
 import json
@@ -287,7 +287,6 @@ def run_eval(eval_cases: list[EvalCase], calibration_answers: list[CalibrationAn
         raise RuntimeError("the eval never runs against the live table")
     if len(calibration_answers) != CALIBRATION_ANSWER_COUNT:
         raise ValueError(f"the judge calibrates on exactly {CALIBRATION_ANSWER_COUNT} answers, got {len(calibration_answers)}")
-    (report_directory / LATEST_REPORT_FILE_NAME).unlink(missing_ok=True)  # a stop or crash never leaves an old report current
     families = seed_all_families(eval_cases, calibration_answers)
     judge = factories.build_judge()
     calibration_grades = [grade_calibration_answer(judge, answer, facts_for_case(EVAL_CASES_BY_ID[answer.case_id],
@@ -337,9 +336,10 @@ def open_offline_sandbox(credential_environment: dict[str, str]) -> Iterator[Non
 
 
 def main() -> int:
-    """Any exception outside the agent and judge runs ends the run with RUN_CRASHED, printed by type only: its message can
-    carry model text."""
+    """Deletes latest.json first. Any exception outside the agent and judge runs ends the run with RUN_CRASHED, printed
+    by type only to stderr: its message can carry model text."""
     try:
+        (REPORT_DIRECTORY / LATEST_REPORT_FILE_NAME).unlink(missing_ok=True)  # a stop or crash never leaves an old report current
         case_agent_model = case_agent_model_from_cdk_context()
         credential_environment = freeze_shell_credentials()
         with open_offline_sandbox(credential_environment):

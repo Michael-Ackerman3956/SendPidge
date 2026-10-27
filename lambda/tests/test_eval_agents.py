@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import moto.backend_index
+import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
@@ -194,3 +195,29 @@ def test_report_counts_match_a_fixed_three_case_fixture(aws, tmp_path):  # noqa:
     [saved_report_path] = [path for path in tmp_path.iterdir() if path.name.startswith("REPORT-")]
     assert saved_report_path.name == f"REPORT-{report['run_id']}.json" and json.loads(saved_report_path.read_text()) == report
     assert agents.built_agent_count == 3 and agents.raised_errors() == []
+
+
+def test_a_crash_exits_with_run_crashed_by_type_only_and_leaves_no_latest_report(monkeypatch, tmp_path, capsys):
+    (tmp_path / "latest.json").write_text("{}")
+    monkeypatch.setattr(eval_agents, "REPORT_DIRECTORY", tmp_path)
+
+    def raise_with_model_text() -> ReaderModelChoice:
+        raise RuntimeError("model said https://evil.example")
+
+    monkeypatch.setattr(eval_agents, "case_agent_model_from_cdk_context", raise_with_model_text)  # the first guard main runs
+    exit_code = eval_agents.main()
+    assert exit_code == eval_agents.EvalExitCode.RUN_CRASHED
+    captured = capsys.readouterr()
+    assert "RuntimeError" in captured.err  # main prints the crash to stderr
+    assert "evil.example" not in captured.out + captured.err
+    assert not (tmp_path / "latest.json").exists()
+
+
+def test_a_short_calibration_list_raises_before_any_model_call(monkeypatch, tmp_path):
+    monkeypatch.setenv("TABLE_NAME", eval_agents.EVAL_TABLE_NAME)
+    agents = ScriptedAgents({}, {}, calibration_judge_scripts())
+    seven_answers = list(CALIBRATION_ANSWERS)[:7]
+    with pytest.raises(ValueError):
+        eval_agents.run_eval(list(ALL_EVAL_CASES), seven_answers, agents.factories(), CASE_AGENT_MODEL, tmp_path)
+    assert agents.built_agent_count == 0
+    assert agents.case_model.recorded_calls == agents.chat_model.recorded_calls == agents.judge_model.recorded_calls == []

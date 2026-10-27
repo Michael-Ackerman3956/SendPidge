@@ -2,11 +2,13 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { Duration, Stack } from "aws-cdk-lib";
 import * as agentcore from "aws-cdk-lib/aws-bedrockagentcore";
 import { CfnGuardrail, CfnGuardrailVersion } from "aws-cdk-lib/aws-bedrock";
+import { Alarm, ComparisonOperator, TreatMissingData } from "aws-cdk-lib/aws-cloudwatch";
 import { Table } from "aws-cdk-lib/aws-dynamodb";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { FilterCriteria, FilterRule, Function, StartingPosition } from "aws-cdk-lib/aws-lambda";
-import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import { DynamoEventSource, SqsDlq } from "aws-cdk-lib/aws-lambda-event-sources";
 import { ISecret } from "aws-cdk-lib/aws-secretsmanager";
+import { Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
 import { BEDROCK_INVOKE_ACTIONS, buildPythonFunction, buildSendEmailStatement, claudeModelResourceArns } from "./python-function.js";
 import { SharedResources } from "./realtime.js";
 import { StackSettings, flagEnvironmentValue } from "./stack-settings.js";
@@ -91,6 +93,25 @@ export function buildChatGuardrail(stack: Stack): ChatGuardrail {
   return { chatGuardrail, chatGuardrailVersion };
 }
 
+// A stream record pidge-dispatch still fails after its retries (agent run error, AgentCore error) lands here instead of
+// being dropped, and one message raises the alarm.
+function buildDispatchDeadLetterQueue(stack: Stack): Queue {
+  const dispatchDeadLetterQueue = new Queue(stack, "DispatchDeadLetterQueue", {
+    encryption: QueueEncryption.SQS_MANAGED,
+    retentionPeriod: Duration.days(14),
+    enforceSSL: true,
+  });
+  new Alarm(stack, "DispatchDeadLetterAlarm", {
+    alarmDescription: "pidge-dispatch gave up on a stream record after retries",
+    metric: dispatchDeadLetterQueue.metricApproximateNumberOfMessagesVisible({ period: Duration.minutes(5) }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    treatMissingData: TreatMissingData.NOT_BREACHING,
+  });
+  return dispatchDeadLetterQueue;
+}
+
 // pidge-dispatch wakes on the table stream and asks the case agent (on AgentCore, or in-process in lambda mode)
 // for the note, then writes the NOTE# row and pushes it to Grandma.
 export function buildDispatchFunction(
@@ -128,6 +149,7 @@ export function buildDispatchFunction(
   dispatchFunction.addToRolePolicy(
     buildSendEmailStatement(stack, settings.sendingDomain, { "ForAllValues:StringEquals": { "ses:Recipients": [settings.receiverMailbox] } }),
   );
+  const dispatchDeadLetterQueue = buildDispatchDeadLetterQueue(stack);
   // Four filters: a REQUEST# META whose new status is final, a CASE# META insert, a CASE# META closed, or a new
   // question row (CHAT# MSG# with role grandma; replies, guardrailHit updates and RATE# counters never match).
   dispatchFunction.addEventSource(new DynamoEventSource(shared.table, {
@@ -135,6 +157,7 @@ export function buildDispatchFunction(
     batchSize: 5,
     retryAttempts: 2,
     bisectBatchOnError: true,
+    onFailure: new SqsDlq(dispatchDeadLetterQueue),
     filters: [
       FilterCriteria.filter({
         eventName: FilterRule.isEqual("MODIFY"),

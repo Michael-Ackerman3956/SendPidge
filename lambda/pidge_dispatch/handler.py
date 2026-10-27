@@ -89,7 +89,9 @@ def scope_for_record(record: dict) -> case_agent.CaseScope | None:
 
 
 def write_and_push_note(scope: case_agent.CaseScope) -> None:
-    """Runs the agent, stores the note, tells Grandma's PWA. A failed run writes nothing and is logged for the retry."""
+    """Runs the agent, stores the note, mails a recovery pack, tells Grandma's PWA. A note the output gate refuses is
+    stored as case_agent.CASE_NOTE_REFUSED_TEXT, with its pack mailed and the push sent. A failed run (AgentRunError,
+    an AgentCore error) writes nothing and raises: the stream retries it, then sends it to DispatchDeadLetterQueue."""
     if CASE_AGENT_RUNTIME is CaseAgentRuntime.LAMBDA:
         agent = case_agent.build_case_agent(CASE_AGENT_MODEL, scope)
         note = case_agent.run_case_agent(agent, scope)

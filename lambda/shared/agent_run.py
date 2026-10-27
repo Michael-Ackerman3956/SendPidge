@@ -30,7 +30,8 @@ def run_agent_once(agent: Agent, prompt: str, output_model: type[AgentOutput]) -
     """One capped run → one typed output. Raises AgentRunError on the turn cap or a missing output, never returns None.
 
     A StructuredOutputException becomes NO_OUTPUT with its chain suppressed: its message quotes the model's invalid
-    output, which may hold unsafe text, and callers log the AgentRunError with its traceback."""
+    output, which may hold unsafe text. `from None` keeps that text out of the logged traceback only; on AgentCore,
+    opentelemetry-instrument (case-agent.ts entrypoint) still records the original exception in the trace."""
     try:
         result = agent(prompt, structured_output_model=output_model, limits={"turns": AGENT_TURN_LIMIT})
     except StructuredOutputException:

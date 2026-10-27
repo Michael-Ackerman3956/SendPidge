@@ -36,7 +36,7 @@ def test_nothing_digit_like_survives():
         ("Call 1-800-555-0199", [UnsafeTextKind.LONG_NUMBER]),
         ("010-1234-5678", [UnsafeTextKind.LONG_NUMBER]),
         ("code 482913", [UnsafeTextKind.LONG_NUMBER]),
-        ("₩1,500,000", [UnsafeTextKind.LONG_NUMBER]),
+        ("₩1,500,000", []),  # a comma-grouped amount with a currency symbol
         ("bank-help.example/refund", [UnsafeTextKind.LINK]),
         ("jimin.help@gmail.com", [UnsafeTextKind.EMAIL_ADDRESS]),
         ("on 2026-10-24", []),
@@ -73,3 +73,76 @@ def test_summary_strips_a_quoted_and_a_fullwidth_domain():
     assert "bank-help" not in sanitize_summary('Asks you to verify at "bank-help.example" now')
     fullwidth_summary = sanitize_summary("Asks you to verify at \uff42\uff41\uff4e\uff4b\uff0d\uff48\uff45\uff4c\uff50\uff0e\uff45\uff58\uff41\uff4d\uff50\uff4c\uff45 now")
     assert "bank-help" not in fullwidth_summary and "\uff42\uff41\uff4e\uff4b" not in fullwidth_summary
+
+
+@pytest.mark.parametrize(
+    "agent_text",
+    ["Pay at zelle-help.com에서 today", "zelle-help.com으로 송금하라고 했어요", "evil.com- now", "evil.com_ now", "evil.comへ now"],
+)
+def test_a_domain_glued_to_a_word_is_still_a_link(agent_text):
+    assert find_unsafe_spans(agent_text) == [UnsafeTextKind.LINK]
+    summary = sanitize_summary(agent_text)
+    assert "zelle-help.com" not in summary and "evil.com" not in summary
+
+
+def test_stripping_a_number_never_leaves_a_link():
+    assert "evil.com" not in sanitize_summary("Go to evil.com1 now")
+
+
+@pytest.mark.parametrize(
+    ("agent_text", "expected_kinds"),
+    [
+        ("Visit evil.рф now", [UnsafeTextKind.LINK]),
+        ("Visit kb은행.한국 now", [UnsafeTextKind.LINK]),
+        ("확인했어요.감사합니다", []),  # the over-refusal guard: a Korean word is not a TLD
+    ],
+)
+def test_internationalised_top_level_domains_are_links(agent_text, expected_kinds):
+    assert find_unsafe_spans(agent_text) == expected_kinds
+
+
+@pytest.mark.parametrize(
+    ("agent_text", "expected_kinds"),
+    [
+        ("Visit evil\ufe0f.com now", [UnsafeTextKind.LINK]),
+        ("Call 555\ufe0f123\ufe0f4567", [UnsafeTextKind.LONG_NUMBER]),
+        ("555\u3164123\u31644567", [UnsafeTextKind.LONG_NUMBER]),
+        ("555\u034f123\u034f4567", [UnsafeTextKind.LONG_NUMBER]),
+        ("555\u115f123\u115f4567", [UnsafeTextKind.LONG_NUMBER]),
+    ],
+)
+def test_invisible_characters_never_split_a_span(agent_text, expected_kinds):
+    assert find_unsafe_spans(agent_text) == expected_kinds
+
+
+@pytest.mark.parametrize("agent_text", ["evil\u3002com", "evil\uff61com"])
+def test_full_width_full_stop_reads_as_a_dot(agent_text):
+    assert find_unsafe_spans(agent_text) == [UnsafeTextKind.LINK]
+
+
+@pytest.mark.parametrize(
+    "agent_text",
+    ["Call \u2776\u2777\u2778-\u2779\u277a\u277b-\u277c\u277d\u277e\u24ff", "Call 555\u2022123\u20224567"],
+)
+def test_enclosed_and_bulleted_digits_are_numbers(agent_text):
+    assert find_unsafe_spans(agent_text) == [UnsafeTextKind.LONG_NUMBER]
+
+
+def test_compatibility_jamo_survive_the_summary():
+    assert sanitize_summary("ㅋㅋ 확인했어요") == "ㅋㅋ 확인했어요"
+
+
+@pytest.mark.parametrize(
+    ("agent_text", "expected_kinds"),
+    [
+        ("Sent on 10/24/26", []),
+        ("Sent on 24.10.26", []),
+        ("It asked for $2,500.00", []),
+        ("500,000원을 보내라고 했어요", []),
+        ("₩500,000 was asked", []),
+        ("Call $555,123,4567", [UnsafeTextKind.LONG_NUMBER]),
+        ("Call $5551234567", [UnsafeTextKind.LONG_NUMBER]),
+    ],
+)
+def test_amounts_and_short_dates_pass_the_gate(agent_text, expected_kinds):
+    assert find_unsafe_spans(agent_text) == expected_kinds

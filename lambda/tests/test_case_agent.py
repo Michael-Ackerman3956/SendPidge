@@ -1,13 +1,11 @@
 """The case agent's tools see metadata only, never the body; code writes the note and the pack; one note per trigger."""
 
 import json
+import logging
 from decimal import Decimal
-
-import pytest
 
 from shared import case_agent, graph, verdict
 from shared.enums import ActionOutcome, CaseTrigger, Jurisdiction, PaymentRail, ReaderModelChoice, UnsafeTextKind, VerdictAnswer
-from shared.sanitize import AgentOutputRefused
 from tests.helpers.scripted_model import ScriptedModel, verdict_step
 from tests.test_refund_rules import seed_rules
 from tests.test_verdict import JIMIN, RECEIVER_ADDRESS, RECEIVER_USER_ID, aws, at, new_request  # noqa: F401
@@ -87,19 +85,36 @@ def test_code_stores_the_note_once_per_trigger_and_the_second_run_sees_the_first
     assert pack_note["recoveryPack"]["ruleKey"] == "RULE#US#card#any" and pack_note["noteFor"].startswith("case:")
 
 
-def test_a_note_with_a_link_raises_and_writes_no_row(aws, capsys):
+def test_a_note_with_a_link_is_counted_and_stored_as_the_fixed_text(aws, capsys):
     request_id = denied_request_with_body()
     scope = case_agent.CaseScope(RECEIVER_USER_ID, request_id, CaseTrigger.VERDICT)
     agent = case_agent.build_case_agent(ReaderModelChoice.HAIKU_4_5, scope)
     agent.model = ScriptedModel(case_agent.CaseNote, {case_agent.run_prompt(scope): [verdict_step(
         {"note_text": "Jimin said no. Ask for your refund at bank-help.example/refund.", "cites_previous_case": False})]})
     note = case_agent.run_case_agent(agent, scope)
-    with pytest.raises(AgentOutputRefused) as raised:
-        case_agent.store_case_note(scope, note)
-    assert raised.value.kinds == [UnsafeTextKind.LINK] and "bank-help" not in str(raised.value)
-    assert graph.list_case_notes(request_id) == [] and not case_agent.has_note_for(scope)
+    note_row = case_agent.store_case_note(scope, note)
+    assert (note_row["noteText"], note_row["recoveryPack"]) == (case_agent.CASE_NOTE_REFUSED_TEXT, None)
+    assert [row["noteText"] for row in graph.list_case_notes(request_id)] == [case_agent.CASE_NOTE_REFUSED_TEXT]
+    assert case_agent.has_note_for(scope)
     [metric_line] = [line for line in capsys.readouterr().out.splitlines() if "AgentOutputRefused" in line]
     assert json.loads(metric_line)["kind"] == UnsafeTextKind.LINK
+
+
+def test_a_refused_note_is_stored_as_the_fixed_text_with_its_pack(aws, caplog):
+    """The stored pack itself names reportfraud.ftc.gov (a rule step), so the model's own marker proves its text is gone."""
+    caplog.set_level(logging.INFO)  # every app log; botocore's DEBUG request bodies carry the stored pack
+    seed_rules()
+    request_id = denied_request_with_body()
+    case_row = report(request_id)
+    scope = case_agent.CaseScope(RECEIVER_USER_ID, request_id, CaseTrigger.CASE, case_row["PK"].removeprefix("CASE#"))
+    model_text = "File your claim at reportfraud.ftc.gov/claim-7731 today."
+    note_row = case_agent.store_case_note(scope, case_agent.CaseNote(note_text=model_text, cites_previous_case=False))
+    [stored_note] = graph.list_case_notes(request_id)
+    assert stored_note["noteText"] == note_row["noteText"] == case_agent.CASE_NOTE_REFUSED_TEXT
+    assert stored_note["recoveryPack"]["ruleKey"] == "RULE#US#card#any" and stored_note["recoveryPack"]["drafts"]
+    assert "reportfraud" not in stored_note["noteText"]
+    assert "claim-7731" not in str(graph.get_table().scan()["Items"])
+    assert "reportfraud" not in caplog.text and "claim-7731" not in caplog.text
 
 
 def test_report_payment_needs_the_receiver_and_a_finished_request(aws):

@@ -12,9 +12,28 @@ from html.parser import HTMLParser
 from shared.enums import LinkSource
 
 LINK_HREF_MAX_CHARACTERS = 2048
-MAXIMUM_OPEN_ELEMENTS = 256  # deeper start tags are not tracked: they inherit nothing new and their end tags cost nothing
+# A start tag past this many open elements is not tracked, and every later data run in the document counts as hidden.
+MAXIMUM_OPEN_ELEMENTS = 256
 SKIPPED_TEXT_TAGS = frozenset({"script", "style", "head", "title"})
 VOID_TAGS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"})
+# The HTML spec's "special" and "formatting" elements: an end tag of any other element is ignored by a browser when a
+# special element is open inside its match.
+SPECIAL_ELEMENT_TAGS = frozenset({
+    "address", "applet", "area", "article", "aside", "base", "basefont", "bgsound", "blockquote", "body", "br", "button",
+    "caption", "center", "col", "colgroup", "dd", "details", "dir", "div", "dl", "dt", "embed", "fieldset", "figcaption",
+    "figure", "footer", "form", "frame", "frameset", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr",
+    "html", "iframe", "img", "input", "keygen", "li", "link", "listing", "main", "marquee", "menu", "meta", "nav", "noembed",
+    "noframes", "noscript", "object", "ol", "p", "param", "plaintext", "pre", "script", "search", "section", "select",
+    "source", "style", "summary", "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "title", "tr",
+    "track", "ul", "wbr", "xmp",
+})
+FORMATTING_ELEMENT_TAGS = frozenset({
+    "a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small", "strike", "strong", "tt", "u",
+})
+# Start tags a browser keeps inside an open <head>; any other start tag (and <body>) closes the head first.
+HEAD_CONTENT_TAGS = frozenset({"base", "basefont", "bgsound", "link", "meta", "title", "noscript", "noframes", "style",
+                               "script", "template"})
+HEAD_KEEPING_TAGS = HEAD_CONTENT_TAGS | {"html", "head"}  # these start tags never close an open head
 CSS_COMMENT_PATTERN = re.compile(r"/\*.*?\*/", re.DOTALL)
 CSS_ESCAPE_PATTERN = re.compile(r"\\(?:([0-9a-fA-F]{1,6})\s?|(.))", re.DOTALL)
 CSS_NUMBER_PATTERN = re.compile(r"([+-]?[0-9]*\.?[0-9]+)([a-z%]*)")
@@ -28,7 +47,12 @@ FONT_SIZE_HIDING_THRESHOLD_PIXELS = 1.0
 PIXELS_PER_FONT_SIZE_UNIT = {"": 1.0, "px": 1.0, "pt": 4 / 3, "pc": 16.0, "in": 96.0, "cm": 96 / 2.54, "mm": 96 / 25.4, "q": 96 / 101.6}
 HIDING_KEYWORDS_BY_PROPERTY = {
     "display": frozenset({"none"}), "visibility": frozenset({"hidden", "collapse"}), "mso-hide": frozenset({"all"}),
+    "color": frozenset({"transparent"}),
 }
+ZERO_SIZE_PROPERTIES = ("height", "max-height")  # hiding together with overflow:hidden
+OFFSET_PROPERTIES = ("left", "top")  # hiding together with position:absolute or fixed
+OFF_SCREEN_POSITIONS = frozenset({"absolute", "fixed"})
+OFF_SCREEN_OFFSET_THRESHOLD_PIXELS = -1000.0
 
 
 def collapse_whitespace(text: str) -> str:
@@ -90,9 +114,35 @@ def is_declaration_hiding(property_name: str, value: str) -> bool:
     return property_name == "font-size" and is_font_size_hiding(value)
 
 
+def is_zero_length(value: str) -> bool:
+    number_match = CSS_NUMBER_PATTERN.fullmatch(value)
+    return number_match is not None and float(number_match.group(1)) == 0
+
+
+def is_off_screen_offset(value: str) -> bool:
+    """An absolute length of -1000px or less (a relative unit is not judged)."""
+    number_match = CSS_NUMBER_PATTERN.fullmatch(value)
+    if number_match is None or number_match.group(2) not in PIXELS_PER_FONT_SIZE_UNIT:
+        return False
+    return float(number_match.group(1)) * PIXELS_PER_FONT_SIZE_UNIT[number_match.group(2)] <= OFF_SCREEN_OFFSET_THRESHOLD_PIXELS
+
+
+def is_hidden_by_declaration_pair(declarations: dict[str, str]) -> bool:
+    """height:0 or max-height:0 with overflow:hidden; position:absolute/fixed with left or top at -1000px or less."""
+    is_overflow_hidden = "overflow" in declarations and declarations["overflow"] == "hidden"
+    is_zero_size = any(name in declarations and is_zero_length(declarations[name]) for name in ZERO_SIZE_PROPERTIES)
+    is_positioned = "position" in declarations and declarations["position"] in OFF_SCREEN_POSITIONS
+    is_off_screen = any(name in declarations and is_off_screen_offset(declarations[name]) for name in OFFSET_PROPERTIES)
+    return (is_overflow_hidden and is_zero_size) or (is_positioned and is_off_screen)
+
+
 def is_hidden_by_style(style: str) -> bool:
-    """display:none, visibility:hidden/collapse, mso-hide:all, opacity below 0.1 or font-size below 1px."""
-    return any(is_declaration_hiding(property_name, value) for property_name, value in css_declarations_of(style))
+    """display:none, visibility:hidden/collapse, mso-hide:all, color:transparent, opacity below 0.1, font-size below 1px,
+    a zero height with overflow:hidden, or an absolute/fixed position pushed 1000px or more off the left or top."""
+    declarations = css_declarations_of(style)
+    if any(is_declaration_hiding(property_name, value) for property_name, value in declarations):
+        return True
+    return is_hidden_by_declaration_pair(dict(declarations))  # the last declaration of a property wins
 
 
 def is_element_hidden(attributes: dict[str, str]) -> bool:
@@ -134,6 +184,7 @@ class LinkExtractor(HTMLParser):
     visible text: data outside script/style/head/title whose innermost open element is not hidden.
 
     An anchor left open at the end of the HTML is kept (close() flushes it); a link past the capacity sets is_truncated.
+    Past MAXIMUM_OPEN_ELEMENTS open elements, everything after counts as hidden.
     """
 
     def __init__(self, anchor_source: LinkSource, capacity: int) -> None:
@@ -148,9 +199,12 @@ class LinkExtractor(HTMLParser):
         self.element_stack: list[tuple[str, bool]] = []  # (tag, hidden by its own or an ancestor's style or hidden attribute)
         self.open_element_counts: Counter[str] = Counter()
         self.skip_depth = 0
+        self.has_passed_open_element_cap = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = first_value_of_each_attribute(attrs)
+        if tag not in HEAD_KEEPING_TAGS:
+            self.close_open_head()
         is_hidden = self.is_inside_hidden_element() or is_element_hidden(attributes)
         if tag in SKIPPED_TEXT_TAGS:
             self.skip_depth += 1
@@ -185,16 +239,45 @@ class LinkExtractor(HTMLParser):
         self.finish_open_anchor()
 
     def is_inside_hidden_element(self) -> bool:
+        if self.has_passed_open_element_cap:
+            return True
         return bool(self.element_stack) and self.element_stack[-1][1]
 
     def push_open_element(self, tag: str, is_hidden: bool) -> None:
-        if len(self.element_stack) < MAXIMUM_OPEN_ELEMENTS:
-            self.element_stack.append((tag, is_hidden))
-            self.open_element_counts[tag] += 1
+        if len(self.element_stack) >= MAXIMUM_OPEN_ELEMENTS:
+            self.has_passed_open_element_cap = True
+            return
+        self.element_stack.append((tag, is_hidden))
+        self.open_element_counts[tag] += 1
+
+    def close_open_head(self) -> None:
+        """Closes an open <head> and everything inside it, leaving the skipped-text depth of each closed element."""
+        if self.open_element_counts["head"] == 0:
+            return
+        while self.element_stack:
+            popped_tag, _ = self.element_stack.pop()
+            self.open_element_counts[popped_tag] -= 1
+            if popped_tag in SKIPPED_TEXT_TAGS and self.skip_depth > 0:
+                self.skip_depth -= 1
+            if popped_tag == "head":
+                return
+
+    def has_special_element_inside_innermost(self, tag: str) -> bool:
+        for open_tag, _ in reversed(self.element_stack):
+            if open_tag == tag:
+                return False
+            if open_tag in SPECIAL_ELEMENT_TAGS:
+                return True
+        return False
 
     def pop_to_innermost_open(self, tag: str) -> None:
-        """Closes the innermost open `tag` and everything opened inside it; an end tag with none open returns at once."""
+        """Closes the innermost open `tag` and everything opened inside it. An end tag with none open returns at once; so
+        does one that is neither special nor formatting when a special element is open inside its match (a browser
+        ignores it)."""
         if self.open_element_counts[tag] == 0:
+            return
+        is_ordinary_tag = tag not in SPECIAL_ELEMENT_TAGS and tag not in FORMATTING_ELEMENT_TAGS
+        if is_ordinary_tag and self.has_special_element_inside_innermost(tag):
             return
         while self.element_stack:
             popped_tag, _ = self.element_stack.pop()
