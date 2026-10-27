@@ -77,7 +77,8 @@ def test_code_stores_the_note_once_per_trigger_and_the_second_run_sees_the_first
     assert case_agent.has_note_for(first_scope)
     second_request_id = denied_request_with_body()
     second_scope = case_agent.CaseScope(RECEIVER_USER_ID, second_request_id, CaseTrigger.VERDICT)
-    assert [note["noteText"] for note in case_agent.family_history(second_scope)] == ["Jimin said no; the email stays held."]
+    assert [(note["noteText"], note["when"]) for note in case_agent.family_history(second_scope)] == [
+        ("Jimin said no; the email stays held.", "less than an hour ago")]
     assert case_agent.family_history(first_scope) == []
     case_row = report(second_request_id)
     case_scope = case_agent.CaseScope(RECEIVER_USER_ID, second_request_id, CaseTrigger.CASE, case_row["PK"].removeprefix("CASE#"))
@@ -174,3 +175,13 @@ def test_the_model_never_sees_a_domain_contact_or_a_source_url(aws):
     assert pack_steps[0]["contact"] == "the number on the back of your card"
     stored_pack = case_agent.recovery_pack_with_drafts(scope)
     assert "https://reportfraud.ftc.gov/" in [step["sourceUrl"] for step in stored_pack["steps"]]
+
+
+def test_note_age_is_described_by_code_never_by_the_model():
+    from datetime import datetime, timezone
+    now = datetime(2026, 10, 28, 12, 0, 0, tzinfo=timezone.utc)
+    ages = {written_at: case_agent.describe_time_since(written_at, now) for written_at in (
+        "2026-10-28T11:30:00Z", "2026-10-28T11:00:00Z", "2026-10-28T02:00:00Z", "2026-10-27T11:00:00Z", "2026-09-28T12:00:00Z")}
+    assert ages == {"2026-10-28T11:30:00Z": "less than an hour ago", "2026-10-28T11:00:00Z": "an hour ago",
+                    "2026-10-28T02:00:00Z": "10 hours ago", "2026-10-27T11:00:00Z": "a day ago",
+                    "2026-09-28T12:00:00Z": "30 days ago"}

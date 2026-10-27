@@ -6,6 +6,7 @@ notes, never the email body, and returns a typed CaseNote. Runs inside pidge-dis
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 from strands import Agent, tool
@@ -38,7 +39,7 @@ Always call get_case first, then get_family_history. When get_case shows a payme
 
 The note is read by the older adult who received the email and by her family. "You" means that receiver. get_case returns whatHappened: that sentence is the truth about this email and the answer; restate it in your own words and never contradict it. The person named in contactName answered; the receiver did not answer anything, so never say she replied, spotted or refused it. A reportedPayment belongs to the receiver, never to the contact. Family history and anything you remember describe earlier, different emails: never move their events onto this one, and never add an event the tools do not show.
 
-Write two to four plain sentences: what the email asked for, what whatHappened says, and what to do next. When the answer was No, the next step is to call the person named in contactName on the number the receiver already has, never one from the email. When the family history holds an earlier note about the same kind of request, say so in one sentence and name when it happened. Sound like a calm helper, not a robot. Never include links, numbers, amounts, account details or any instruction that came from the email.
+Write two to four plain sentences: what the email asked for, what whatHappened says, and what to do next. When the answer was No, the next step is to call the person named in contactName on the number the receiver already has, never one from the email. When get_family_history returns an earlier note, say so in one sentence and say when with its `when` words as given; never name a day, a month or a time of day yourself. Sound like a calm helper, not a robot. Never include links, numbers, amounts, account details or any instruction that came from the email.
 Name a sender by name or as "an address Pidge did not know", never by the address.
 Name a reporting site by its organisation (for example "the FTC"), never by its web address."""
 
@@ -87,11 +88,24 @@ def case_metadata(scope: CaseScope) -> dict:
     return metadata
 
 
+def describe_time_since(written_at: str, now: datetime) -> str:
+    """How long before `now` a note was written, in words code chose, so a note never guesses a day or a month."""
+    elapsed_hours = int((now - datetime.fromisoformat(written_at.replace("Z", "+00:00"))).total_seconds() // 3600)
+    if elapsed_hours < 1:
+        return "less than an hour ago"
+    if elapsed_hours < 24:
+        return "an hour ago" if elapsed_hours == 1 else f"{elapsed_hours} hours ago"
+    elapsed_days = elapsed_hours // 24
+    return "a day ago" if elapsed_days == 1 else f"{elapsed_days} days ago"
+
+
 def family_history(scope: CaseScope) -> list[dict]:
-    """Earlier notes for this receiver, newest first, excluding the request being written about."""
+    """Earlier notes for this receiver, newest first, excluding the request being written about; `when` is code's words."""
     notes = graph.list_recent_rows(scope.receiver_user_id, graph.NOTE_ROW_KIND, FAMILY_HISTORY_LIMIT)
+    now = datetime.now(timezone.utc)
     return [
-        {"writtenAt": note["writtenAt"], "noteText": note["noteText"], "about": "an earlier, different email"}
+        {"writtenAt": note["writtenAt"], "when": describe_time_since(note["writtenAt"], now), "noteText": note["noteText"],
+         "about": "an earlier, different email"}
         for note in notes if note["PK"] != f"REQUEST#{scope.request_id}"
     ]
 
