@@ -42,8 +42,13 @@ def test_sync_lists_a_row_the_reader_is_still_on_without_its_body(verdict_handle
     assert "Send money" not in json.dumps(sync_message)
 
 
-def test_the_circle_shows_rcs_only_when_the_stack_sends_on_it():
+def test_a_reach_chip_lights_only_when_the_row_has_the_channel_and_the_stack_sends_on_it():
     contact_row = {"SK": "CONTACT#jimin", "contactPwaUserId": "jimin", "contactName": "Jimin", "verifiedVia": "seed",
                    "contactRcs": "+821012345678", "contactWhatsApp": "+821012345678", "contactEmail": "jimin@example.com"}
-    assert payloads.circle_entry_for_receiver(contact_row, False)["reach"] == {"inapp": True, "rcs": False, "whatsapp": True, "email": True}
-    assert payloads.circle_entry_for_receiver(contact_row, True)["reach"]["rcs"] is True
+    reach_with = lambda flags: payloads.circle_entry_for_receiver(contact_row, flags)["reach"]  # noqa: E731
+    assert reach_with(payloads.ReachFlags(False, True, True)) == {"inapp": True, "rcs": False, "whatsapp": True, "email": True}
+    assert reach_with(payloads.ReachFlags(True, True, True))["rcs"] is True
+    assert reach_with(payloads.ReachFlags(True, False, False)) == {"inapp": True, "rcs": True, "whatsapp": False, "email": False}
+    no_number_row = {key: value for key, value in contact_row.items() if key not in ("contactRcs", "contactWhatsApp", "contactEmail")}
+    assert reach_with(payloads.ReachFlags(True, True, True)) != payloads.circle_entry_for_receiver(no_number_row, payloads.ReachFlags(True, True, True))["reach"]
+    assert payloads.circle_entry_for_receiver(no_number_row, payloads.ReachFlags(True, True, True))["reach"] == {"inapp": True, "rcs": False, "whatsapp": False, "email": False}

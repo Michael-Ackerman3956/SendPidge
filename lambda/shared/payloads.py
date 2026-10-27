@@ -1,6 +1,7 @@
 """The JSON shapes pushed to the PWAs. One place, so the Reader, the verdict handler and sync agree."""
 
 import logging
+from dataclasses import dataclass
 
 from shared import graph
 from shared.enums import CaseEvent, Channel, Friction, PushMessageType, RequestState, VerifiedVia
@@ -147,9 +148,18 @@ def verified_via_of(contact_row: dict) -> VerifiedVia:
     return VerifiedVia(contact_row["verifiedVia"])
 
 
-def circle_entry_for_receiver(contact_row: dict, is_rcs_enabled: bool) -> dict:
+@dataclass(frozen=True)
+class ReachFlags:
+    """Which phone and mail channels this stack sends asks on (the RCS_ENABLED / WHATSAPP_ENABLED / EMAIL_ASK_ENABLED flags)."""
+
+    is_rcs_enabled: bool
+    is_whatsapp_enabled: bool
+    is_email_ask_enabled: bool
+
+
+def circle_entry_for_receiver(contact_row: dict, reach_flags: ReachFlags) -> dict:
     """One member of the receiver's circle: who, how verified, which channels reach them. Never a number or an address.
-    RCS lights only when the stack sends on it; a seeded number with the flag off is not a reach."""
+    A chip lights only when the row has the channel AND the stack sends on it; a number behind a flag that is off is not a reach."""
     return {
         "contactUserId": contact_row["contactPwaUserId"],
         "contactName": contact_row["contactName"],
@@ -157,9 +167,9 @@ def circle_entry_for_receiver(contact_row: dict, is_rcs_enabled: bool) -> dict:
         "verifiedVia": str(verified_via_of(contact_row)),
         "verifiedAt": contact_row.get("verifiedAt"),
         "reach": {
-            str(Channel.INAPP): True,
-            str(Channel.RCS): is_rcs_enabled and "contactRcs" in contact_row,
-            str(Channel.WHATSAPP): "contactWhatsApp" in contact_row,
-            str(Channel.EMAIL): "contactEmail" in contact_row,
+            str(Channel.INAPP): True,  # every row has a PWA token: seeded by scripts/seed_graph.py, or minted with the row
+            str(Channel.RCS): reach_flags.is_rcs_enabled and "contactRcs" in contact_row,
+            str(Channel.WHATSAPP): reach_flags.is_whatsapp_enabled and "contactWhatsApp" in contact_row,
+            str(Channel.EMAIL): reach_flags.is_email_ask_enabled and "contactEmail" in contact_row,
         },
     }

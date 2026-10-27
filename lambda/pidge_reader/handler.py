@@ -52,8 +52,10 @@ def process_email_object(bucket_name: str, object_key: str) -> None:
     link_assessments = link_checks.assess_links(parsed_email.links, graph.domains_of(contacts))
     email_row = build_email_row(object_key, parsed_email, link_assessments)
     if not graph.claim_email(object_key, email_row):
-        logger.info("duplicate event for %s; already processed", object_key)
-        return
+        if not graph.reclaim_abandoned_email(object_key, datetime.now(timezone.utc)):
+            logger.info("duplicate event for %s; already processed or still running", object_key)
+            return
+        logger.warning("email %s was claimed but never decided; this retry runs it again", object_key)
     push_email_reading(email_row)
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
     reasons.extend(link_checks.link_reasons(link_assessments, parsed_email.links_unreadable))

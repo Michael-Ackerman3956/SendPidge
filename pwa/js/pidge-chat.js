@@ -17,7 +17,7 @@ const SUGGESTION_CHIPS = Object.freeze([
   { kind: SUGGESTION_CHIP_KIND.REPORT_PAYMENT, label: "I already paid" },
   { kind: SUGGESTION_CHIP_KIND.DRAFT_REPLY, label: "Write back to Jimin" },
 ]);
-const DRAFT_REPLY_TEMPLATE = (contactName) => `${contactName}, someone wrote to me using your name and asked for money. Pidge checked with you and held it. Call me when you can.`;
+const DRAFT_REPLY_TEMPLATE = (contactName) => `${contactName}, someone wrote to me using your name and asked for money. I did not act on it. Call me when you can.`;
 const DRAFT_REPLY_FOOTNOTE = "Send it from your own mail app. Pidge sends nothing itself.";
 const KNOWN_CHAT_ROLES = new Set(Object.values(CHAT_ROLE));
 let onReportPaymentRequested = () => {};
@@ -57,8 +57,11 @@ function handleUserTappedSuggestionChip(suggestionChip) {
     case SUGGESTION_CHIP_KIND.DRAFT_REPLY:
       appendDraftReplyBubble();
       break;
-    default:
+    case SUGGESTION_CHIP_KIND.QUESTION:
       askPidge(suggestionChip.label);
+      break;
+    default:
+      console.error("SendPidge: suggestion chip has an unknown kind", suggestionChip);
   }
 }
 

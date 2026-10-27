@@ -69,6 +69,12 @@ export const RELATIONSHIP_LABELS = Object.freeze({
   [RELATIONSHIP.OTHER]: "Other",
 });
 
+export const RECOVERY_DRAFT_KIND = Object.freeze({
+  CALL_SCRIPT: "callScript",
+  DISPUTE_LETTER: "disputeLetter",
+  POLICE_REPORT: "policeReport",
+});
+
 export const CASES_TAB = Object.freeze({ OPEN: "open", CLOSED: "closed", NOTES: "notes" });
 
 export const CASE_STATUS = Object.freeze({

@@ -1,6 +1,6 @@
 // Grandma's Cases tab (RECEIVER): Open · Closed · Notes sub-tabs over the case cards, "I already paid" and the case agent's notes.
 // noteText and every pack field come from the server: rendered only through textContent / createElement.
-import { CASES_TAB, CASE_STATUS, CLIENT_ACTION, JURISDICTION, PAYMENT_RAIL, REQUEST_STATUS } from "./constants.js";
+import { RECOVERY_DRAFT_KIND, CASES_TAB, CASE_STATUS, CLIENT_ACTION, JURISDICTION, PAYMENT_RAIL, REQUEST_STATUS } from "./constants.js";
 import { buildCopyButton, buildPidgeIconElement, createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { listReceiverRequests } from "./receiver-view.js";
 import { sendClientAction } from "./websocket.js";
@@ -16,7 +16,11 @@ const PAYMENT_RAIL_LABELS = Object.freeze({
 const DEFAULT_CURRENCY = "USD";
 const SUBTAB_LABELS = Object.freeze({ [CASES_TAB.OPEN]: "Open", [CASES_TAB.CLOSED]: "Closed", [CASES_TAB.NOTES]: "Notes" });
 
-const DRAFT_LABELS = Object.freeze({ callScript: "Call script", disputeLetter: "Dispute letter", policeReport: "Police report" });
+const DRAFT_LABELS = Object.freeze({
+  [RECOVERY_DRAFT_KIND.CALL_SCRIPT]: "Call script",
+  [RECOVERY_DRAFT_KIND.DISPUTE_LETTER]: "Dispute letter",
+  [RECOVERY_DRAFT_KIND.POLICE_REPORT]: "Police report",
+});
 
 const notesById = new Map();
 const casesById = new Map();
@@ -313,10 +317,11 @@ function renderNotes() {
   renderEmptyMessage();
 }
 
-// The chat's "I already paid" chip lands here: the Open sub-tab with the report form open (nothing to report shows the empty message).
+// The chat's "I already paid" chip lands here: the Open sub-tab with the report form open when there is a request to report
+// against (otherwise the empty message shows and the form stays closed, so it cannot pop open later by itself).
 export function openReportPaymentForm() {
   activeCasesTab = CASES_TAB.OPEN;
-  isReportFormOpen = true;
+  isReportFormOpen = listReportableRequests().length > 0;
   renderCasesScreen();
 }
 

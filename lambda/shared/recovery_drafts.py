@@ -1,10 +1,11 @@
 """The three drafts in Grandma's recovery pack (call script, dispute letter, police report), filled by code from the CASE# row
-only, and the email that carries the pack to her own mailbox. No model output and nothing from the held email goes in."""
+and the request's final state only, and the email that carries the pack to her own mailbox. No model output and nothing from
+the held email goes in; the model never sees the drafts (store_case_note adds them after the agent ran)."""
 
 import logging
 from decimal import Decimal
 
-from shared.enums import PaymentRail
+from shared.enums import PaymentRail, RecoveryDraftKind, RequestState
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +16,16 @@ PAYMENT_RAIL_LABELS = {
     PaymentRail.GIFT_CARD: "gift card purchase",
 }
 PACK_EMAIL_SUBJECT = "Pidge: your recovery pack"
+# What the family member did when Pidge asked, by the request's final state; a draft never claims an answer nobody gave.
+ANSWER_SENTENCES = {
+    RequestState.DENIED: "The family member was asked on their own phone and confirmed they never sent it.",
+    RequestState.TIMEOUT: "The family member was asked on their own phone and did not answer, so I could not confirm it with them.",
+}
 
 CALL_SCRIPT_TEMPLATE = """Call {bank} and say:
 
-"I need to report a {rail_label} made under false pretences. On {paid_on} I sent {amount} {payee_clause}. \
-The request came by email from someone pretending to be a family member; the family member has confirmed they never sent it. \
+"I need to report a {rail_label} made under false pretences. On {paid_on} I sent {amount}{payee_clause}. \
+The request came by email from someone pretending to be a family member. {answer_sentence} \
 Please stop or recall the payment if you still can, open a fraud case, and tell me the case number and what you need from me."
 
 Write down the case number, the name of the person you spoke to, and the time of the call."""
@@ -31,7 +37,7 @@ Date: {today}
 I am writing to dispute a {rail_label} of {amount} made on {paid_on}{payee_clause}.
 
 I made this payment because of an email that pretended to come from a family member and asked for money urgently. \
-The family member has since confirmed they did not send it. I did not receive any goods or services and I consider the payment fraudulent.
+{answer_sentence} I did not receive any goods or services and I consider the payment fraudulent.
 
 Please reverse or recall the payment where possible, open a fraud case, and confirm in writing what you have done.
 
@@ -41,7 +47,7 @@ POLICE_REPORT_TEMPLATE = """What happened, in order:
 
 1. I received an email claiming to be from a family member and asking for money urgently.
 2. On {paid_on} I made a {rail_label} of {amount} through {bank}{payee_clause}.
-3. The family member was asked on their own phone and confirmed they never sent the email.
+3. {answer_sentence}
 4. I have reported the payment to {bank}.
 
 I have kept the email and my payment record and can provide both."""
@@ -58,20 +64,22 @@ def payee_clause_for(case_row: dict) -> str:
     return f" to {payee_hint}" if payee_hint else ""
 
 
-def build_recovery_drafts(case_row: dict, today: str) -> dict:
-    """{callScript, disputeLetter, policeReport} from the case's bank, rail, amount, date and payee hint; today is a YYYY-MM-DD."""
+def build_recovery_drafts(case_row: dict, today: str, request_status: RequestState) -> dict:
+    """{callScript, disputeLetter, policeReport} from the case's bank, rail, amount, date and payee hint plus what the family
+    member answered (DENIED or TIMEOUT, the only states a payment can be reported on); today is a YYYY-MM-DD."""
     fields = {
         "bank": str(case_row["bank"]),
         "rail_label": PAYMENT_RAIL_LABELS[PaymentRail(case_row["paymentRail"])],
         "amount": format_amount(case_row),
         "paid_on": str(case_row["paidAt"])[:10],
         "payee_clause": payee_clause_for(case_row),
+        "answer_sentence": ANSWER_SENTENCES[request_status],
         "today": today,
     }
     return {
-        "callScript": CALL_SCRIPT_TEMPLATE.format(**fields),
-        "disputeLetter": DISPUTE_LETTER_TEMPLATE.format(**fields),
-        "policeReport": POLICE_REPORT_TEMPLATE.format(**fields),
+        str(RecoveryDraftKind.CALL_SCRIPT): CALL_SCRIPT_TEMPLATE.format(**fields),
+        str(RecoveryDraftKind.DISPUTE_LETTER): DISPUTE_LETTER_TEMPLATE.format(**fields),
+        str(RecoveryDraftKind.POLICE_REPORT): POLICE_REPORT_TEMPLATE.format(**fields),
     }
 
 
@@ -92,9 +100,9 @@ def build_pack_email_body(recovery_pack: dict) -> str:
     return (
         "Your recovery pack from Pidge. Pidge sends nothing to anyone else; these are for you to use.\n\n"
         f"Steps\n{step_lines}\n\n"
-        f"Call script\n{drafts['callScript']}\n\n"
-        f"Dispute letter\n{drafts['disputeLetter']}\n\n"
-        f"Police report\n{drafts['policeReport']}\n"
+        f"Call script\n{drafts[RecoveryDraftKind.CALL_SCRIPT]}\n\n"
+        f"Dispute letter\n{drafts[RecoveryDraftKind.DISPUTE_LETTER]}\n\n"
+        f"Police report\n{drafts[RecoveryDraftKind.POLICE_REPORT]}\n"
     )
 
 

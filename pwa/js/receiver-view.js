@@ -8,7 +8,7 @@ import {
   hasReleaseTimePassed, showDeniedVerdictOverlay,
 } from "./verdict-view.js";
 import {
-  buildMockFamilyEmails, isValidRequestStateUpdate, normalizeCallPromise, normalizeEmailPayloadOrReportError, normalizeRepliedVia,
+  buildMockFamilyEmails, isValidRequestStateUpdate, keepsDecidedRow, normalizeCallPromise, normalizeEmailPayloadOrReportError, normalizeRepliedVia,
 } from "./receiver-payloads.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
@@ -267,9 +267,11 @@ export function applyReceiverSyncState(emails) {
     showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
     return;
   }
+  const decidedEmailsBeforeSync = new Map([...emailsById].filter(([emailId, email]) => !mockEmailIds.has(emailId) && email.state !== null));
   [...emailsById.keys()].filter((emailId) => !mockEmailIds.has(emailId)).forEach((emailId) => emailsById.delete(emailId));
   emails.map(normalizeEmailPayloadOrReportError).filter((email) => email !== null)
-    .forEach((email) => emailsById.set(email.emailId, email));
+    .forEach((email) => { if (!keepsDecidedRow(decidedEmailsBeforeSync.get(email.emailId), email)) emailsById.set(email.emailId, email); });
+  decidedEmailsBeforeSync.forEach((email, emailId) => { if (!emailsById.has(emailId)) emailsById.set(emailId, email); });
   renderInbox();
   const newestPendingHold = sortEmailsNewestFirst(emailsById.values()).find(isNewestCandidatePendingHold);
   if (newestPendingHold !== undefined) {
@@ -281,7 +283,7 @@ export function applyReceiverSyncState(emails) {
 
 export function handleEmailStatePush(email) {
   const normalizedEmail = normalizeEmailPayloadOrReportError(email);
-  if (normalizedEmail === null) return;
+  if (normalizedEmail === null || keepsDecidedRow(emailsById.get(normalizedEmail.emailId), normalizedEmail)) return;
   releasedByUserEmailIds.delete(normalizedEmail.emailId); // a newer server state replaces the local release
   emailsById.set(normalizedEmail.emailId, normalizedEmail);
   renderInbox();

@@ -58,9 +58,10 @@ export function buildTickIcon(className) {
 
 // "Copy" that puts text on the clipboard for her own mail app; the label reports the outcome (a blocked clipboard says so).
 export function buildCopyButton(textToCopy) {
-  const copyButton = createElementWithText("button", "pidge-pack-copy-button", "Copy");
+  const copyButton = createElementWithText("button", "copy-button", "Copy");
   copyButton.type = "button";
   copyButton.addEventListener("click", () => {
+    if (typeof navigator.clipboard?.writeText !== "function") { copyButton.textContent = "Select and copy"; return; } // no clipboard API here
     navigator.clipboard.writeText(textToCopy).then(() => { copyButton.textContent = "Copied"; }, () => { copyButton.textContent = "Select and copy"; });
   });
   return copyButton;

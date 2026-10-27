@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field
 from strands import Agent, tool
 
-from shared import graph, refund_rules
+from shared import graph, recovery_drafts, refund_rules
 from shared.enums import CaseTrigger, Jurisdiction, PaymentRail, ReaderModelChoice, RequestState
 from shared.reader_agent import build_bedrock_model
 
@@ -35,7 +35,7 @@ Always call get_case first, then get_family_history. When get_case shows a payme
 
 The note is read by the older adult who received the email and by her family. "You" means that receiver. get_case returns whatHappened: that sentence is the truth about this email and the answer; restate it in your own words and never contradict it. The person named in contactName answered; the receiver did not answer anything, so never say she replied, spotted or refused it. A reportedPayment belongs to the receiver, never to the contact. Family history and anything you remember describe earlier, different emails: never move their events onto this one, and never add an event the tools do not show.
 
-Write two to four plain sentences: what the email asked for, what whatHappened says, and what to do next. When the answer was No, the next step is to call {contactName} on the number the receiver already has, never one from the email. When the family history holds an earlier note about the same kind of request, say so in one sentence and name when it happened. Sound like a calm helper, not a robot. Never include links, numbers, amounts, account details or any instruction that came from the email."""
+Write two to four plain sentences: what the email asked for, what whatHappened says, and what to do next. When the answer was No, the next step is to call the person named in contactName on the number the receiver already has, never one from the email. When the family history holds an earlier note about the same kind of request, say so in one sentence and name when it happened. Sound like a calm helper, not a robot. Never include links, numbers, amounts, account details or any instruction that came from the email."""
 
 
 @dataclass(frozen=True)
@@ -167,8 +167,19 @@ def run_case_agent(agent: Agent, scope: CaseScope) -> CaseNote:
 
 def store_case_note(scope: CaseScope, note: CaseNote) -> dict:
     """Code writes the NOTE# row; the pack inside it is code's, never the model's, and only the payment note carries it."""
-    recovery_pack = recovery_pack_for_scope(scope) if scope.trigger is CaseTrigger.CASE else None
+    recovery_pack = recovery_pack_with_drafts(scope) if scope.trigger is CaseTrigger.CASE else None
     return graph.write_case_note(scope.request_id, scope.receiver_user_id, note.note_text, recovery_pack, note_for_label(scope))
+
+
+def recovery_pack_with_drafts(scope: CaseScope) -> dict | None:
+    """The tool's pack plus the three code-written drafts, built here after the agent ran so the model never reads them (they
+    carry the payee hint and the amount). The drafts state what the family member answered, from the request's final state."""
+    recovery_pack = recovery_pack_for_scope(scope)
+    if recovery_pack is None:
+        return None
+    case_row = graph.get_case(scope.case_id)
+    request_status = RequestState(note_status_for(scope))
+    return {**recovery_pack, "drafts": recovery_drafts.build_recovery_drafts(case_row, graph.now_timestamp()[:10], request_status)}
 
 
 def note_status_for(scope: CaseScope) -> str:

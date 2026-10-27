@@ -43,7 +43,7 @@ function isValidQuarantinedField(quarantined) {
 function isValidEmailPayload(email) {
   const hasRequiredFields = email !== null && typeof email === "object" && typeof email.emailId === "string"
     && typeof email.senderName === "string" && typeof email.subject === "string" && typeof email.textBody === "string";
-  const isKnownState = email !== null && typeof email === "object" && (email.state === null || KNOWN_POLICY_DECISIONS.has(email.state));
+  const isKnownState = hasRequiredFields && (email.state === null || KNOWN_POLICY_DECISIONS.has(email.state));
   if (!hasRequiredFields || !isKnownState
     || !isValidEmailRequest(email.request) || !isValidQuarantinedField(email.quarantined)) {
     console.error("SendPidge: email push has a missing field, unknown state or unknown request status", email);
@@ -96,9 +96,19 @@ function normalizeEmailRequest(request) {
 }
 
 // Returns the email with request, quarantined and links made explicit, or null (after logging) when the payload is invalid.
+// A reading row (state null) never carries a body or links on this side either, whatever the server sent.
 export function normalizeEmailPayloadOrReportError(email) {
   if (!isValidEmailPayload(email)) return null;
-  return { ...email, rowKind: ROW_KIND.EMAIL, request: normalizeEmailRequest(email.request), quarantined: email.quarantined === true, links: normalizeEmailLinks(email) };
+  const isReading = email.state === null;
+  return {
+    ...email, rowKind: ROW_KIND.EMAIL, request: normalizeEmailRequest(email.request), quarantined: email.quarantined === true,
+    textBody: isReading ? "" : email.textBody, links: isReading ? [] : normalizeEmailLinks(email),
+  };
+}
+
+// A reading row must never replace a row this PWA already holds with a verdict (a slow sync landing after the verdict push).
+export function keepsDecidedRow(existingEmail, incomingEmail) {
+  return existingEmail !== undefined && existingEmail.state !== null && incomingEmail.state === null;
 }
 
 export function isValidRequestStateUpdate(requestUpdate) {

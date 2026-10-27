@@ -22,11 +22,16 @@ class CircleSettings:
     pidge_whatsapp_number: str  # Pidge's own WhatsApp number in E.164, "" when the stack has none to reply to
     is_rcs_enabled: bool
     is_whatsapp_enabled: bool
+    is_email_ask_enabled: bool
     is_mock_on: bool
 
     @property
     def is_whatsapp_verification_on(self) -> bool:
         return self.is_whatsapp_enabled and self.pidge_whatsapp_number != ""
+
+    @property
+    def reach_flags(self) -> payloads.ReachFlags:
+        return payloads.ReachFlags(self.is_rcs_enabled, self.is_whatsapp_enabled, self.is_email_ask_enabled)
 
 
 def read_settings() -> CircleSettings:
@@ -38,6 +43,7 @@ def read_settings() -> CircleSettings:
         pidge_whatsapp_number=os.environ.get("PIDGE_WHATSAPP_NUMBER", ""),
         is_rcs_enabled=os.environ.get("RCS_ENABLED") == "true",
         is_whatsapp_enabled=os.environ.get("WHATSAPP_ENABLED") == "true",
+        is_email_ask_enabled=os.environ.get("EMAIL_ASK_ENABLED") == "true",
         is_mock_on=os.environ.get("CONTACT_VERIFICATION_MOCK") == "true",
     )
 
@@ -48,7 +54,7 @@ def verification_flags(settings: CircleSettings) -> dict:
 
 
 def circle_entries(settings: CircleSettings) -> list[dict]:
-    return [payloads.circle_entry_for_receiver(row, settings.is_rcs_enabled) for row in graph.list_contact_rows(settings.receiver_address)]
+    return [payloads.circle_entry_for_receiver(row, settings.reach_flags) for row in graph.list_contact_rows(settings.receiver_address)]
 
 
 def push_circle_state(settings: CircleSettings) -> None:
@@ -78,7 +84,7 @@ def handle_add_contact(connection_id: str, user_id: str, body: dict) -> None:
                                           settings.pidge_whatsapp_number if settings.is_whatsapp_verification_on else None)
     channels.push_to_connection(connection_id, {
         "type": PushMessageType.CONTACT_ADDED,
-        "contact": payloads.circle_entry_for_receiver(enrolment.contact_row, settings.is_rcs_enabled),
+        "contact": payloads.circle_entry_for_receiver(enrolment.contact_row, settings.reach_flags),
         "noteText": note_text,
         "code": enrolment.code,
     })

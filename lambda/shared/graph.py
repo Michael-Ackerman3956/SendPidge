@@ -23,6 +23,7 @@ HOLD_DURATION_SECONDS = int(os.environ.get("RE_ASK_DELAY_SECONDS", "600"))
 REQUEST_RETENTION_SECONDS = 30 * 24 * 3600
 EMAIL_RETENTION_SECONDS = 90 * 24 * 3600
 CONNECTION_RETENTION_SECONDS = 24 * 3600
+READER_RECLAIM_AFTER_SECONDS = 55  # just under pidge-reader's 60 s Lambda timeout; its first async retry comes a minute after a crash
 HOURLY_COUNTER_RETENTION_SECONDS = 2 * 3600
 ASK_COUNTER_PARTITION_PREFIX = "ASKRATE#"
 HOUR_SORT_KEY_PREFIX = "HOUR#"
@@ -212,10 +213,10 @@ def record_ask_capped(request_id: str) -> None:
 
 
 def claim_email(email_id: str, email_fields: dict) -> bool:
-    """Writes EMAIL#<id> once; False means this S3 event was already processed."""
+    """Writes EMAIL#<id> once, stamped claimedAt; False means another run holds this email (see reclaim_abandoned_email)."""
     try:
         get_table().put_item(
-            Item={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY, **email_fields,
+            Item={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY, **email_fields, "claimedAt": now_timestamp(),
                   "ttlEpochSeconds": retention_epoch(EMAIL_RETENTION_SECONDS)},
             ConditionExpression="attribute_not_exists(PK)",
         )
@@ -224,6 +225,21 @@ def claim_email(email_id: str, email_fields: dict) -> bool:
         if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
             return False
         raise
+
+
+def reclaim_abandoned_email(email_id: str, now: datetime) -> bool:
+    """True when a claimed email never got its state and the claim is older than the Reader's timeout: that run crashed, so the
+    retry may carry on (otherwise the row would read "Pidge is reading" for ever and the dead-letter alarm never fire). A claim
+    younger than that is a concurrent duplicate event and stays refused."""
+    email_row = get_email(email_id)
+    if email_row is None or "state" in email_row or "claimedAt" not in email_row:
+        return False
+    claimed_at = datetime.fromisoformat(email_row["claimedAt"].replace("Z", "+00:00"))
+    if (now - claimed_at).total_seconds() < READER_RECLAIM_AFTER_SECONDS:
+        return False
+    get_table().update_item(Key={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY},
+                            UpdateExpression="SET claimedAt = :now", ExpressionAttributeValues={":now": iso_timestamp(now)})
+    return True
 
 
 def record_email_outcome(

@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from boto3.dynamodb.conditions import Key
 
-from shared import graph, recovery_drafts
+from shared import graph
 from shared.enums import Jurisdiction, PaymentRail, ProposedBy, RuleState
 
 ANY_PARTY = "any"
@@ -87,7 +87,8 @@ def rule_row_from_seed(seed_rule: dict) -> dict:
 
 
 def build_recovery_pack(case_row: dict, rule: RefundRule | None) -> dict:
-    """Facts for Grandma's recovery pack: the case's rail, the rule's steps and the three code-written drafts. No model output."""
+    """Facts for Grandma's recovery pack: the case's rail and the rule's steps. No model output goes in here, and the drafts are
+    added by case_agent.store_case_note after the agent ran, so the model never reads the payee hint through them."""
     return {
         "caseId": graph.case_id_of(case_row),
         "paymentRail": case_row["paymentRail"],
@@ -95,5 +96,4 @@ def build_recovery_pack(case_row: dict, rule: RefundRule | None) -> dict:
         "ruleKey": rule.rule_key if rule else None,
         "ruleGap": rule is None,
         "steps": [step.as_pack_step() for step in rule.steps] if rule else [],
-        "drafts": recovery_drafts.build_recovery_drafts(case_row, graph.now_timestamp()[:10]),
     }

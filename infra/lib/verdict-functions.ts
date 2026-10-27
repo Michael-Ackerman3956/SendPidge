@@ -212,6 +212,7 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
       PWA_BASE_URL: `https://${settings.pwaDomain}`,
       PIDGE_WHATSAPP_NUMBER: settings.whatsappDisplayNumber,
       WHATSAPP_ENABLED: flagEnvironmentValue(settings.whatsappEnabled),
+      EMAIL_ASK_ENABLED: flagEnvironmentValue(settings.emailAskEnabled),
       WHATSAPP_PHONE_NUMBER_ID: settings.whatsappPhoneNumberId,
       WHATSAPP_META_API_VERSION: settings.whatsappMetaApiVersion,
       CALL_NUDGE_ENABLED: flagEnvironmentValue(settings.callNudgeEnabled),

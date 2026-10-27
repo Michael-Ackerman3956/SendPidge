@@ -52,7 +52,7 @@ def test_the_pack_carries_only_case_and_rule_facts(aws):
                 "paidAt": "2026-10-20T09:00:00Z"}
     pack = refund_rules.build_recovery_pack(case_row, refund_rules.find_live_rule(Jurisdiction.US, PaymentRail.CARD))
     assert (pack["caseId"], pack["ruleKey"], pack["ruleGap"], len(pack["steps"])) == ("case-1", "RULE#US#card#any", False, 3)
-    assert "bank" not in pack and "amount" not in pack
-    assert set(pack["drafts"]) == {"callScript", "disputeLetter", "policeReport"}
+    assert "drafts" not in pack  # the drafts carry the bank, the amount and the payee hint: never on the tool's pack
+    assert "Chase" not in json.dumps(pack) and "500" not in json.dumps(pack)
     gap_pack = refund_rules.build_recovery_pack({**case_row, "jurisdiction": "KR"}, None)
     assert (gap_pack["ruleGap"], gap_pack["steps"]) == (True, [])

@@ -140,7 +140,8 @@ FINAL_REQUEST_STATES = (RequestState.DENIED, RequestState.CONFIRMED, RequestStat
 
 
 class Channel(StrEnum):
-    """Where a 'Was this you?' ask can be sent, and where the suspicious message came in (REQUEST#.inboundChannel)."""
+    """Where a 'Was this you?' ask can be sent, and where the suspicious message came in (REQUEST#.inboundChannel).
+    Mirrored in pwa/js/constants.js."""
 
     RCS = "rcs"
     WHATSAPP = "whatsapp"
@@ -273,6 +274,14 @@ class VerifiedVia(StrEnum):
     SEED = "seed"          # written by scripts/seed_graph.py
     MOCK = "mock"          # the receiver's own PWA played the reply with CONTACT_VERIFICATION_MOCK on (labelled demo)
     WHATSAPP = "whatsapp"  # the code arrived as a WhatsApp text from the row's contactWhatsApp number
+
+
+class RecoveryDraftKind(StrEnum):
+    """The three code-written drafts in a recovery pack (keys of recoveryPack.drafts). Mirrored in pwa/js/constants.js."""
+
+    CALL_SCRIPT = "callScript"
+    DISPUTE_LETTER = "disputeLetter"
+    POLICE_REPORT = "policeReport"
 
 
 class Relationship(StrEnum):

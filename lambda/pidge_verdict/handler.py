@@ -114,7 +114,7 @@ def handle_sync(connection_id: str, user_id: str) -> None:
         emails = []
         for email_row in graph.list_recent_rows(user_id, graph.EMAIL_ROW_KIND, SYNC_EMAIL_LIMIT):
             if "state" not in email_row:
-                emails.append(payloads.reading_email_for_receiver(email_row))  # the Reader is still on it
+                emails.append(payloads.reading_email_for_receiver(email_row))  # the Reader is on it, or its retry will be
                 continue
             request_row = graph.get_request(email_row["requestId"]) if email_row.get("requestId") else None
             contact_name = contact_name_for(request_row) if request_row else None

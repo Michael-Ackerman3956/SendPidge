@@ -123,7 +123,7 @@ function buildCallPromiseLineElement(request) {
 }
 
 // The verdict banner followed by the answer-channel and call-promise lines, wrapped only when there is one to show.
-function withCallPromiseLine(bannerElement, request) {
+function withVerdictFollowUpLines(bannerElement, request) {
   const followingLines = [buildAnswerChannelLineElement(request), buildCallPromiseLineElement(request)].filter((line) => line !== null);
   if (followingLines.length === 0) return bannerElement;
   const bannerGroup = createElementWithText("div", "verdict-banner-group");
@@ -142,18 +142,18 @@ export function buildDetailBannerElement(email, emailDisplayState, shouldCelebra
     const quarantineBanner = createElementWithText("p", "threat-banner",
       email.request === null ? "Reported and quarantined." : `Reported and quarantined. ${email.request.contactName} did not send this.`);
     quarantineBanner.setAttribute("role", "status");
-    return withCallPromiseLine(quarantineBanner, email.request);
+    return withVerdictFollowUpLines(quarantineBanner, email.request);
   }
   if (emailDisplayState === EMAIL_DISPLAY_STATE.CONFIRMED) {
-    return withCallPromiseLine(
+    return withVerdictFollowUpLines(
       buildVerifiedBannerElement(`${email.request.contactName} confirmed they sent this.`, shouldCelebrate), email.request);
   }
   if (emailDisplayState === EMAIL_DISPLAY_STATE.REVERSED) {
-    return withCallPromiseLine(
+    return withVerdictFollowUpLines(
       buildVerifiedBannerElement(`${email.request.contactName} changed their answer: they sent this.`, shouldCelebrate), email.request);
   }
   if (emailDisplayState === EMAIL_DISPLAY_STATE.RELEASING) {
-    return withCallPromiseLine(buildReleasingBannerElement(email.request), email.request);
+    return withVerdictFollowUpLines(buildReleasingBannerElement(email.request), email.request);
   }
   if (emailDisplayState === EMAIL_DISPLAY_STATE.RELEASED_BY_USER) {
     const releasedBanner = createElementWithText("p", "released-banner", `You released this one yourself. Pidge still hasn't heard from ${email.request.contactName}.`);

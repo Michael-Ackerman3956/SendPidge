@@ -27,6 +27,8 @@ def verdict_handler(aws, monkeypatch):  # noqa: F811
     monkeypatch.setenv("WHATSAPP_TOPIC_ARN", "arn:aws:sns:us-east-1:123456789012:whatsapp")
     monkeypatch.setenv("WEBSOCKET_ENDPOINT", "https://example.com")
     monkeypatch.delenv("CONTACT_VERIFICATION_MOCK", raising=False)
+    monkeypatch.setenv("WHATSAPP_ENABLED", "true")  # the reach chips follow the stack's channel flags
+    monkeypatch.setenv("EMAIL_ASK_ENABLED", "true")
     handler = importlib.import_module("pidge_verdict.handler")
     importlib.reload(handler)
     pushed_messages: list[dict] = []
@@ -143,9 +145,10 @@ def test_a_non_string_code_or_missing_contact_id_is_a_bad_message(verdict_handle
 def test_a_seeded_row_without_verified_via_reads_as_seed_and_warns(caplog):
     from shared import payloads
     row = {"PK": "RECEIVER#grandma@example.com", "SK": "CONTACT#jimin", "contactName": "Jimin", "contactPwaUserId": "jimin"}
+    every_channel = payloads.ReachFlags(True, True, True)
     with caplog.at_level("WARNING"):
-        entry = payloads.circle_entry_for_receiver(row, False)
+        entry = payloads.circle_entry_for_receiver(row, every_channel)
     assert entry["verifiedVia"] == "seed"
     assert "no verifiedVia" in caplog.text
     with pytest.raises(ValueError):
-        payloads.circle_entry_for_receiver({**row, "verifiedVia": "carrier_pigeon"}, False)
+        payloads.circle_entry_for_receiver({**row, "verifiedVia": "carrier_pigeon"}, every_channel)
