@@ -1,7 +1,7 @@
 // SendPidge PWA entry: sign-in or access token, socket, role routing from sync_state, and push dispatch to the receiver,
 // contact or org admin view (an org admin's cards are a contact's). The role is never stored: every sync_state names it again.
-import { ACTION_REJECTED_REASON, CONNECTION_STATUS, PUSH_MESSAGE_TYPE, USER_ROLE } from "./constants.js";
-import { connectToPushChannel } from "./websocket.js";
+import { ACTION_REJECTED_REASON, CLIENT_ACTION, CONNECTION_STATUS, PUSH_MESSAGE_TYPE, USER_ROLE } from "./constants.js";
+import { connectToPushChannel, sendClientAction } from "./websocket.js";
 import { completeSignInFromRedirect, hasSignInSession, readSignInConfig, resolveIdToken, startSignIn } from "./auth.js";
 import { refreshPushSubscriptionAfterSync, startPushNotifications } from "./push-notifications.js";
 import { ACTION_STATUS_MESSAGE, showActionStatusMessage } from "./action-status.js";
@@ -23,14 +23,16 @@ import {
   hideOnboarding, startOnboarding,
 } from "./onboarding.js";
 import { startReadingPane } from "./reading-pane.js";
-import { applyOrgAdminSyncState, hideOrgView } from "./org-view.js";
+import { applyOrgAdminSyncState, handleOrgActionRejected, hideOrgView } from "./org-view.js";
 import { applyOrgPreferenceState, handleOrgPreferenceActionRejected } from "./org-preference-view.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
 const ACCESS_TOKEN_QUERY_PARAMETER = "token";
 const KNOWN_ACTION_REJECTED_REASONS = new Set(Object.values(ACTION_REJECTED_REASON));
+const ORG_CHANGED_RESYNC_DELAY_MS = 2000;
 
 let activeUserRole = null;
+let orgResyncTimeoutId = null;
 
 const RECEIVER_TAB = Object.freeze({ INBOX: "inbox", CASES: "cases", CIRCLE: "circle", PIDGE: "pidge" });
 let activeReceiverTab = RECEIVER_TAB.INBOX;
@@ -198,7 +200,18 @@ function handleActionRejectedPush(pushMessage) {
     handleOrgPreferenceActionRejected();
   } else {
     handleContactActionRejected(requestId);
+    if (activeUserRole === USER_ROLE.ORG_ADMIN) handleOrgActionRejected();
   }
+}
+
+// org_changed carries no data: the first one starts a 2 s wait and every org_changed inside it joins that one re-sync (each sync
+// is an audited member view). A closed socket drops it; the reconnect sends its own sync.
+function scheduleOrgDashboardResync() {
+  if (orgResyncTimeoutId !== null) return;
+  orgResyncTimeoutId = setTimeout(() => {
+    orgResyncTimeoutId = null;
+    sendClientAction({ action: CLIENT_ACTION.SYNC });
+  }, ORG_CHANGED_RESYNC_DELAY_MS);
 }
 
 // Which role each role-specific push belongs to; a push for the other role (or before sync_state) is ignored with a warning.
@@ -214,6 +227,7 @@ const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.CONTACT_ADDED]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CONTACT_EDITED]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CIRCLE_STATE]: [USER_ROLE.RECEIVER],
+  [PUSH_MESSAGE_TYPE.ORG_CHANGED]: [USER_ROLE.ORG_ADMIN],
 });
 
 function isPushForActiveRole(pushMessageType) {
@@ -266,6 +280,9 @@ function handlePushMessage(pushMessage) {
       applyCircleStatePush(pushMessage.circle);
       applyOrgPreferenceState(pushMessage.orgPreference);
       handleCircleSyncDuringOnboarding();
+      break;
+    case PUSH_MESSAGE_TYPE.ORG_CHANGED:
+      scheduleOrgDashboardResync();
       break;
     default:
       console.warn("SendPidge: ignoring push of unknown type", pushMessageType);

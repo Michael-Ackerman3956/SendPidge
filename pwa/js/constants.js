@@ -13,6 +13,7 @@ export const PUSH_MESSAGE_TYPE = Object.freeze({
   CONTACT_ADDED: "contact_added",
   CIRCLE_STATE: "circle_state",
   CONTACT_EDITED: "contact_edited",
+  ORG_CHANGED: "org_changed",
 });
 
 export const CLIENT_ACTION = Object.freeze({
@@ -32,6 +33,7 @@ export const CLIENT_ACTION = Object.freeze({
   SET_ORG_VISIBILITY: "set_org_visibility",
   ADD_ORG_CONTACT: "add_org_contact",
   REMOVE_ORG_CONTACT: "remove_org_contact",
+  ORG_RESOLVE: "org_resolve",
 });
 
 // What the resident's home may see (orgPreference.visibility). Mirrors OrgVisibility in lambda/shared/org_enums.py.
@@ -39,6 +41,19 @@ export const ORG_VISIBILITY = Object.freeze({
   ALERTS_ONLY: "alerts_only",
   ALERTS_AND_CASES: "alerts_and_cases",
   NONE: "none",
+});
+
+// One member's row on the org admin's Home (members[].state, actionable[].state). Mirrors MemberSafetyState in
+// lambda/shared/org_enums.py.
+export const MEMBER_SAFETY_STATE = Object.freeze({
+  NOT_SHARED: "not_shared",
+  NOTHING_OPEN: "nothing_open",
+  HELD: "held",
+  HELD_NO_ANSWER: "held_no_answer",
+  CONFIRMED_NOT_ME: "confirmed_not_me",
+  WARNED: "warned",
+  CASE_OPEN: "case_open",
+  CONTACT_UNREACHABLE: "contact_unreachable",
 });
 
 export const CHAT_CARD_KIND = Object.freeze({

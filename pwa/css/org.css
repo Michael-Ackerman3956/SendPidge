@@ -1,4 +1,4 @@
-/* An org admin's Home section (js/org-view.js) and a resident's home on the Circle tab (js/org-preference-view.js); app.css is
+/* An org admin's Home dashboard (js/org-view.js) and a resident's home on the Circle tab (js/org-preference-view.js); app.css is
    at its size limit, so every org rule lives here. */
 #org-screen { margin-top: 24px; }
 .org-name { font-size: 20px; font-weight: 800; margin: 0 4px 10px; overflow-wrap: anywhere; }
@@ -9,6 +9,16 @@
 .org-member-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .org-member-tag { font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 5px; background: var(--surface-3); color: var(--text-secondary); }
 .org-empty-message { padding: 12px 4px; font-size: 15px; color: var(--text-secondary); }
+.org-member-state { flex-shrink: 0; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.org-updated { margin: 0 4px 14px; font-size: 13px; color: var(--text-secondary); }
+.org-updated.is-stale { color: var(--orange); font-weight: 700; }
+.org-actionable-details { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.org-actionable-state { font-size: 13px; color: var(--text-secondary); }
+.org-resolved-button { width: auto; flex-shrink: 0; min-height: 44px; padding: 0 16px; }
+.org-coverage { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.org-coverage-item { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); }
+.org-coverage-value { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.org-coverage-label { font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
 /* With the home below it, the office's empty card list sits at the top instead of a fifth of the screen down. */
 .screen-body:has(#org-screen:not([hidden])) .contact-empty { margin-top: 24px; }
 
@@ -20,7 +30,7 @@
 .org-visibility-option:last-child { border-bottom: none; }
 .org-visibility-radio { flex-shrink: 0; width: 20px; height: 20px; accent-color: var(--teal); }
 .org-visibility-radio:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
-.org-contact-button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
+.org-contact-button[aria-disabled="true"], .org-resolved-button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
 
 @media (min-width: 900px) {
   #org-screen, .org-preference { max-width: 520px; }

@@ -45,12 +45,18 @@ export interface StackSettings {
   cognitoDomainPrefix: string;
   // Where managed login returns the PWA after sign-in: its root URL.
   pwaCallbackUrl: string;
+  // The org dashboard (S3): projection, OrgActions route and canary; off leaves the template as it was.
+  orgEnabled: boolean;
+  // The one home whose ORG#<orgId>/CANARY row the canary writes; "" when orgEnabled is off.
+  orgId: string;
 }
 
 const MAXIMUM_CALL_REMINDER_DELAY_SECONDS = 82800;
 // Cognito prefix rules: lower-case letters, digits and inner hyphens, at most 63 characters, none of these reserved words.
 const COGNITO_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const COGNITO_DOMAIN_PREFIX_RESERVED_WORDS = ["aws", "amazon", "cognito"];
+// lambda/shared/org_ids.py ORG_ID_PATTERN (fullmatch).
+const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
 export function readStackSettings(stack: Stack): StackSettings {
   const receiverDomain: string = stack.node.getContext("receiverDomain");
@@ -87,6 +93,11 @@ export function readStackSettings(stack: Stack): StackSettings {
     throw new Error("chatEnabled or RECEIVER_MAILBOX needs mailboxResidentAddress: the resident that mailbox belongs to");
   }
   const pwaDomain: string = stack.node.getContext("pwaDomain");
+  const releaseSchedulerEnabled = stack.node.getContext("releaseSchedulerEnabled") === true;
+  const orgEnabled = stack.node.tryGetContext("orgEnabled") === true;
+  if (orgEnabled && !releaseSchedulerEnabled) {
+    throw new Error("orgEnabled needs releaseSchedulerEnabled: without the release timer a confirmed answer never reaches the stream the org projection reads");
+  }
   return {
     receiverDomain,
     mailboxResidentAddress,
@@ -109,7 +120,7 @@ export function readStackSettings(stack: Stack): StackSettings {
     whatsappTemplateName: stack.node.getContext("whatsappTemplateName"),
     escalationEnabled: stack.node.getContext("escalationEnabled") === true,
     escalationModel: stack.node.getContext("escalationModel"),
-    releaseSchedulerEnabled: stack.node.getContext("releaseSchedulerEnabled") === true,
+    releaseSchedulerEnabled,
     caseAgentRuntimeMode: stack.node.getContext("caseAgentRuntime"),
     caseAgentModel: stack.node.getContext("caseAgentModel"),
     retrySchedulerEnabled: stack.node.getContext("retrySchedulerEnabled") === true,
@@ -133,7 +144,18 @@ export function readStackSettings(stack: Stack): StackSettings {
     vapidSecretName: stack.node.tryGetContext("vapidSecretName") ?? "sendpidge/vapid-private-key",
     cognitoDomainPrefix: readCognitoDomainPrefix(stack),
     pwaCallbackUrl: `https://${pwaDomain}/`,
+    orgEnabled,
+    orgId: readOrgId(stack, orgEnabled),
   };
+}
+
+// The canary's home; absent reads as "". Throws when orgEnabled is on and the id is off ORG_ID_PATTERN (so "" throws too).
+function readOrgId(stack: Stack, orgEnabled: boolean): string {
+  const orgId = readOptionalTextContext(stack, "orgId");
+  if (orgEnabled && !ORG_ID_PATTERN.test(orgId)) {
+    throw new Error("orgId must be 1-40 lower-case letters, digits and hyphens, starting with a letter or digit (lambda/shared/org_ids.py)");
+  }
+  return orgId;
 }
 
 // The managed-login domain prefix; absent or "" reads as "" (sign-in off). Throws when it is set but Cognito would refuse it.

@@ -23,3 +23,69 @@ class OrgPreferenceSource(StrEnum):
     """Who wrote RECEIVER#<address>/ORGPREF#<orgId>, stored as orgVisibilitySource."""
 
     RESIDENT_APP = "resident_app"  # the resident's own PWA
+
+
+class OrgEvent(StrEnum):
+    """What happened in one member's episode, one ORGLOG#<orgId> row each, written only by pidge_org_projection. Declared in
+    fold order: two events at the same time fold in this order (shared/org_events.episode_state)."""
+
+    MESSAGE_HELD = "message_held"
+    ASK_CAPPED = "ask_capped"
+    ASK_TIMED_OUT = "ask_timed_out"
+    CONTACT_CONFIRMED_YES = "contact_confirmed_yes"
+    CONTACT_CONFIRMED_NOT_ME = "contact_confirmed_not_me"
+    ANSWER_REVERSED = "answer_reversed"
+    CONTACT_UNREACHABLE = "contact_unreachable"
+    PAYMENT_DOUBTED = "payment_doubted"  # no writer yet
+    WRONG_PAYMENT_REPORTED = "wrong_payment_reported"
+    RECOVERY_PACK_DRAFTED = "recovery_pack_drafted"
+    CASE_CLOSED = "case_closed"
+    CONTACT_REQUEST = "contact_request"  # no writer yet
+    BROADCAST_SENT = "broadcast_sent"  # no writer yet
+    BROADCAST_ACKNOWLEDGED = "broadcast_acknowledged"  # no writer yet
+    HELP_REQUESTED = "help_requested"  # no writer yet
+    ORG_RESOLVED = "org_resolved"  # an admin marked the episode followed up (ORG#<orgId>/RESOLVE#<sourceKey>)
+
+
+class MemberSafetyState(StrEnum):
+    """How a member reads on the org dashboard. NOT_SHARED and NOTHING_OPEN are the member's; the rest are the state of one
+    open episode (shared/org_events.EPISODE_TRANSITIONS)."""
+
+    NOT_SHARED = "not_shared"  # the resident chose no visibility, or none
+    NOTHING_OPEN = "nothing_open"
+    HELD = "held"
+    HELD_NO_ANSWER = "held_no_answer"
+    CONFIRMED_NOT_ME = "confirmed_not_me"
+    WARNED = "warned"
+    CASE_OPEN = "case_open"
+    CONTACT_UNREACHABLE = "contact_unreachable"
+
+
+class OrgAuditAction(StrEnum):
+    """What an admin did with member data, stored on ORGAUDIT#<orgId>/TS#<iso>#<uuid4>.action."""
+
+    MEMBER_VIEW = "member_view"  # an admin sync: the dashboard was sent
+    ANSWER = "answer"  # an in-app answer as the office
+    ORG_RESOLVE = "org_resolve"
+
+
+class StreamRecordEventName(StrEnum):
+    """A DynamoDB stream record's eventName."""
+
+    INSERT = "INSERT"
+    MODIFY = "MODIFY"
+    REMOVE = "REMOVE"
+
+
+class ProjectedRecordKind(StrEnum):
+    """Which rows pidge_org_projection reads from the stream, by key (the five stream filters in infra/lib/org-functions.ts)."""
+
+    REQUEST_META = "request_meta"  # REQUEST#<id>/META
+    REQUEST_NOTE = "request_note"  # REQUEST#<id>/NOTE#<writtenAt>
+    EMAIL_META = "email_meta"  # EMAIL#<id>/META
+    CASE_META = "case_meta"  # CASE#<id>/META
+    ORG_RESOLVE = "org_resolve"  # ORG#<orgId>/RESOLVE#<sourceKey>
+    ORG_CANARY = "org_canary"  # ORG#<orgId>/CANARY, put every 5 minutes by the scheduler
+    RECEIVER_ORG_PREFERENCE = "receiver_org_preference"  # RECEIVER#<address>/ORGPREF#<orgId>
+    RECEIVER_CONTACT = "receiver_contact"  # RECEIVER#<address>/CONTACT#<id>
+    USER_CONNECTION = "user_connection"  # USER#<id>/CONN#<connectionId>

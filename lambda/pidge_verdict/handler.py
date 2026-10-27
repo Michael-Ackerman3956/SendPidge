@@ -185,11 +185,14 @@ def handle_answer(connection_id: str, user_id: str, body: dict, websocket_messag
     if answer is None or not isinstance(request_id, str):
         channels.reject_action(connection_id, request_id if isinstance(request_id, str) else None, ActionOutcome.BAD_MESSAGE)
         return
+    request_row = graph.get_request(request_id)
     try:
-        resident = resident_of_request(request_id)
+        resident = resident_of_request_row(request_row)
     except UnknownReceiverError:
         channels.reject_action(connection_id, request_id, ActionOutcome.NOT_ALLOWED)
         return
+    if request_row is not None:
+        org_admin_handlers.audit_office_answer(user_id, request_row)  # an office answer is audited first: a failed write raises
     sender = verdict.SenderIdentity(Channel.INAPP, user_id)
     result = verdict.record_answer(request_id, answer, sender, f"inapp:{websocket_message_id}", graph.now_timestamp())
     if result.outcome is not ActionOutcome.RECORDED:
@@ -201,7 +204,11 @@ def handle_answer(connection_id: str, user_id: str, body: dict, websocket_messag
 def resident_of_request(request_id: str) -> ReceiverProfile | None:
     """The resident the REQUEST# row's receiverEmail names, read before any answer is written. None when there is no such
     request (record_answer then says UNKNOWN_REQUEST); raises UnknownReceiverError (counted) when the address has no profile."""
-    request_row = graph.get_request(request_id)
+    return resident_of_request_row(graph.get_request(request_id))
+
+
+def resident_of_request_row(request_row: dict | None) -> ReceiverProfile | None:
+    """resident_of_request for a REQUEST# row already read (None: no such request)."""
     if request_row is None:
         return None
     return profiles.require_receiver_profile(request_row["receiverEmail"])

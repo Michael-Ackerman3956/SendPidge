@@ -66,6 +66,8 @@ TABLE_ROLES = (
     "AskLinkFunctionServiceRole", "DispatchFunctionServiceRole",
 )
 SOCKET_PUSH_ROLES = tuple(role for role in TABLE_ROLES if role not in ("WebSocketConnectFunctionServiceRole", "QuestionInboundFunctionServiceRole"))
+# The org functions (synth-for-tests.ts turns orgEnabled on) hold scoped table grants, never grantReadWriteData: not TABLE_ROLES.
+ORG_FUNCTION_ROLES = ("OrgProjectionFunctionServiceRole", "OrgActionsFunctionServiceRole")
 SCHEDULE_WRITING_ROLES = ("RetryFunctionServiceRole", "ReaderFunctionServiceRole", "VerdictFunctionServiceRole")
 MODEL_CALLING_ROLES = ("ReaderFunctionServiceRole", CASE_AGENT_RUNTIME_ROLE, "DispatchFunctionServiceRole")
 MODEL_RESOURCES = (
@@ -106,7 +108,7 @@ ALLOWED_WILDCARD_GRANTS: dict[str, dict[str, frozenset[str]]] = {
     "${CaseAgentRuntime.AgentRuntimeArn}/*": {"DispatchFunctionServiceRole": frozenset({
         "bedrock-agentcore:InvokeAgentRuntime", "bedrock-agentcore:InvokeAgentRuntimeForUser"})},
     f"arn:${{AWS::Partition}}:execute-api:us-east-1:{STACK_ACCOUNT}:${{WebSocketApi}}/live/*/@connections/*":
-        grant_to_each(SOCKET_PUSH_ROLES, frozenset({"execute-api:ManageConnections"})),
+        grant_to_each(SOCKET_PUSH_ROLES + ORG_FUNCTION_ROLES, frozenset({"execute-api:ManageConnections"})),
     f"arn:${{AWS::Partition}}:scheduler:us-east-1:{STACK_ACCOUNT}:schedule/SendPidge-ScheduleGroup-4E8C1034/*":
         grant_to_each(SCHEDULE_WRITING_ROLES, SCHEDULE_WRITE_ACTIONS),  # one-time schedules inside the one group
     f"arn:${{AWS::Partition}}:logs:us-east-1:{STACK_ACCOUNT}:log-group:*": {CASE_AGENT_RUNTIME_ROLE: frozenset({"logs:DescribeLogGroups"})},
@@ -121,6 +123,7 @@ ALLOWED_WILDCARD_GRANTS: dict[str, dict[str, frozenset[str]]] = {
         CASE_AGENT_RUNTIME_ROLE: frozenset({"xray:PutTraceSegments", "xray:PutTelemetryRecords", "xray:GetSamplingRules",
                                             "xray:GetSamplingTargets", "cloudwatch:PutMetricData"}),
         "DispatchFunctionServiceRole": frozenset({"dynamodb:ListStreams"}),  # its stream event source
+        "OrgProjectionFunctionServiceRole": frozenset({"dynamodb:ListStreams"}),  # its stream event source
     },
 }
 
@@ -157,21 +160,18 @@ def build_synth_working_directory(mirror_root: Path) -> Path:
     return working_directory
 
 
-@pytest.fixture(scope="session")
-def synthesized_template(tmp_path_factory) -> dict:
-    mirror_root = tmp_path_factory.mktemp("synth_mirror")
+def run_synth_for_tests(mirror_root: Path, context_overrides: dict | None = None) -> subprocess.CompletedProcess:
+    """Synthesises into <mirror_root>/cdk.out; context_overrides win over cdk.json and the test entry's fake context."""
     working_directory = build_synth_working_directory(mirror_root)
-    output_directory = mirror_root / "cdk.out"
     environment_without_credentials = {
         name: value for name, value in os.environ.items() if not name.startswith(("AWS_", "CDK_"))
     } | CREDENTIAL_FREE_ENVIRONMENT
-    completed = subprocess.run(
-        [str(TSX_BINARY), str(SYNTH_TEST_ENTRY), str(output_directory)],
+    override_arguments = [] if context_overrides is None else [json.dumps(context_overrides)]
+    return subprocess.run(
+        [str(TSX_BINARY), str(SYNTH_TEST_ENTRY), str(mirror_root / "cdk.out"), *override_arguments],
         cwd=working_directory, env=environment_without_credentials,
         capture_output=True, text=True, timeout=SYNTH_TIMEOUT_SECONDS, check=False,
     )
-    assert completed.returncode == 0, f"synth failed:\n{completed.stderr[-4000:]}"
-    return json.loads((output_directory / "SendPidge.template.json").read_text())
 
 
 def render_intrinsic_as_text(value) -> str:
@@ -302,6 +302,7 @@ def test_every_function_on_the_lambda_asset_has_its_handler_module(synthesized_t
     handlers = [function["Properties"]["Handler"] for function in resources_of_type(synthesized_template, "AWS::Lambda::Function").values()
                 if function["Properties"]["Code"] == lambda_asset_code]
     assert len(handlers) > 1
+    assert {"pidge_org_projection.handler.handle", "pidge_org.handler.handle"} <= set(handlers)
     missing_modules = [handler for handler in handlers
                        if not (REPOSITORY_ROOT / "lambda" / (handler.rsplit(".", 1)[0].replace(".", "/") + ".py")).is_file()]
     assert missing_modules == []

@@ -32,6 +32,8 @@
     "callNudgesPerContactPerHour": 1,
     "callReminderTodayDelaySeconds": 14400,
     "callReminderTomorrowDelaySeconds": 79200,
-    "cognitoDomainPrefix": ""
+    "cognitoDomainPrefix": "",
+    "orgEnabled": false,
+    "orgId": "home-demo"
   }
 }

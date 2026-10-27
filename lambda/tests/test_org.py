@@ -1,23 +1,25 @@
 """A home (org) in the kernel: the office's contact identity org-<orgId> is answered and reached through the org's admins only,
-an admin's org comes from their own PROFILE and ADMIN# rows (never the body), a name variant is held by gate 1, and the ask
-cap counts each resident of the office apart."""
+an admin's org comes from their own PROFILE and ADMIN# rows (never the body), a name variant is held by gate 1, the ask
+cap counts each resident of the office apart, and an org action is refused to anyone but an admin of the member's own org."""
 
 import json
 
 import boto3
 
+from pidge_org import handler as org_actions_handler
 from shared import channels, graph, hourly_counters
 from shared.enums import Channel, Friction, Intent, PolicyDecision, ReasonCode, RequestState
 from shared.org_ids import org_contact_sort_key_for, org_user_id_for
 from shared.reader_agent import EmailVerdict
 from tests.helpers.orgs import seed_org_contact, seed_test_org
-from tests.helpers.profiles import seed_resident
+from tests.helpers.profiles import seed_contact_roles, seed_resident
 from tests.helpers.scripted_model import ScriptedModel, verdict_step
 from tests.test_reader_reading_state import inbound_event
 from tests.test_reader_receiver import BUCKET_NAME, reader_with_bucket  # noqa: F401
 from tests.test_roles import put_profile
+from tests.test_seed_org import read_all_rows
 from tests.test_verdict import aws  # noqa: F401
-from tests.test_verify_contact import send_action, verdict_handler_without_profiles  # noqa: F401
+from tests.test_verify_contact import seed_circle_contact, send_action, verdict_handler_without_profiles  # noqa: F401
 
 SUNRISE_ORG_ID = "sunrise"
 MAPLE_ORG_ID = "maple"
@@ -152,3 +154,26 @@ def test_unknown_role_refused_on_sync(verdict_handler_without_profiles):  # noqa
     assert pushed_messages == [rejection(None, "not_allowed")] * 4
     send_action(handler, "ann", {"action": "sync"})
     assert (pushed_messages[-1]["type"], pushed_messages[-1]["role"]) == ("sync_state", "org_admin")
+
+
+def read_rows_except_connections() -> list[dict]:
+    """Every row but the CONN# pair send_action registers for each caller."""
+    return [row for row in read_all_rows() if not row["PK"].startswith("CONN#") and not row["SK"].startswith("CONN#")]
+
+
+def test_non_admin_org_action_not_allowed(verdict_handler_without_profiles):  # noqa: F811
+    _handler, pushed_messages = verdict_handler_without_profiles
+    seed_sunrise_and_maple()
+    office = add_office_to_circle(GRANDMA_ADDRESS, SUNRISE_ORG_ID)
+    seed_circle_contact(GRANDMA_ADDRESS, "jimin")
+    put_profile("jimin", {})
+    assert seed_contact_roles(GRANDMA_ADDRESS) == []  # jimin is now a contact
+    resolve_body = {"action": "org_resolve", "memberRef": GRANDMA_ADDRESS,
+                    "sourceKey": f"REQUEST#{new_office_request('inbox/office-1.eml', office)}"}
+    rows_before = read_rows_except_connections()
+    for user_id in ("grandma", "jimin", "nobody", "max"):  # resident, contact, no PROFILE, Maple's admin on a Sunrise member
+        send_action(org_actions_handler, user_id, resolve_body)
+    assert pushed_messages == [rejection(None, "not_allowed")] * 4
+    send_action(org_actions_handler, "ann", resolve_body)  # Sunrise's admin passes the member check; nothing is open yet
+    assert pushed_messages[-1] == rejection(None, "not_applied")
+    assert read_rows_except_connections() == rows_before

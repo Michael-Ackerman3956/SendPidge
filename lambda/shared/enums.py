@@ -282,10 +282,12 @@ class PushMessageType(StrEnum):
     CONTACT_ADDED = "contact_added"          # to the receiver's own socket once: the new circle entry, the note to send and its code
     CIRCLE_STATE = "circle_state"            # to the receiver: the circle changed (someone added, edited or verified)
     CONTACT_EDITED = "contact_edited"        # to her own socket once: the edit is saved; a note and code when it added a number
+    ORG_CHANGED = "org_changed"              # to an org's admins: the projection wrote their org's rows (no data; the PWA re-syncs)
 
 
 class ClientAction(StrEnum):
-    """What a PWA may send on the WebSocket $default route. Mirrored in pwa/js/constants.js."""
+    """What a PWA may send on the WebSocket: every action on the $default route (pidge-verdict) but ORG_RESOLVE, which has
+    its own route (pidge-org). Mirrored in pwa/js/constants.js."""
 
     SYNC = "sync"        # either user, right after connecting
     ANSWER = "answer"    # the contact: yes / no on a request
@@ -303,6 +305,7 @@ class ClientAction(StrEnum):
     SET_ORG_VISIBILITY = "set_org_visibility"          # the receiver: what the home's office may see (an OrgVisibility)
     ADD_ORG_CONTACT = "add_org_contact"                # the receiver: the home's office row joins the circle
     REMOVE_ORG_CONTACT = "remove_org_contact"          # the receiver: the home's office row leaves the circle
+    ORG_RESOLVE = "org_resolve"                        # an org admin: a member's open episode was followed up (org_resolve route)
 
 
 class PushNotice(StrEnum):
