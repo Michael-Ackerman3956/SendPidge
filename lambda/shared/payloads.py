@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from shared import graph
+from shared import graph, reach_points
 from shared.enums import CaseEvent, Channel, Friction, PushMessageType, Relationship, RequestState
 
 EMAIL_FIELDS_FOR_PWA = ("senderName", "senderAddress", "subject", "receivedAt", "textBody")
@@ -151,19 +151,25 @@ class ReachFlags:
 
 
 def circle_entry_for_receiver(contact_row: dict, reach_flags: ReachFlags) -> dict:
-    """One member of the receiver's circle: who, how verified, which channels reach them. Never a number or an address.
-    A chip lights only when the row has the channel AND the stack sends on it; a number behind a flag that is off is not a reach."""
+    """One member of the receiver's circle: who, how verified, which channels reach them, and the numbers and emails she
+    typed with each one's check state (her own sockets only: the edit form shows them). A chip lights only when the row has
+    a point Pidge asks on that channel AND the stack sends on it; a number still waiting for its code, a phone she typed (never
+    checked) and a number behind a flag that is off are not a reach."""
+    points = reach_points.reach_points_of(contact_row)
+    channels_on_row = {point.channel for point in points if point.is_askable}
     return {
         "contactUserId": contact_row["contactPwaUserId"],
         "contactName": contact_row["contactName"],
         "relationship": optional_enum_value(Relationship, contact_row.get("relationship")),  # absent on seeded rows
         "verifiedVia": str(graph.verified_via_of(contact_row)),
         "verifiedAt": contact_row.get("verifiedAt"),
-        "codeExpiresAt": contact_row.get("verificationExpiresAt"),  # pending rows only: past it, the code is dead
+        "codeExpiresAt": contact_row.get("verificationExpiresAt"),  # set while a number waits for its code: past it, the code is dead
         "reach": {
             str(Channel.INAPP): True,  # every row has a PWA token: seeded by scripts/seed_graph.py, or minted with the row
-            str(Channel.RCS): reach_flags.is_rcs_enabled and "contactRcs" in contact_row,
-            str(Channel.WHATSAPP): reach_flags.is_whatsapp_enabled and "contactWhatsApp" in contact_row,
-            str(Channel.EMAIL): reach_flags.is_email_ask_enabled and "contactEmail" in contact_row,
+            str(Channel.RCS): reach_flags.is_rcs_enabled and Channel.RCS in channels_on_row,
+            str(Channel.WHATSAPP): reach_flags.is_whatsapp_enabled and Channel.WHATSAPP in channels_on_row,
+            str(Channel.EMAIL): reach_flags.is_email_ask_enabled and Channel.EMAIL in channels_on_row,
         },
+        "reachPoints": [{"channel": str(point.channel), "address": point.address,
+                         "verifiedVia": None if point.verified_via is None else str(point.verified_via)} for point in points],
     }

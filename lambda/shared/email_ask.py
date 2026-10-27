@@ -1,4 +1,4 @@
-"""The ask by email: SES sends 'Was this you?' to the contact's own address (CONTACT#.contactEmail) with a signed
+"""The ask by email: SES sends 'Was this you?' to each of the contact's emails (their reach points) with a signed
 'No' link (shared/ask_link.py, pidge_ask_link); a reply of NO also comes back to pidge@ through Mail Manager (rule
 store-ask-reply, S3 asks/) into pidge-verdict.
 

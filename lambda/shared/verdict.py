@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from shared import graph, refund_rules
+from shared import graph, reach_points, refund_rules
 from shared.enums import (
     FINAL_REQUEST_STATES, PHONE_CHANNEL_ANSWERS, ActionOutcome, Channel, Jurisdiction, PaymentRail, RequestState, VerdictAnswer,
 )
@@ -20,12 +20,6 @@ QUARANTINE_TAG = {"Key": "quarantine", "Value": "true"}
 REPORTABLE_REQUEST_STATES = (RequestState.DENIED, RequestState.TIMEOUT)  # "I already paid" only after a No or a silence
 PAYEE_HINT_MAX_LENGTH = 40
 BANK_NAME_MAX_LENGTH = 60
-CONTACT_FIELD_FOR_CHANNEL = {
-    Channel.INAPP: "contactPwaUserId",
-    Channel.WHATSAPP: "contactWhatsApp",
-    Channel.RCS: "contactRcs",
-    Channel.EMAIL: "contactEmail",
-}
 STATUS_FOR_ANSWER = {
     VerdictAnswer.YES: RequestState.CONFIRMED_PENDING,
     VerdictAnswer.NO: RequestState.DENIED,
@@ -121,13 +115,16 @@ def build_answer_update(answer: VerdictAnswer, sender: SenderIdentity, inbound_m
 
 
 def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool:
-    """The contact's own address on that channel, exactly; an email address compares case-insensitively."""
-    expected_value = (contact_row or {}).get(CONTACT_FIELD_FOR_CHANNEL[sender.channel])
-    if not expected_value:
+    """The contact's own PWA user, or one of the addresses Pidge may ask on that channel, exactly; an email address compares
+    case-insensitively."""
+    if contact_row is None:
         return False
+    if sender.channel is Channel.INAPP:
+        return hmac.compare_digest(str(contact_row["contactPwaUserId"]), sender.value)
+    askable_addresses = reach_points.askable_addresses(reach_points.reach_points_of(contact_row), sender.channel)
     if sender.channel is Channel.EMAIL:
-        return hmac.compare_digest(str(expected_value).casefold(), sender.value.casefold())
-    return hmac.compare_digest(str(expected_value), sender.value)
+        return any(hmac.compare_digest(address.casefold(), sender.value.casefold()) for address in askable_addresses)
+    return any(hmac.compare_digest(address, sender.value) for address in askable_addresses)
 
 
 def inbound_channel_of(request_row: dict) -> Channel:
@@ -184,13 +181,18 @@ def receipt_text(status: RequestState, receiver_name: str) -> tuple[str, str]:
     return subject, f"You told Pidge you sent the email to {receiver_name}. It was released."
 
 
+def receipt_address_of(contact_row: dict) -> str | None:
+    """The contact's first email, where the receipt goes; None when the row has no email."""
+    return next((point.address for point in reach_points.reach_points_of(contact_row) if point.channel is Channel.EMAIL), None)
+
+
 def send_receipt(ses_client, sender_address: str, contact_row: dict, status: RequestState, receiver_name: str) -> bool:
     """Emails the contact's own address, never the monitored one, for a final state only. False (logged) when there is no address."""
     if status not in FINAL_REQUEST_STATES:
         return False  # confirmed_pending: the receipt follows the release
-    contact_email = contact_row.get("contactEmail")
-    if not contact_email:
-        logger.warning("no contactEmail for %s; receipt not sent", contact_row["SK"])
+    contact_email = receipt_address_of(contact_row)
+    if contact_email is None:
+        logger.warning("no email for %s; receipt not sent", contact_row["SK"])
         return False
     subject, body = receipt_text(status, receiver_name)
     ses_client.send_email(

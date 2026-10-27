@@ -91,6 +91,8 @@ def handle(event, context):
         circle_handlers.handle_add_contact(connection_id, user_id, body)
     elif action is ClientAction.VERIFY_CONTACT:
         circle_handlers.handle_verify_contact(connection_id, user_id, body)
+    elif action is ClientAction.EDIT_CONTACT:
+        circle_handlers.handle_edit_contact(connection_id, user_id, body)
     elif action is ClientAction.CONFIRM:
         handle_confirm(connection_id, user_id, body)
     else:

@@ -60,11 +60,11 @@ def push_to_user(user_id: str, message: dict) -> int:
     return delivered_count
 
 
-def ask_in_app(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
+def ask_in_app(request_row: dict, contact: graph.Contact, receiver_name: str, destination: str) -> Channel:
     """The request row is already stored, so the contact's PWA shows it on sync; the live push is a bonus."""
     email_row = graph.get_email(request_row["emailId"])
     card = payloads.verification_card_message(request_row, email_row, receiver_name, RequestState(request_row["status"]))
-    delivered_count = push_to_user(contact.contact_pwa_user_id, card)
+    delivered_count = push_to_user(destination, card)
     logger.info("in-app ask %s pushed to %d open connection(s)", graph.request_id_of(request_row), delivered_count)
     return Channel.INAPP
 
@@ -76,13 +76,13 @@ def get_rcs_client():
     return _rcs_client
 
 
-def ask_on_rcs(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
+def ask_on_rcs(request_row: dict, contact: graph.Contact, receiver_name: str, destination: str) -> Channel:
     """Rich card with Yes / No chips from the RCS agent; the tap comes back on the two-way SNS topic."""
     request_id = graph.request_id_of(request_row)
     email_row = graph.get_email(request_row["emailId"]) or {}
     card = rcs.build_rich_card(request_id, email_row, contact.contact_name, receiver_name, os.environ["PIDGE_IMAGE_URL"])
     response = get_rcs_client().send_rcs_message(
-        DestinationPhoneNumber=contact.contact_rcs,
+        DestinationPhoneNumber=destination,
         OriginationIdentity=os.environ["RCS_AGENT_ID"],
         RcsMessageContent=card,
         TimeToLive=rcs.RICH_CARD_TIME_TO_LIVE_SECONDS,
@@ -109,11 +109,11 @@ def send_whatsapp_message(message: dict) -> str:
     return response["messageId"]
 
 
-def ask_on_whatsapp(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
+def ask_on_whatsapp(request_row: dict, contact: graph.Contact, receiver_name: str, destination: str) -> Channel:
     """The approved template with Yes / No quick replies; the tap comes back on the WABA event topic."""
     request_id = graph.request_id_of(request_row)
     message = whatsapp.build_template_message(
-        request_id, request_row["verdict"]["summary"], contact.contact_whatsapp, os.environ["WHATSAPP_TEMPLATE_NAME"]
+        request_id, request_row["verdict"]["summary"], destination, os.environ["WHATSAPP_TEMPLATE_NAME"]
     )
     meta_message_id = send_whatsapp_message(message)
     graph.record_whatsapp_message_id(request_id, meta_message_id)
@@ -142,14 +142,14 @@ def get_ses_client():
     return _ses_client
 
 
-def ask_on_email(request_row: dict, contact: graph.Contact, receiver_name: str) -> Channel:
+def ask_on_email(request_row: dict, contact: graph.Contact, receiver_name: str, destination: str) -> Channel:
     """Amazon SES to the contact's own address, from pidge@ so a reply lands under asks/. Only a No can come back."""
     request_id = graph.request_id_of(request_row)
     app_url = os.environ["ASK_LINK_BASE_URL"]
     no_link = ask_link.build_no_link(app_url, request_id, int(time.time()))
     response = get_ses_client().send_email(
         FromEmailAddress=os.environ["RECEIPT_SENDER"],
-        Destination={"ToAddresses": [contact.contact_email]},
+        Destination={"ToAddresses": [destination]},
         Content={"Simple": {
             "Subject": {"Data": email_ask.ask_subject(request_id)},
             "Body": {"Text": {"Data": email_ask.ask_body(request_row["verdict"]["summary"], receiver_name, no_link, app_url)}},
@@ -182,22 +182,21 @@ def push_to_connection(connection_id: str, message: dict) -> None:
 
 
 async def ask_on_every_channel(request_row: dict, contact: graph.Contact, receiver_name: str) -> list[Channel]:
-    """Asks in parallel; returns the channels that sent. One failure never cancels the others."""
-    channel_senders = [ask_in_app]
-    if RCS_ENABLED and contact.contact_rcs:
-        channel_senders.append(ask_on_rcs)
-    if WHATSAPP_ENABLED and contact.contact_whatsapp:
-        channel_senders.append(ask_on_whatsapp)
-    if EMAIL_ASK_ENABLED and contact.contact_email:
-        channel_senders.append(ask_on_email)
+    """Asks in parallel: the app, and every address Pidge may ask on each channel that is on; returns the channels that
+    sent. One failure never cancels the others."""
+    sends = [(ask_in_app, contact.contact_pwa_user_id)]
+    for channel, is_enabled, send in ((Channel.RCS, RCS_ENABLED, ask_on_rcs), (Channel.WHATSAPP, WHATSAPP_ENABLED, ask_on_whatsapp),
+                                      (Channel.EMAIL, EMAIL_ASK_ENABLED, ask_on_email)):
+        if is_enabled:
+            sends.extend((send, destination) for destination in contact.addresses_to_ask(channel))
     outcomes = await asyncio.gather(
-        *(asyncio.to_thread(send, request_row, contact, receiver_name) for send in channel_senders),
+        *(asyncio.to_thread(send, request_row, contact, receiver_name, destination) for send, destination in sends),
         return_exceptions=True,
     )
     channels_sent: list[Channel] = []
-    for send, outcome in zip(channel_senders, outcomes):
+    for (send, _), outcome in zip(sends, outcomes):
         if isinstance(outcome, BaseException):
             logger.error("channel %s failed for %s", send.__name__, graph.request_id_of(request_row), exc_info=outcome)
         else:
             channels_sent.append(outcome)
-    return channels_sent
+    return list(dict.fromkeys(channels_sent))  # two numbers on one channel still count as one channel sent

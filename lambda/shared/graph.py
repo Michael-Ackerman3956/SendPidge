@@ -17,6 +17,7 @@ from shared.enums import (
     CaseState, Channel, Friction, ListCategory, ListSource, ListStrength, PolicyDecision, ReasonCode, RequestState, VerifiedVia,
     WarnReason,
 )
+from shared.reach_points import ReachPoint, askable_addresses, known_sender_addresses_of, reach_points_of, verified_via_of
 
 # An answer is accepted for one re-ask interval; pidge-retry extends it by another and marks timeout on attempt 2.
 HOLD_DURATION_SECONDS = int(os.environ.get("RE_ASK_DELAY_SECONDS", "600"))
@@ -77,13 +78,14 @@ class Contact:
     contact_key: str
     contact_name: str
     contact_pwa_user_id: str
-    contact_rcs: str | None = None  # E.164, exactly as RCS reports originationNumber
-    contact_whatsapp: str | None = None  # E.164 with "+"; whatsapp.parse_inbound_reply adds the "+" Meta omits
-    contact_email: str | None = None  # CONTACT#.contactEmail: the ask by email and the receipt go here, never to the monitored address
-    known_addresses: tuple[str, ...] = ()  # CONTACT#.knownAddresses, lower-cased; gate 1 compares the sender address here
+    reach_points: tuple[ReachPoint, ...] = ()  # from reach_points_of; the asks go to the askable ones
+    known_addresses: tuple[str, ...] = ()  # known_sender_addresses_of, lower-cased; gate 1 compares the sender address here
 
     def is_known_address(self, sender_address: str) -> bool:
         return sender_address.casefold() in self.known_addresses
+
+    def addresses_to_ask(self, channel: Channel) -> tuple[str, ...]:
+        return askable_addresses(self.reach_points, channel)
 
 
 def find_user_id_for_access_token(access_token: str) -> str | None:
@@ -119,8 +121,7 @@ def list_connection_ids(user_id: str) -> list[str]:
 
 def contact_from_row(item: dict) -> Contact:
     return Contact(
-        item["SK"], item["contactName"], item["contactPwaUserId"], item.get("contactRcs"), item.get("contactWhatsApp"),
-        item.get("contactEmail"), tuple(str(address).casefold() for address in item.get("knownAddresses", [])),
+        item["SK"], item["contactName"], item["contactPwaUserId"], reach_points_of(item), known_sender_addresses_of(item),
     )
 
 
@@ -133,15 +134,6 @@ def find_contact_among(contacts: list[Contact], person_name: str | None) -> Cont
         return None
     wanted_name = " ".join(person_name.split()).casefold()
     return next((contact for contact in contacts if " ".join(contact.contact_name.split()).casefold() == wanted_name), None)
-
-
-def verified_via_of(contact_row: dict) -> VerifiedVia:
-    """A row without the field is a seeded one (scripts/seed_graph.py wrote it before the field existed); it is logged, never
-    silent. An unknown value raises."""
-    if "verifiedVia" not in contact_row:
-        logger.warning("contact row %s has no verifiedVia; treating as seed (re-run scripts/seed_graph.py)", contact_row["SK"])
-        return VerifiedVia.SEED
-    return VerifiedVia(contact_row["verifiedVia"])
 
 
 def list_contacts(receiver_address: str) -> list[Contact]:
@@ -184,7 +176,7 @@ def mark_contact_verified(receiver_address: str, contact_sort_key: str, verified
 
 
 def domains_of(contacts: list[Contact]) -> frozenset[str]:
-    """The domains the family writes from (every contact's knownAddresses); link lookalikes are judged against these."""
+    """The domains the family writes from (every contact's known sender addresses); link lookalikes are judged against these."""
     return frozenset(address.rpartition("@")[2] for contact in contacts for address in contact.known_addresses if "@" in address)
 
 

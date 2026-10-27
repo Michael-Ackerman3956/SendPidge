@@ -48,7 +48,11 @@ def record_no(check: ask_link.LinkCheck):
     if request_row is None:
         return page(404, "This link is not valid.")
     contact_row = graph.get_contact_row(request_row["receiverEmail"], request_row["contactSK"])
-    sender = verdict.SenderIdentity(Channel.EMAIL, str((contact_row or {}).get("contactEmail", "")))
+    contact_email = verdict.receipt_address_of(contact_row) if contact_row is not None else None
+    if contact_email is None:
+        logger.warning("ask link No on %s: the contact has no email", check.request_id)
+        return page(404, "This link is not valid.")
+    sender = verdict.SenderIdentity(Channel.EMAIL, contact_email)
     inbound_message_id = f"link:no:{check.signature[:ask_link.SIGNATURE_PREFIX_LENGTH]}"
     result = verdict.record_answer(check.request_id, VerdictAnswer.NO, sender, inbound_message_id, graph.now_timestamp())
     if result.outcome is ActionOutcome.RECORDED:

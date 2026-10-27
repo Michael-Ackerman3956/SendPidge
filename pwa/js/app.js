@@ -18,7 +18,8 @@ import {
 } from "./cases-view.js";
 import { applyCircleStatePush, applyCircleSyncState, hideCircleView, showCircleView, startCircleView } from "./circle-view.js";
 import {
-  ONBOARDING_START, handleCircleSyncDuringOnboarding, handleContactAddedPush, handleOnboardingActionRejected, hideOnboarding, startOnboarding,
+  ONBOARDING_START, handleCircleSyncDuringOnboarding, handleContactAddedPush, handleContactEditedPush, handleOnboardingActionRejected,
+  hideOnboarding, startOnboarding,
 } from "./onboarding.js";
 import { startReadingPane } from "./reading-pane.js";
 
@@ -75,12 +76,19 @@ function showReceiverTab(tab) {
   renderInboxTabDot();
 }
 
-// Onboarding takes the whole screen; the tab bar comes back when it finishes or a tab is tapped.
-function openOnboarding(startStep) {
+// Onboarding takes the whole screen; the tab bar comes back when it finishes, Back leaves it, or a new email arrives.
+// editedEntry: the Circle row being edited (ONBOARDING_START.EDIT_CONTACT), else null.
+function openOnboarding(startStep, editedEntry = null) {
+  const tabBeforeOnboarding = activeReceiverTab;
   isOnboardingOpen = true;
   Object.values(tabViews).forEach((view) => view.hide());
   pageElements.receiverTabs.hidden = true;
-  startOnboarding({ startStep, onFinishedCallback: () => showReceiverTab(RECEIVER_TAB.INBOX) });
+  startOnboarding({
+    startStep,
+    editedEntry,
+    onFinishedCallback: () => showReceiverTab(RECEIVER_TAB.INBOX),
+    onExitedCallback: () => showReceiverTab(tabBeforeOnboarding),
+  });
 }
 
 function readAccessTokenFromStorage() {
@@ -185,6 +193,7 @@ const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.CONTACT_NOTICE]: [USER_ROLE.CONTACT],
   [PUSH_MESSAGE_TYPE.PIDGE_REPLY]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CONTACT_ADDED]: [USER_ROLE.RECEIVER],
+  [PUSH_MESSAGE_TYPE.CONTACT_EDITED]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CIRCLE_STATE]: [USER_ROLE.RECEIVER],
 });
 
@@ -231,6 +240,9 @@ function handlePushMessage(pushMessage) {
     case PUSH_MESSAGE_TYPE.CONTACT_ADDED:
       handleContactAddedPush(pushMessage);
       break;
+    case PUSH_MESSAGE_TYPE.CONTACT_EDITED:
+      handleContactEditedPush(pushMessage);
+      break;
     case PUSH_MESSAGE_TYPE.CIRCLE_STATE:
       applyCircleStatePush(pushMessage.circle);
       handleCircleSyncDuringOnboarding();
@@ -249,7 +261,10 @@ function updateConnectionDot(connectionStatus) {
 function startApp() {
   Object.entries(tabButtons).forEach(([tabName, button]) => button.addEventListener("click", () => showReceiverTab(tabName)));
   setUnseenHoldListener((hasUnseenPendingHold) => { hasUnseenHold = hasUnseenPendingHold; renderInboxTabDot(); });
-  startCircleView(() => openOnboarding(ONBOARDING_START.ADD_CONTACT));
+  startCircleView({
+    onAddTapped: () => openOnboarding(ONBOARDING_START.ADD_CONTACT),
+    onContactTapped: (entry) => openOnboarding(ONBOARDING_START.EDIT_CONTACT, entry),
+  });
   startReadingPane(() => { if (activeUserRole === USER_ROLE.RECEIVER && activeReceiverTab === RECEIVER_TAB.INBOX) applyReadingPaneLayout(); });
   startPidgeChat({ onReportPaymentRequested: () => { showReceiverTab(RECEIVER_TAB.CASES); openReportPaymentForm(); } });
   const accessToken = resolveAccessToken();

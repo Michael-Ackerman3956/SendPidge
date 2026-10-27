@@ -12,6 +12,7 @@ export const PUSH_MESSAGE_TYPE = Object.freeze({
   PIDGE_REPLY: "pidge_reply",
   CONTACT_ADDED: "contact_added",
   CIRCLE_STATE: "circle_state",
+  CONTACT_EDITED: "contact_edited",
 });
 
 export const CLIENT_ACTION = Object.freeze({
@@ -27,6 +28,7 @@ export const CLIENT_ACTION = Object.freeze({
   ASK_PIDGE: "ask_pidge",
   ADD_CONTACT: "add_contact",
   VERIFY_CONTACT: "verify_contact",
+  EDIT_CONTACT: "edit_contact",
 });
 
 export const CHAT_CARD_KIND = Object.freeze({
@@ -141,6 +143,7 @@ export const ACTION_REJECTED_REASON = Object.freeze({
   BAD_MESSAGE: "bad_message",
   DUPLICATE_NAME: "duplicate_name",
   CIRCLE_FULL: "circle_full",
+  LAST_CHECKED_NUMBER: "last_checked_number",
 });
 
 export const POLICY_DECISION = Object.freeze({

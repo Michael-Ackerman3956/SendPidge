@@ -213,10 +213,12 @@ def test_sync_carries_the_flag_the_last_twenty_messages_oldest_first_and_the_cir
     ]
     assert sync_message["circle"] == [{"contactUserId": "jimin", "contactName": "Jimin", "relationship": None, "verifiedVia": "seed",
                                        "verifiedAt": None, "codeExpiresAt": None,
-                                       "reach": {"inapp": True, "rcs": False, "whatsapp": True, "email": True}}]
+                                       "reach": {"inapp": True, "rcs": False, "whatsapp": True, "email": True},
+                                       "reachPoints": [{"channel": "whatsapp", "address": "+821012345678", "verifiedVia": "seed"},
+                                                       {"channel": "email", "address": "jimin@example.com", "verifiedVia": None}]}]
     assert sync_message["contactVerification"] == {"whatsapp": False, "mock": False}
-    circle_json = json.dumps(sync_message["circle"])
-    assert "+82" not in circle_json and "@" not in circle_json  # no phone number, no known or receipt address on the wire
+    send_action(handler, "jimin", {"action": "sync"})
+    assert "circle" not in pushed_messages[-1] and "+82" not in json.dumps(pushed_messages[-1])  # her numbers reach her sockets only
     monkeypatch.delenv("CHAT_ENABLED")
     send_action(handler, RECEIVER_USER_ID, {"action": "sync"})
     assert pushed_messages[-1]["chatEnabled"] is False

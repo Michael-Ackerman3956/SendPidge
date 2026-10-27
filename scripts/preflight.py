@@ -20,7 +20,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "lambda"))
 
-from shared.enums import ReaderModelChoice, VerifiedVia  # noqa: E402
+from shared import reach_points  # noqa: E402
+from shared.enums import Channel, ReaderModelChoice, VerifiedVia  # noqa: E402
 from shared.reader_agent import BEDROCK_MODEL_IDS  # noqa: E402
 from shared.whatsapp import TEMPLATE_LANGUAGE_CODE  # noqa: E402
 
@@ -210,10 +211,12 @@ def check_ses_identities(session: boto3.Session, stack: DeployedStack) -> list[C
                            f"SES sending domain {sending_domain}", "VerifiedForSendingStatus")]
     if ses.get_account()["ProductionAccessEnabled"]:
         return [*results, CheckResult(CheckStatus.OK, "SES recipients", "production access: recipients need no verification")]
-    contact_row = read_contact_row(session, stack) or {}
-    recipients = {**read_personal_mailboxes(), "contactEmail": contact_row.get("contactEmail", "")}
-    for label in ("RECEIVER_MAILBOX", "MOCK_BANK_MAILBOX", "contactEmail"):
-        mailbox = recipients.get(label, "")
+    contact_row = read_contact_row(session, stack)
+    contact_emails = reach_points.askable_addresses(reach_points.reach_points_of(contact_row), Channel.EMAIL) if contact_row else ()
+    personal_mailboxes = read_personal_mailboxes()
+    recipients = [(label, personal_mailboxes.get(label, "")) for label in ("RECEIVER_MAILBOX", "MOCK_BANK_MAILBOX")]
+    recipients += [("contact email", address) for address in contact_emails] or [("contact email", "")]
+    for label, mailbox in recipients:
         if not mailbox:
             results.append(CheckResult(CheckStatus.SKIP, f"SES recipient {label}", "not set (.env or the CONTACT# row)"))
             continue
@@ -233,14 +236,15 @@ def check_contact_row(session: boto3.Session, stack: DeployedStack) -> list[Chec
     contact_row = read_contact_row(session, stack)
     if contact_row is None:
         return [CheckResult(CheckStatus.FAIL, name, "missing; run scripts/seed_graph.py")]
-    whatsapp_number = contact_row.get("contactWhatsApp")
     verified_via = contact_row.get("verifiedVia")
-    problems = [] if whatsapp_number else ["no contactWhatsApp"]
     if verified_via not in set(VerifiedVia):
-        problems.append(f"verifiedVia {verified_via!r} is not one of {[str(value) for value in VerifiedVia]}")
+        allowed_values = [str(value) for value in VerifiedVia]
+        return [CheckResult(CheckStatus.FAIL, name, f"verifiedVia {verified_via!r} is not one of {allowed_values}")]
+    whatsapp_numbers = reach_points.askable_addresses(reach_points.reach_points_of(contact_row), Channel.WHATSAPP)
+    problems = [] if whatsapp_numbers else ["no checked WhatsApp number"]
     detail = (f"verifiedVia={verified_via} verifiedAt={contact_row.get('verifiedAt')} "
-              f"contactWhatsApp={mask_phone_number(whatsapp_number) if whatsapp_number else 'none'} "
-              f"knownAddresses={len(contact_row.get('knownAddresses', []))}")
+              f"whatsapp={', '.join(mask_phone_number(number) for number in whatsapp_numbers) or 'none'} "
+              f"knownAddresses={len(reach_points.known_sender_addresses_of(contact_row))}")
     return [CheckResult(CheckStatus.FAIL if problems else CheckStatus.OK, name, "; ".join([detail, *problems]))]
 
 

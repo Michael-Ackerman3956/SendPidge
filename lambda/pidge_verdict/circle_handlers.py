@@ -99,9 +99,47 @@ def handle_add_contact(connection_id: str, user_id: str, body: dict) -> None:
     push_circle_state(settings)
 
 
+def handle_edit_contact(connection_id: str, user_id: str, body: dict) -> None:
+    """The receiver only. A bad field, an unknown contact, a taken name or dropping the last checked number writes nothing.
+    On success the caller's socket alone gets contact_edited (with the note and code when a number was added; the note has
+    no link, the contact keeps the one they have), then every receiver socket gets the new circle."""
+    settings = read_settings()
+    if user_id != settings.receiver_user_id:
+        channels.reject_action(connection_id, None, ActionOutcome.NOT_ALLOWED)
+        return
+    contact_user_id = body.get("contactUserId")
+    try:
+        if not isinstance(contact_user_id, str):
+            raise ValueError("contactUserId missing")
+        form = circle.parse_contact_form(body)
+    except ValueError as error:
+        logger.info("edit_contact refused: %s", error)
+        channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
+        return
+    edit = circle.edit_contact(settings.receiver_address, contact_user_id, form, datetime.now(timezone.utc))
+    if edit.outcome is not ActionOutcome.RECORDED:
+        logger.info("edit_contact refused: %s", edit.outcome)
+        channels.reject_action(connection_id, None, edit.outcome)
+        return
+    note_text = None if edit.code is None else circle.build_contact_note(
+        settings.receiver_name, edit.code, None, settings.pidge_whatsapp_number if settings.is_whatsapp_verification_on else None)
+    try:
+        channels.push_to_connection(connection_id, {
+            "type": PushMessageType.CONTACT_EDITED,
+            "contact": payloads.circle_entry_for_receiver(edit.contact_row, settings.reach_flags),
+            "noteText": note_text,
+            "code": edit.code,
+        })
+    except Exception:  # the socket went away after the write: saving again issues a new code once this one expires (24 h)
+        logger.exception("contact_edited for %s could not be pushed", edit.contact_row["SK"])
+        emit_count_metric(CONTACT_NOTE_PUSH_FAILED_METRIC_NAME)
+    logger.info("contact %s edited", edit.contact_row["SK"])
+    push_circle_state(settings)
+
+
 def handle_verify_contact(connection_id: str, user_id: str, body: dict) -> None:
-    """The labelled demo: the receiver's own PWA plays the contact's reply with the code it was shown. Mock mode only; the
-    row must be PENDING with a live code, so a seeded row can never be 'verified' this way."""
+    """The labelled demo: the receiver's own PWA plays the contact's reply with the code it was shown, for the first number
+    still waiting. Mock mode only; the row must hold a live code, so a seeded row can never be 'verified' this way."""
     settings = read_settings()
     if user_id != settings.receiver_user_id or not settings.is_mock_on:
         channels.reject_action(connection_id, None, ActionOutcome.NOT_ALLOWED)
@@ -112,7 +150,7 @@ def handle_verify_contact(connection_id: str, user_id: str, body: dict) -> None:
         return
     contact_row = graph.find_contact_row_for_user(settings.receiver_address, contact_user_id)
     if contact_row is None or not circle.verify_with_code(settings.receiver_address, contact_row, code, VerifiedVia.MOCK,
-                                                          datetime.now(timezone.utc)):
+                                                          datetime.now(timezone.utc), None):
         logger.info("contact verification refused for %s: %s", user_id, "unknown contact" if contact_row is None else "wrong, expired or no code")
         channels.reject_action(connection_id, None, ActionOutcome.NOT_APPLIED)
         return
@@ -121,19 +159,20 @@ def handle_verify_contact(connection_id: str, user_id: str, body: dict) -> None:
 
 
 def handle_whatsapp_text(inbound_text: whatsapp.InboundText) -> None:
-    """Typed text on Pidge's WhatsApp number: it verifies a PENDING contact only when it comes from that row's own number
-    and carries the live code. Anything else is logged and ignored; the text itself is never stored."""
+    """Typed text on Pidge's WhatsApp number: it checks a number only when it comes from a number still waiting on a row and
+    carries that row's live code. Anything else is logged and ignored; the text itself is never stored."""
     settings = read_settings()
     contact_row = circle.find_pending_contact_by_whatsapp(settings.receiver_address, inbound_text.sender_number)
     if contact_row is None:
         logger.info("WhatsApp text %s from a number with no pending contact; ignored", inbound_text.message_id)
         return
-    if not circle.verify_with_code(settings.receiver_address, contact_row, inbound_text.text, VerifiedVia.WHATSAPP, datetime.now(timezone.utc)):
+    if not circle.verify_with_code(settings.receiver_address, contact_row, inbound_text.text, VerifiedVia.WHATSAPP,
+                                   datetime.now(timezone.utc), inbound_text.sender_number):
         logger.info("WhatsApp text %s did not verify %s: wrong or expired code", inbound_text.message_id, contact_row["SK"])
         return
     logger.info("contact %s verified via %s", contact_row["SK"], VerifiedVia.WHATSAPP)
     push_circle_state(settings)
-    send_welcome(contact_row["contactWhatsApp"], settings.receiver_name)
+    send_welcome(inbound_text.sender_number, settings.receiver_name)  # the number that sent the code back
 
 
 def send_welcome(destination_number: str, receiver_name: str) -> None:

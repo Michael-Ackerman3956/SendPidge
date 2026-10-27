@@ -6,22 +6,24 @@ from decimal import Decimal
 
 import pytest
 
-from shared import channels, graph
-from shared.enums import Channel
+from shared import channels, graph, reach_points
+from shared.enums import Channel, VerifiedVia
 
 REQUEST_ROW = {"PK": "REQUEST#req-1", "SK": "META", "emailId": "inbox/fake.eml", "verdict": {"summary": "Asks for money."}}
-CONTACT = graph.Contact("CONTACT#jimin", "Jimin", "jimin", contact_rcs="+821012345678", contact_whatsapp="+821012345678")
+CONTACT = graph.Contact("CONTACT#jimin", "Jimin", "jimin", (
+    reach_points.ReachPoint(Channel.RCS, "+821012345678", VerifiedVia.SEED), reach_points.ReachPoint(Channel.WHATSAPP, "+821012345678", VerifiedVia.SEED),
+))
 
 
 def sender_returning(channel: Channel):
-    def send(request_row, contact, receiver_name):
+    def send(request_row, contact, receiver_name, destination):
         return channel
     send.__name__ = f"ask_on_{channel}"
     return send
 
 
 def sender_failing(channel: Channel):
-    def send(request_row, contact, receiver_name):
+    def send(request_row, contact, receiver_name, destination):
         raise RuntimeError(f"{channel} is down")
     send.__name__ = f"ask_on_{channel}"
     return send
@@ -52,7 +54,7 @@ def test_a_channel_without_a_contact_address_is_skipped(monkeypatch):
     monkeypatch.setattr(channels, "ask_in_app", sender_returning(Channel.INAPP))
     monkeypatch.setattr(channels, "ask_on_rcs", sender_failing(Channel.RCS))
     monkeypatch.setattr(channels, "ask_on_whatsapp", sender_returning(Channel.WHATSAPP))
-    whatsapp_only = graph.Contact("CONTACT#jimin", "Jimin", "jimin", contact_whatsapp="+821012345678")
+    whatsapp_only = graph.Contact("CONTACT#jimin", "Jimin", "jimin", (reach_points.ReachPoint(Channel.WHATSAPP, "+821012345678", VerifiedVia.SEED),))
     assert asyncio.run(channels.ask_on_every_channel(REQUEST_ROW, whatsapp_only, "Grandma")) == [Channel.INAPP, Channel.WHATSAPP]
 
 

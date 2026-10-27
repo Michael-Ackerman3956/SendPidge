@@ -39,7 +39,7 @@ class ReasonCode(StrEnum):
     AUTH_MISSING = "auth_missing"      # no X-Pidge-Auth header at all
     AUTH_TAMPERED = "auth_tampered"    # more than one X-Pidge-Auth header
     AUTH_FAILED = "auth_failed"      # neither SPF nor DKIM passed at ingress
-    UNKNOWN_ADDRESS = "unknown_address"        # gate 1: a contact's display name from an address not in knownAddresses
+    UNKNOWN_ADDRESS = "unknown_address"        # gate 1: a contact's display name from an address they are not known to write from
     ESCALATION_CLEARED = "escalation_cleared"  # the second reviewer said a mark is enough (gate 2 only)
     ESCALATION_FAILED = "escalation_failed"    # the second reviewer could not answer; the hold stays
     PERSON_CONFLICT = "person_conflict"        # the two models named different people; the hold stays
@@ -239,7 +239,8 @@ class PushMessageType(StrEnum):
     CONTACT_NOTICE = "contact_notice"        # to the contact: one fixed sentence (the bank replied to the receiver's case)
     PIDGE_REPLY = "pidge_reply"              # to the receiver: Pidge's answer to her question, or a refusal
     CONTACT_ADDED = "contact_added"          # to the receiver's own socket once: the new circle entry, the note to send and its code
-    CIRCLE_STATE = "circle_state"            # to the receiver: the circle changed (someone added or verified)
+    CIRCLE_STATE = "circle_state"            # to the receiver: the circle changed (someone added, edited or verified)
+    CONTACT_EDITED = "contact_edited"        # to her own socket once: the edit is saved; a note and code when it added a number
 
 
 class ClientAction(StrEnum):
@@ -257,6 +258,7 @@ class ClientAction(StrEnum):
     ASK_PIDGE = "ask_pidge"                            # the receiver: a question typed in the Pidge chat window
     ADD_CONTACT = "add_contact"                        # the receiver: the Add-someone form → a pending CONTACT# row
     VERIFY_CONTACT = "verify_contact"                  # the receiver: plays the contact's code reply (CONTACT_VERIFICATION_MOCK only)
+    EDIT_CONTACT = "edit_contact"                      # the receiver: the same form saved on an existing CONTACT# row
 
 
 class PushNotice(StrEnum):
@@ -273,7 +275,7 @@ class VerifiedVia(StrEnum):
     PENDING = "pending"    # added from the app; the code has not come back from the contact's own number yet
     SEED = "seed"          # written by scripts/seed_graph.py
     MOCK = "mock"          # the receiver's own PWA played the reply with CONTACT_VERIFICATION_MOCK on (labelled demo)
-    WHATSAPP = "whatsapp"  # the code arrived as a WhatsApp text from the row's contactWhatsApp number
+    WHATSAPP = "whatsapp"  # the code arrived as a WhatsApp text from that number
 
 
 class RecoveryDraftKind(StrEnum):
@@ -361,6 +363,7 @@ class ActionOutcome(StrEnum):
     BAD_MESSAGE = "bad_message"    # unparseable or missing fields
     DUPLICATE_NAME = "duplicate_name"  # add_contact: the circle already has that name (asks are matched by name)
     CIRCLE_FULL = "circle_full"        # add_contact: the circle has CIRCLE_MAXIMUM_SIZE people
+    LAST_CHECKED_NUMBER = "last_checked_number"  # edit_contact: the edit drops every checked WhatsApp number
 
 
 class CaseState(StrEnum):

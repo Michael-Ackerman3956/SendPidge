@@ -27,7 +27,7 @@ class PolicyOutcome:
     contact: Contact | None = None  # who gets asked on a HOLD
     gate: GateFired | None = None
     friction: Friction | None = None
-    is_address_known: bool = False  # the sender address is on the asked contact's knownAddresses
+    is_address_known: bool = False  # the sender address is one the asked contact is known to write from
 
 
 @dataclass(frozen=True)

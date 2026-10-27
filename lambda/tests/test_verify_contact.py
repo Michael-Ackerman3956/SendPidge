@@ -11,8 +11,8 @@ from tests.test_verdict import BUCKET_NAME, CONTACT_EMAIL, JIMIN_WHATSAPP_NUMBER
 
 CONTACT_SORT_KEY = "CONTACT#jimin"
 OTHER_RECEIVER_ADDRESS = "someone-else@example.com"
-MINSOO_FORM = {"action": "add_contact", "contactName": "Minsoo", "relationship": "son", "whatsappNumber": "+821098765432",
-               "emailAddress": "minsoo@example.com"}
+MINSOO_FORM = {"action": "add_contact", "contactName": "Minsoo", "relationship": "son", "whatsappNumbers": ["+821098765432"],
+               "phoneNumbers": [], "emailAddresses": ["minsoo@example.com"]}
 
 
 @pytest.fixture
@@ -40,10 +40,11 @@ def verdict_handler(aws, monkeypatch):  # noqa: F811
 
 
 def seed_circle_contact(receiver_address: str = RECEIVER_ADDRESS, contact_user_id: str = "jimin") -> dict:
-    """The seed_graph.py row shape, with a WhatsApp number and no RCS number."""
+    """The seed_graph.py row shape, with a WhatsApp number and no RCS number; like the live row, the address the sample
+    email comes from (knownAddresses) is not the one the ask and the receipt go to (contactEmail)."""
     contact_row = {
         "PK": f"RECEIVER#{receiver_address}", "SK": f"CONTACT#{contact_user_id}", "contactName": contact_user_id.title(),
-        "contactPwaUserId": contact_user_id, "knownAddresses": [f"{contact_user_id}@example.com"], "verifiedVia": "seed",
+        "contactPwaUserId": contact_user_id, "knownAddresses": [f"{contact_user_id}@family.example"], "verifiedVia": "seed",
         "contactWhatsApp": JIMIN_WHATSAPP_NUMBER, "contactEmail": CONTACT_EMAIL,
     }
     graph.get_table().put_item(Item=contact_row)
@@ -84,8 +85,11 @@ def test_the_right_code_marks_the_pending_contact_verified_in_place(verdict_hand
     verified_row = stored_contact_row(sort_key=pending_row["SK"])
     assert verified_row["verifiedVia"] == "mock"
     assert verified_row["verifiedAt"].endswith("Z")
-    unchanged_fields = ("contactWhatsApp", "knownAddresses", "contactEmail", "contactName", "contactPwaUserId", "relationship")
+    unchanged_fields = ("contactName", "contactPwaUserId", "relationship")
     assert {field: verified_row[field] for field in unchanged_fields} == {field: pending_row[field] for field in unchanged_fields}
+    [checked_number] = [point for point in verified_row["contactReachPoints"] if point["channel"] == "whatsapp"]
+    assert checked_number["verifiedVia"] == "mock"
+    assert verified_row["contactReachPoints"][1:] == pending_row["contactReachPoints"][1:]
     assert "verificationCodeHash" not in verified_row and "verificationExpiresAt" not in verified_row
     assert pushed_messages == []  # the new circle goes to every receiver socket (push_to_user), not back on this one
 

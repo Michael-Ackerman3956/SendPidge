@@ -1,18 +1,21 @@
 // Onboarding (RECEIVER): welcome → who to ask → the Add-someone form → send them the note → done. The server writes the
-// contact PENDING and sends back the note (code + the contact's own Pidge link) once, to this socket only; Grandma sends it
-// from her own phone. The row turns verified when the code comes back from the contact's WhatsApp number, or, with the
-// server's mock flag on, when the labelled demo button plays that reply. Nothing typed here is ever shown to anyone else.
-import { ACTION_REJECTED_REASON, CLIENT_ACTION, RELATIONSHIP, RELATIONSHIP_LABELS, VERIFIED_VIA } from "./constants.js";
-import { buildCopyButton, buildPidgeIconElement, createElementWithText } from "./dom-helpers.js";
+// contact PENDING and sends back the note (code + the contact's own Pidge link; an edit's note has the code only) once, to this socket only; Grandma sends it
+// from her own phone. Each WhatsApp number is checked when the code comes back from it (the row turns verified on the first),
+// or, with the server's mock flag on, when the labelled demo button plays that reply. Nothing typed here is shown to anyone else.
+// Edit opens the same form on someone already in the circle, filled from their reachPoints, with no welcome steps and no dots.
+import { ACTION_REJECTED_REASON, CHANNEL, CLIENT_ACTION, RELATIONSHIP, RELATIONSHIP_LABELS, VERIFIED_VIA } from "./constants.js";
+import {
+  CONTACT_ROW_LIST, FORM_ERROR_TEXT, SAVED_ROW_STATE_LABEL, describeSavedRowState, emptyFormDraft, formDraftFromCircleEntry,
+  isKnownRelationship, isLastCheckedWhatsAppRow, validateFormDraft,
+} from "./contact-form-draft.js";
+import { buildCopyButton, buildPidgeIconElement, buildSvgIcon, createElementWithText } from "./dom-helpers.js";
 import { getContactVerificationFlags, listCircleEntries } from "./circle-view.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
 
 const STEP_COUNT = 5;
-const CONTACT_NAME_MAXIMUM_LENGTH = 40;
-const E164_PATTERN = /^\+[1-9]\d{6,14}$/;
-const EMAIL_ADDRESS_PATTERN = /^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$/;
-const EXTRA_ADDRESSES_MAXIMUM_COUNT = 5;
+const BACK_CHEVRON_PATH = "M15 5 8 12l7 7";
+const REMOVE_CROSS_PATH = "M6 6l12 12M18 6 6 18";
 
 const ONBOARDING_STEP = Object.freeze({
   WELCOME: 0,
@@ -22,32 +25,29 @@ const ONBOARDING_STEP = Object.freeze({
   DONE: 4,
 });
 
-// Where onboarding opens: the first run from the welcome, "Add someone" straight at the form.
+// Back walks one step back; the waiting and done steps have no step before them (the contact is already written).
+const PREVIOUS_STEP = Object.freeze({
+  [ONBOARDING_STEP.WHO_TO_ASK]: ONBOARDING_STEP.WELCOME,
+  [ONBOARDING_STEP.ADD_CONTACT]: ONBOARDING_STEP.WHO_TO_ASK,
+});
+
+// Where onboarding opens: the first run from the welcome, "Add someone" straight at the form, a Circle row in edit.
 export const ONBOARDING_START = Object.freeze({
   WELCOME: "welcome",
   ADD_CONTACT: "add_contact",
-});
-
-const FORM_ERROR_TEXT = Object.freeze({
-  NAME: "Enter their name (up to 40 letters).",
-  WHATSAPP: "Enter their WhatsApp number with the country code, like +82 10 1234 5678.",
-  EMAIL: "Enter the email address they write from.",
-  EXTRA: "Up to 5 other addresses, one per line.",
-  DUPLICATE_NAME: "Someone with that name is already in your circle.",
-  CIRCLE_FULL: "Your circle is full.",
+  EDIT_CONTACT: "edit_contact",
 });
 
 let activeStep = ONBOARDING_STEP.WELCOME;
-let addedContact = null; // {contactUserId, contactName, noteText, code} from the contact_added push
-let isAddInFlight = false;
+let openedAtStep = ONBOARDING_STEP.WELCOME;
+let editedContact = null; // the circle entry being edited; null while adding
+let contactAwaitingCode = null; // {contactUserId, contactName, noteText, code, waitingNumbers} from contact_added or contact_edited
+let isFormInFlight = false;
 let isVerifyInFlight = false;
 let formErrorText = "";
-function emptyFormDraft() {
-  return { contactName: "", relationship: RELATIONSHIP.GRANDSON, whatsappNumber: "", emailAddress: "", extraAddressesText: "" };
-}
-
 let formDraft = emptyFormDraft();
 let onFinished = () => {};
+let onExited = () => {};
 
 const pageElements = {
   topbarTitle: document.getElementById("topbar-title"),
@@ -76,19 +76,43 @@ function buildStepDots() {
   return dots;
 }
 
+// From the step setup opened on, or a step with none before it, Back leaves setup. It waits while the form is in flight,
+// because the note is taken only on the form step.
+function handleUserTappedBack() {
+  const previousStep = PREVIOUS_STEP[activeStep];
+  if (activeStep === openedAtStep || previousStep === undefined) {
+    onExited();
+    return;
+  }
+  formErrorText = "";
+  advanceToStep(previousStep);
+}
+
+function buildBackButton() {
+  const backButton = createElementWithText("button", "onboarding-back-button");
+  backButton.type = "button";
+  backButton.disabled = isFormInFlight;
+  backButton.append(buildSvgIcon("onboarding-back-icon", BACK_CHEVRON_PATH), createElementWithText("span", "", "Back"));
+  backButton.addEventListener("click", handleUserTappedBack);
+  return backButton;
+}
+
 function buildStepFrame(titleText, subtitleText, ...bodyChildren) {
   const frame = createElementWithText("div", "onboarding-step");
   const hero = createElementWithText("div", "onboarding-hero");
   hero.append(buildPidgeIconElement("onboarding-pidge", ""));
-  frame.append(hero, createElementWithText("h2", "onboarding-title", titleText));
+  frame.append(buildBackButton(), hero, createElementWithText("h2", "onboarding-title", titleText));
   if (subtitleText) frame.append(createElementWithText("p", "onboarding-subtitle", subtitleText));
-  frame.append(...bodyChildren, createElementWithText("div", "onboarding-grow"), buildStepDots());
+  frame.append(...bodyChildren, createElementWithText("div", "onboarding-grow"));
+  if (editedContact === null) frame.append(buildStepDots());
   return frame;
 }
 
+// A new step moves focus to its title (a re-render of the same step leaves focus where it is).
 function advanceToStep(step) {
   activeStep = step;
   renderOnboarding();
+  pageElements.onboardingScreen.querySelector(".onboarding-title")?.focus();
 }
 
 // ---- the form ----
@@ -111,10 +135,18 @@ function buildTextInput(name, inputType, autocomplete, placeholder) {
   return input;
 }
 
+// A seeded person has no relationship yet: "Choose" shows until she picks one.
 function buildRelationshipSelect() {
   const select = document.createElement("select");
   select.name = "relationship";
   select.className = "onboarding-input";
+  if (!isKnownRelationship(formDraft.relationship)) {
+    const choosePrompt = createElementWithText("option", "", "Choose");
+    choosePrompt.value = "";
+    choosePrompt.selected = true;
+    choosePrompt.disabled = true;
+    select.append(choosePrompt);
+  }
   Object.values(RELATIONSHIP).forEach((relationship) => {
     const option = createElementWithText("option", "", RELATIONSHIP_LABELS[relationship]);
     option.value = relationship;
@@ -125,50 +157,97 @@ function buildRelationshipSelect() {
   return select;
 }
 
-function buildExtraAddressesInput() {
-  const textarea = document.createElement("textarea");
-  textarea.name = "extraAddressesText";
-  textarea.className = "onboarding-input";
-  textarea.rows = 2;
-  textarea.placeholder = "Optional, one per line";
-  textarea.value = formDraft.extraAddressesText;
-  textarea.addEventListener("input", () => { formDraft.extraAddressesText = textarea.value; });
-  return textarea;
+function renderSavedRowState(stateElement, rowList, typedValue) {
+  const stateLabel = describeSavedRowState(editedContact, rowList, typedValue, Date.now());
+  stateElement.hidden = stateLabel === null;
+  stateElement.textContent = stateLabel === null ? "" : stateLabel; // the input's description: never a stale label
+  stateElement.classList.toggle("is-checked", stateLabel === SAVED_ROW_STATE_LABEL.CHECKED);
 }
 
-function normalizeWhatsAppNumber(typedNumber) {
-  return typedNumber.replace(/[\s().-]/g, "");
+function rowInputName(rowList, rowIndex) {
+  return `${rowList.draftKey}${rowIndex}`;
 }
 
-function parseExtraAddresses(typedText) {
-  return typedText.split(/[\n,]/).map((address) => address.trim().toLowerCase()).filter((address) => address !== "");
+function focusRowInput(rowList, rowIndex) {
+  pageElements.onboardingScreen.querySelector(`input[name="${rowInputName(rowList, rowIndex)}"]`)?.focus();
 }
 
-// Mirrors shared/circle.py's parse_contact_form; the server is the judge, this only saves a round trip.
-function validateFormDraft() {
-  const contactName = formDraft.contactName.trim().replace(/\s+/g, " ");
-  if (contactName === "" || contactName.length > CONTACT_NAME_MAXIMUM_LENGTH) return { errorText: FORM_ERROR_TEXT.NAME };
-  const whatsappNumber = normalizeWhatsAppNumber(formDraft.whatsappNumber);
-  if (!E164_PATTERN.test(whatsappNumber)) return { errorText: FORM_ERROR_TEXT.WHATSAPP };
-  const emailAddress = formDraft.emailAddress.trim().toLowerCase();
-  if (!EMAIL_ADDRESS_PATTERN.test(emailAddress)) return { errorText: FORM_ERROR_TEXT.EMAIL };
-  const extraAddresses = parseExtraAddresses(formDraft.extraAddressesText);
-  if (extraAddresses.length > EXTRA_ADDRESSES_MAXIMUM_COUNT || !extraAddresses.every((address) => EMAIL_ADDRESS_PATTERN.test(address))) {
-    return { errorText: FORM_ERROR_TEXT.EXTRA };
+function buildRowInput(rowList, rowIndex, stateElement) {
+  const input = document.createElement("input");
+  input.type = rowList.inputType;
+  input.name = rowInputName(rowList, rowIndex);
+  input.autocomplete = rowIndex === 0 ? rowList.autocomplete : "off";
+  input.placeholder = rowIndex === 0 ? rowList.placeholder : "";
+  input.className = "onboarding-input";
+  input.setAttribute("aria-label", `${rowList.label} ${rowIndex + 1}`);
+  input.setAttribute("aria-describedby", stateElement.id);
+  input.value = formDraft[rowList.draftKey][rowIndex];
+  input.addEventListener("input", () => {
+    formDraft[rowList.draftKey][rowIndex] = input.value;
+    renderSavedRowState(stateElement, rowList, input.value);
+  });
+  return input;
+}
+
+function buildRemoveRowButton(rowList, rowIndex, stateElement) {
+  const removeButton = createElementWithText("button", "onboarding-remove-row-button");
+  removeButton.type = "button";
+  removeButton.disabled = isLastCheckedWhatsAppRow(formDraft, editedContact, rowList, rowIndex);
+  removeButton.setAttribute("aria-label", `Remove ${rowList.label} ${rowIndex + 1}`);
+  removeButton.setAttribute("aria-describedby", stateElement.id);
+  removeButton.append(buildSvgIcon("onboarding-remove-row-icon", REMOVE_CROSS_PATH));
+  removeButton.addEventListener("click", () => {
+    formDraft[rowList.draftKey].splice(rowIndex, 1);
+    renderOnboarding();
+    focusRowInput(rowList, rowIndex - 1);
+  });
+  return removeButton;
+}
+
+function handleUserAddedRow(rowList) {
+  formDraft[rowList.draftKey].push("");
+  renderOnboarding();
+  focusRowInput(rowList, formDraft[rowList.draftKey].length - 1);
+}
+
+// One group of rows: the first row stays, the rest can be removed, and "+ Add" stops at the server's maximum.
+function buildRepeatableRows(rowList) {
+  const rowValues = formDraft[rowList.draftKey];
+  const group = createElementWithText("div", "onboarding-field");
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", rowList.label);
+  group.append(createElementWithText("span", "onboarding-field-label", rowList.label));
+  rowValues.forEach((_, rowIndex) => {
+    const row = createElementWithText("div", "onboarding-repeat-row");
+    const stateElement = createElementWithText("span", "onboarding-row-state");
+    stateElement.id = `${rowInputName(rowList, rowIndex)}-state`;
+    renderSavedRowState(stateElement, rowList, rowValues[rowIndex]);
+    row.append(buildRowInput(rowList, rowIndex, stateElement), stateElement);
+    if (rowIndex > 0) row.append(buildRemoveRowButton(rowList, rowIndex, stateElement));
+    group.append(row);
+  });
+  if (rowValues.length < rowList.maximumRows) {
+    const addRowButton = createElementWithText("button", "onboarding-add-row-button", rowList.addLabel);
+    addRowButton.type = "button";
+    addRowButton.addEventListener("click", () => handleUserAddedRow(rowList));
+    group.append(addRowButton);
   }
-  return { form: { contactName, relationship: formDraft.relationship, whatsappNumber, emailAddress, extraAddresses } };
+  return group;
 }
 
 function handleUserSubmittedContactForm() {
   clearActionStatusMessage();
-  const { errorText, form } = validateFormDraft();
+  const { errorText, form } = validateFormDraft(formDraft);
   if (errorText) { formErrorText = errorText; renderOnboarding(); return; }
-  if (!sendClientAction({ action: CLIENT_ACTION.ADD_CONTACT, ...form })) {
+  const action = editedContact === null
+    ? { action: CLIENT_ACTION.ADD_CONTACT, ...form }
+    : { action: CLIENT_ACTION.EDIT_CONTACT, contactUserId: editedContact.contactUserId, ...form };
+  if (!sendClientAction(action)) {
     showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
     return;
   }
   formErrorText = "";
-  isAddInFlight = true;
+  isFormInFlight = true;
   renderOnboarding();
 }
 
@@ -178,8 +257,13 @@ async function handleUserChoseFromContacts() {
     const [picked] = await navigator.contacts.select(["name", "email", "tel"], { multiple: false });
     if (!picked) return;
     if (typeof picked.name?.[0] === "string") formDraft.contactName = picked.name[0];
-    if (typeof picked.email?.[0] === "string") formDraft.emailAddress = picked.email[0];
-    if (typeof picked.tel?.[0] === "string") formDraft.whatsappNumber = picked.tel[0];
+    const pickedEmailAddresses = Array.isArray(picked.email) ? picked.email.filter((address) => typeof address === "string") : [];
+    if (pickedEmailAddresses.length > 0) formDraft.emailAddresses = pickedEmailAddresses.slice(0, CONTACT_ROW_LIST.EMAIL.maximumRows);
+    const pickedNumbers = Array.isArray(picked.tel) ? picked.tel.filter((number) => typeof number === "string") : [];
+    if (pickedNumbers.length > 0) { // the card cannot say which number has WhatsApp: the first goes there, the rest to Phone
+      formDraft.whatsappNumbers = [pickedNumbers[0]];
+      formDraft.phoneNumbers = pickedNumbers.length > 1 ? pickedNumbers.slice(1, 1 + CONTACT_ROW_LIST.PHONE.maximumRows) : [""];
+    }
     renderOnboarding();
   } catch (error) {
     console.warn("SendPidge: the contact picker was closed or refused", error);
@@ -188,17 +272,24 @@ async function handleUserChoseFromContacts() {
 
 function buildContactForm() {
   const form = createElementWithText("div", "onboarding-form");
-  if (typeof navigator.contacts?.select === "function") form.append(buildSecondaryButton("Choose from contacts", handleUserChoseFromContacts));
+  if (editedContact === null && typeof navigator.contacts?.select === "function") {
+    form.append(buildSecondaryButton("Choose from contacts", handleUserChoseFromContacts));
+  }
   form.append(
     buildField("Name", buildTextInput("contactName", "text", "name", "")),
     buildField("Who they are", buildRelationshipSelect()),
-    buildField("WhatsApp number", buildTextInput("whatsappNumber", "tel", "tel", "+82 10 1234 5678")),
-    buildField("Email they write from", buildTextInput("emailAddress", "email", "email", "")),
-    buildField("Other addresses", buildExtraAddressesInput()),
+    buildRepeatableRows(CONTACT_ROW_LIST.WHATSAPP),
+    buildRepeatableRows(CONTACT_ROW_LIST.PHONE),
+    buildRepeatableRows(CONTACT_ROW_LIST.EMAIL),
   );
-  if (formErrorText) form.append(createElementWithText("p", "onboarding-form-error", formErrorText));
-  const submitButton = buildPrimaryButton(isAddInFlight ? "Adding…" : "Add to my circle", handleUserSubmittedContactForm);
-  submitButton.disabled = isAddInFlight;
+  if (formErrorText) {
+    const formError = createElementWithText("p", "onboarding-form-error", formErrorText);
+    formError.setAttribute("role", "alert");
+    form.append(formError);
+  }
+  const submitLabel = editedContact === null ? (isFormInFlight ? "Adding…" : "Add to my circle") : (isFormInFlight ? "Saving…" : "Save");
+  const submitButton = buildPrimaryButton(submitLabel, handleUserSubmittedContactForm);
+  submitButton.disabled = isFormInFlight;
   form.append(submitButton);
   return form;
 }
@@ -207,7 +298,8 @@ function buildContactForm() {
 
 function handleUserPlayedContactReply() {
   clearActionStatusMessage();
-  if (!sendClientAction({ action: CLIENT_ACTION.VERIFY_CONTACT, contactUserId: addedContact.contactUserId, code: addedContact.code })) {
+  const { contactUserId, code } = contactAwaitingCode;
+  if (!sendClientAction({ action: CLIENT_ACTION.VERIFY_CONTACT, contactUserId, code })) {
     showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
     return;
   }
@@ -223,23 +315,23 @@ function buildShareButton(noteText) {
 
 function buildWaitStep() {
   const notePreview = createElementWithText("div", "onboarding-code-preview");
-  notePreview.append(createElementWithText("p", "onboarding-code-to", `To ${addedContact.contactName}`),
-    createElementWithText("p", "onboarding-note-text", addedContact.noteText));
+  notePreview.append(createElementWithText("p", "onboarding-code-to", `To ${contactAwaitingCode.contactName}`),
+    createElementWithText("p", "onboarding-note-text", contactAwaitingCode.noteText));
   const noteActions = createElementWithText("div", "onboarding-note-actions");
-  if (typeof navigator.share === "function") noteActions.append(buildShareButton(addedContact.noteText));
-  noteActions.append(buildCopyButton(addedContact.noteText));
+  if (typeof navigator.share === "function") noteActions.append(buildShareButton(contactAwaitingCode.noteText));
+  noteActions.append(buildCopyButton(contactAwaitingCode.noteText));
   const waitRow = createElementWithText("p", "onboarding-wait-row");
-  waitRow.append(createElementWithText("span", "checking-pulse"), createElementWithText("span", "", `Waiting for ${addedContact.contactName}`));
+  waitRow.append(createElementWithText("span", "checking-pulse"), createElementWithText("span", "", `Waiting for ${contactAwaitingCode.contactName}`));
   const children = [notePreview, noteActions, waitRow];
   if (getContactVerificationFlags().mock) {
-    const demoButton = buildSecondaryButton(isVerifyInFlight ? "Sending…" : `Demo: ${addedContact.contactName} replies ${addedContact.code}`, handleUserPlayedContactReply);
+    const demoButton = buildSecondaryButton(isVerifyInFlight ? "Sending…" : `Demo: ${contactAwaitingCode.contactName} replies ${contactAwaitingCode.code}`, handleUserPlayedContactReply);
     demoButton.disabled = isVerifyInFlight;
     children.push(createElementWithText("p", "onboarding-demo-note", "Demo: nothing is sent. The reply is played by the button."), demoButton);
   }
   const subtitleText = getContactVerificationFlags().whatsapp
     ? "Send it from your own phone. When they reply to Pidge with the code, they are in."
     : "Send it from your own phone. This stack cannot take their reply on WhatsApp yet.";
-  return buildStepFrame(`Send ${addedContact.contactName} this note`, subtitleText, ...children);
+  return buildStepFrame(`Send ${contactAwaitingCode.contactName} this note`, subtitleText, ...children);
 }
 
 function buildStepElement() {
@@ -251,11 +343,11 @@ function buildStepElement() {
       return buildStepFrame("Who should Pidge ask?", "The people who write to you. Pidge only ever contacts them.",
         buildPrimaryButton("Add someone", () => advanceToStep(ONBOARDING_STEP.ADD_CONTACT)));
     case ONBOARDING_STEP.ADD_CONTACT:
-      return buildStepFrame("Add someone", "", buildContactForm());
+      return buildStepFrame(editedContact === null ? "Add someone" : `Edit ${editedContact.contactName}`, "", buildContactForm());
     case ONBOARDING_STEP.WAIT_FOR_CODE:
       return buildWaitStep();
     default:
-      return buildStepFrame(`${addedContact.contactName} said yes.`, "From now on, an email in their name gets checked with them before it can ask you for anything.",
+      return buildStepFrame(`${contactAwaitingCode.contactName} said yes.`, "From now on, an email in their name gets checked with them before it can ask you for anything.",
         buildPrimaryButton("Open my inbox", () => onFinished()));
   }
 }
@@ -265,41 +357,71 @@ function renderOnboarding() {
   pageElements.onboardingScreen.querySelector(".onboarding-title")?.setAttribute("tabindex", "-1");
 }
 
-// The contact_added reply to this socket's add_contact: the note to send, shown once.
-export function handleContactAddedPush(pushMessage) {
-  if (pageElements.onboardingScreen.hidden || activeStep !== ONBOARDING_STEP.ADD_CONTACT || !isAddInFlight) {
-    console.warn("SendPidge: contact_added arrived with no add in flight (reload or late reply); add the person again for a new note");
-    return;
-  }
+function isFormReplyInFlight(pushMessageType, isEditReply) {
+  const isInFlight = !pageElements.onboardingScreen.hidden && activeStep === ONBOARDING_STEP.ADD_CONTACT && isFormInFlight
+    && (editedContact !== null) === isEditReply;
+  if (!isInFlight) console.warn(`SendPidge: ${pushMessageType} arrived with nothing in flight (reload or late reply)`);
+  return isInFlight;
+}
+
+// A push missing a field is reported, and the form comes back so she can save again.
+function hasContactNoteFields(pushMessage) {
   const contact = pushMessage.contact;
-  if (typeof contact?.contactUserId !== "string" || typeof contact.contactName !== "string"
-    || typeof pushMessage.noteText !== "string" || typeof pushMessage.code !== "string") {
-    console.error("SendPidge: contact_added has a missing field", Object.keys(pushMessage)); // never the note or the code
+  const hasFields = typeof contact?.contactUserId === "string" && typeof contact.contactName === "string"
+    && Array.isArray(contact.reachPoints) && typeof pushMessage.noteText === "string" && typeof pushMessage.code === "string";
+  if (!hasFields) {
+    console.error(`SendPidge: ${pushMessage.type} has a missing field`, Object.keys(pushMessage)); // never the note or the code
     showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
-    return;
+    renderOnboarding();
   }
-  isAddInFlight = false;
-  addedContact = { contactUserId: contact.contactUserId, contactName: contact.contactName, noteText: pushMessage.noteText, code: pushMessage.code };
+  return hasFields;
+}
+
+// The note to send, shown once; the wait ends when one of the numbers waiting for this code sends it back.
+function showContactNote(pushMessage) {
+  const { contactUserId, contactName, reachPoints } = pushMessage.contact;
+  const waitingNumbers = reachPoints
+    .filter((point) => point.channel === CHANNEL.WHATSAPP && point.verifiedVia === VERIFIED_VIA.PENDING).map((point) => point.address);
+  contactAwaitingCode = { contactUserId, contactName, noteText: pushMessage.noteText, code: pushMessage.code, waitingNumbers };
   formDraft = emptyFormDraft();
   advanceToStep(ONBOARDING_STEP.WAIT_FOR_CODE);
 }
 
-// Called on every receiver sync_state and circle_state: the added contact no longer pending moves to the done step.
+// The contact_added reply to this socket's add_contact.
+export function handleContactAddedPush(pushMessage) {
+  if (!isFormReplyInFlight(pushMessage.type, false)) return;
+  isFormInFlight = false;
+  if (hasContactNoteFields(pushMessage)) showContactNote(pushMessage);
+}
+
+// The contact_edited reply to this socket's edit_contact: with a note (a number was added, or an expired code renewed) the
+// wait step shows it; without one the edit is saved and setup closes.
+export function handleContactEditedPush(pushMessage) {
+  if (!isFormReplyInFlight(pushMessage.type, true)) return;
+  isFormInFlight = false;
+  if (pushMessage.noteText === null) onExited();
+  else if (hasContactNoteFields(pushMessage)) showContactNote(pushMessage);
+}
+
+// Called on every receiver sync_state and circle_state: once a number that waited for this code is checked, the done step.
 export function handleCircleSyncDuringOnboarding() {
-  if (pageElements.onboardingScreen.hidden || activeStep !== ONBOARDING_STEP.WAIT_FOR_CODE || addedContact === null) return;
-  const contact = listCircleEntries().find((entry) => entry.contactUserId === addedContact.contactUserId);
-  if (contact !== undefined && contact.verifiedVia !== VERIFIED_VIA.PENDING) {
+  if (pageElements.onboardingScreen.hidden || activeStep !== ONBOARDING_STEP.WAIT_FOR_CODE || contactAwaitingCode === null) return;
+  const contact = listCircleEntries().find((entry) => entry.contactUserId === contactAwaitingCode.contactUserId);
+  const isWaitingNumberChecked = contact?.reachPoints.some((point) => point.channel === CHANNEL.WHATSAPP
+    && contactAwaitingCode.waitingNumbers.includes(point.address) && point.verifiedVia !== VERIFIED_VIA.PENDING);
+  if (isWaitingNumberChecked) {
     isVerifyInFlight = false;
     advanceToStep(ONBOARDING_STEP.DONE);
   }
 }
 
-// A refused add shows why on the form (true: the rejection is consumed here); a refused demo reply re-enables the button.
+// A refused add or edit shows why on the form (true: the rejection is consumed here); a refused demo reply re-enables the button.
 export function handleOnboardingActionRejected(reason) {
-  if (isAddInFlight) {
-    isAddInFlight = false;
+  if (isFormInFlight) {
+    isFormInFlight = false;
     if (reason === ACTION_REJECTED_REASON.DUPLICATE_NAME) formErrorText = FORM_ERROR_TEXT.DUPLICATE_NAME;
     else if (reason === ACTION_REJECTED_REASON.CIRCLE_FULL) formErrorText = FORM_ERROR_TEXT.CIRCLE_FULL;
+    else if (reason === ACTION_REJECTED_REASON.LAST_CHECKED_NUMBER) formErrorText = FORM_ERROR_TEXT.LAST_CHECKED_NUMBER;
     else formErrorText = ACTION_STATUS_MESSAGE.GENERIC_FAILURE;
     renderOnboarding();
     return true;
@@ -310,18 +432,27 @@ export function handleOnboardingActionRejected(reason) {
   return false;
 }
 
-export function startOnboarding({ startStep, onFinishedCallback }) {
+// editedEntry: the circle entry for ONBOARDING_START.EDIT_CONTACT, else null.
+export function startOnboarding({ startStep, editedEntry, onFinishedCallback, onExitedCallback }) {
   onFinished = onFinishedCallback;
-  activeStep = startStep === ONBOARDING_START.ADD_CONTACT ? ONBOARDING_STEP.ADD_CONTACT : ONBOARDING_STEP.WELCOME;
-  addedContact = null;
-  isAddInFlight = false;
+  onExited = onExitedCallback;
+  openedAtStep = startStep === ONBOARDING_START.WELCOME ? ONBOARDING_STEP.WELCOME : ONBOARDING_STEP.ADD_CONTACT;
+  const wasEditing = editedContact !== null;
+  editedContact = startStep === ONBOARDING_START.EDIT_CONTACT ? editedEntry : null;
+  if (editedContact !== null) formDraft = formDraftFromCircleEntry(editedContact);
+  else if (wasEditing) formDraft = emptyFormDraft(); // an edit's values never carry into an add; an unsent add draft is kept until an edit opens
+  contactAwaitingCode = null;
+  isFormInFlight = false;
   isVerifyInFlight = false;
   formErrorText = "";
-  pageElements.topbarTitle.textContent = "Set up";
+  pageElements.topbarTitle.textContent = editedContact === null ? "Set up" : "Circle";
   pageElements.onboardingScreen.hidden = false;
-  renderOnboarding();
+  advanceToStep(openedAtStep);
 }
 
+// A reply that lands after this is dropped (isFormReplyInFlight), so nothing stays in flight to swallow a later rejection.
 export function hideOnboarding() {
   pageElements.onboardingScreen.hidden = true;
+  isFormInFlight = false;
+  isVerifyInFlight = false;
 }

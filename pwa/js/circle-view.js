@@ -1,7 +1,9 @@
 // Grandma's Circle tab (RECEIVER): the people Pidge can ask, from sync_state.circle and every circle_state push. Names come from
-// the server: textContent only. No number or address is on the wire; the reach chips say which channels the server has for each
-// person. sync_state.contactVerification says how a new contact can be verified on this stack (WhatsApp reply, labelled demo).
+// the server: textContent only. Each entry carries the numbers and emails she typed (reachPoints, her own sockets only) for the
+// edit form; the rows show none of them, only reach chips for the channels Pidge asks on. Tapping a row opens the edit form.
+// sync_state.contactVerification says how a new contact can be verified on this stack (WhatsApp reply, labelled demo).
 import { CHANNEL, RELATIONSHIP_LABELS, VERIFIED_VIA } from "./constants.js";
+import { isCodeExpired } from "./contact-form-draft.js";
 import { createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 
 const KNOWN_VERIFIED_VIA = new Set(Object.values(VERIFIED_VIA));
@@ -9,6 +11,7 @@ const REACH_CHIP_LABELS = Object.freeze({ [CHANNEL.INAPP]: "App", [CHANNEL.RCS]:
 
 const circleEntriesByUserId = new Map();
 let contactVerificationFlags = { whatsapp: false, mock: false };
+let onContactTapped = () => {};
 
 const pageElements = {
   topbarTitle: document.getElementById("topbar-title"),
@@ -20,18 +23,13 @@ const pageElements = {
 function isValidCircleEntry(entry) {
   const isValid = entry !== null && typeof entry === "object" && typeof entry.contactUserId === "string"
     && typeof entry.contactName === "string" && KNOWN_VERIFIED_VIA.has(entry.verifiedVia)
-    && entry.reach !== null && typeof entry.reach === "object";
+    && entry.reach !== null && typeof entry.reach === "object" && Array.isArray(entry.reachPoints);
   if (!isValid) console.error("SendPidge: circle entry has a missing field or unknown verifiedVia", entry);
   return isValid;
 }
 
-function isCodeExpired(entry) {
-  const expiresAtMilliseconds = parseTimestampMilliseconds(entry.codeExpiresAt);
-  return expiresAtMilliseconds !== null && expiresAtMilliseconds < Date.now();
-}
-
 function describeVerification(entry) {
-  if (entry.verifiedVia === VERIFIED_VIA.PENDING) return isCodeExpired(entry) ? "Code expired. Add them again" : "Waiting for their code";
+  if (entry.verifiedVia === VERIFIED_VIA.PENDING) return isCodeExpired(entry, Date.now()) ? "Code expired. Tap, then Save" : "Waiting for their code";
   if (entry.verifiedVia === VERIFIED_VIA.SEED) return "Set up for the demo";
   const verifiedAtMilliseconds = parseTimestampMilliseconds(entry.verifiedAt);
   const dayText = verifiedAtMilliseconds === null ? "" : ` ${new Date(verifiedAtMilliseconds).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
@@ -44,17 +42,24 @@ function describeContact(entry) {
 }
 
 function buildCircleRowElement(entry) {
-  const row = createElementWithText("li", "circle-row");
+  const item = createElementWithText("li", "circle-item");
+  const row = createElementWithText("button", "circle-row");
+  row.type = "button";
+  row.addEventListener("click", () => onContactTapped(entry));
   const avatar = createElementWithText("span", "avatar-initial", (entry.contactName.trim()[0] || "?").toUpperCase());
   avatar.setAttribute("aria-hidden", "true");
-  const nameBlock = createElementWithText("div", "circle-name-block");
-  nameBlock.append(createElementWithText("p", "circle-name", entry.contactName), createElementWithText("p", "circle-detail", describeContact(entry)));
-  const reachRow = createElementWithText("div", "circle-reach");
+  const nameBlock = createElementWithText("span", "circle-name-block");
+  nameBlock.append(createElementWithText("span", "circle-name", entry.contactName), createElementWithText("span", "circle-detail", describeContact(entry)));
+  const reachRow = createElementWithText("span", "circle-reach");
   Object.entries(REACH_CHIP_LABELS).forEach(([channel, label]) => {
-    reachRow.append(createElementWithText("span", entry.reach[channel] === true ? "reach-chip is-on" : "reach-chip", label));
+    const isReached = entry.reach[channel] === true;
+    const chip = createElementWithText("span", isReached ? "reach-chip is-on" : "reach-chip", label);
+    if (!isReached) chip.setAttribute("aria-hidden", "true"); // the button reads only the channels that reach them
+    reachRow.append(chip);
   });
   row.append(avatar, nameBlock, reachRow);
-  return row;
+  item.append(row);
+  return item;
 }
 
 function renderCircle() {
@@ -92,8 +97,9 @@ export function listCircleEntries() {
   return [...circleEntriesByUserId.values()];
 }
 
-export function startCircleView(onAddTapped) {
+export function startCircleView({ onAddTapped, onContactTapped: onContactTappedCallback }) {
   pageElements.addButton.addEventListener("click", onAddTapped);
+  onContactTapped = onContactTappedCallback;
 }
 
 export function showCircleView() {

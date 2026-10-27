@@ -8,13 +8,14 @@ import pytest
 
 import time
 
-from shared import ask_link, channels, email_ask, verdict, graph
-from shared.enums import ActionOutcome, Channel, EmailedAnswerOutcome, RequestState, VerdictAnswer
+from shared import ask_link, channels, email_ask, graph, reach_points, verdict
+from shared.enums import ActionOutcome, Channel, EmailedAnswerOutcome, RequestState, VerdictAnswer, VerifiedVia
 from tests.test_channels import REQUEST_ROW, sender_returning
 from tests.test_verdict import BUCKET_NAME, CONTACT_EMAIL, aws, new_request, status_of  # noqa: F401
 from tests.test_verify_contact import verdict_handler  # noqa: F401
 
-CONTACT_WITH_EMAIL = graph.Contact("CONTACT#jimin", "Jimin", "jimin", contact_whatsapp="+821012345678", contact_email=CONTACT_EMAIL)
+JIMIN_WHATSAPP_POINT = reach_points.ReachPoint(Channel.WHATSAPP, "+821012345678", VerifiedVia.SEED)
+CONTACT_WITH_EMAIL = graph.Contact("CONTACT#jimin", "Jimin", "jimin", (JIMIN_WHATSAPP_POINT, reach_points.ReachPoint(Channel.EMAIL, CONTACT_EMAIL, None)))
 REPLY_OBJECT_KEY = "asks/reply-1.eml"
 REPLY_MESSAGE_ID = "<reply-1@example.com>"
 
@@ -38,7 +39,7 @@ def test_email_joins_the_fan_out_only_with_the_flag_and_an_address(monkeypatch):
     monkeypatch.setattr(channels, "ask_on_email", sender_returning(Channel.EMAIL))
     sent = asyncio.run(channels.ask_on_every_channel(REQUEST_ROW, CONTACT_WITH_EMAIL, "Grandma"))
     assert sent == [Channel.INAPP, Channel.WHATSAPP, Channel.EMAIL]
-    without_email = graph.Contact("CONTACT#jimin", "Jimin", "jimin", contact_whatsapp="+821012345678")
+    without_email = graph.Contact("CONTACT#jimin", "Jimin", "jimin", (JIMIN_WHATSAPP_POINT,))
     assert asyncio.run(channels.ask_on_every_channel(REQUEST_ROW, without_email, "Grandma")) == [Channel.INAPP, Channel.WHATSAPP]
     monkeypatch.setattr(channels, "EMAIL_ASK_ENABLED", False)
     assert asyncio.run(channels.ask_on_every_channel(REQUEST_ROW, CONTACT_WITH_EMAIL, "Grandma")) == [Channel.INAPP, Channel.WHATSAPP]
@@ -56,7 +57,7 @@ def test_the_ask_goes_from_pidge_to_the_contacts_own_address_with_the_request_id
             return {"MessageId": "ses-1"}
 
     monkeypatch.setattr(channels, "get_ses_client", lambda: FakeSesClient())
-    assert channels.ask_on_email(REQUEST_ROW, CONTACT_WITH_EMAIL, "Grandma") is Channel.EMAIL
+    assert channels.ask_on_email(REQUEST_ROW, CONTACT_WITH_EMAIL, "Grandma", CONTACT_EMAIL) is Channel.EMAIL
     [message] = sent_messages
     assert (message["FromEmailAddress"], message["Destination"]) == ("pidge@sendpidge.example", {"ToAddresses": [CONTACT_EMAIL]})
     assert message["Content"]["Simple"]["Subject"]["Data"] == "Pidge: was this you? [req-1]"
