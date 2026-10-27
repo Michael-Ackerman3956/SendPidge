@@ -54,12 +54,51 @@ class ReasonCode(StrEnum):
     LOOKALIKE_SENDER_DOMAIN = "lookalike_sender_domain"  # a sender domain that imitates a family domain
     REPORTED_SENDER = "reported_sender"                  # tier 0: Grandma reported this exact address before (Confirm)
     LIST_LOOKUP_FAILED = "list_lookup_failed"            # the scam-list read failed; the email is marked, never passed silently
+    WHOLE_BODY_LINK = "whole_body_link"                  # one anchor's text is most of the HTML body, so any click goes there
+    SCRIPT_HREF_LINK = "script_href_link"                # a javascript:, vbscript: or data: href that runs code instead of opening a page
+    CSS_HIDDEN_LINK = "css_hidden_link"                  # an anchor hidden by its own or an ancestor's inline style or hidden attribute
+    IMAGE_MAP_LINK = "image_map_link"                    # an <area href> inside an image map
+    HTML_ATTACHMENT_LINK = "html_attachment_link"        # an anchor in an HTML or SVG part other than the body (parsed only, never opened)
+    LINKS_TRUNCATED = "links_truncated"                  # more links than the cap; the ones past it were not checked
+    IDN_LINK_DOMAIN = "idn_link_domain"                  # a punycode or non-ASCII link host (mixed-script or undecodable)
+    IMAGE_ONLY_BODY = "image_only_body"                  # the HTML body is images with under 40 visible characters
 
 
 LINK_REASON_CODES = frozenset({
     ReasonCode.LINK_TEXT_HREF_MISMATCH, ReasonCode.HIDDEN_LINK, ReasonCode.KNOWN_SHORTENER,
     ReasonCode.LOOKALIKE_LINK_DOMAIN, ReasonCode.LINKS_UNREADABLE,
+    ReasonCode.WHOLE_BODY_LINK, ReasonCode.SCRIPT_HREF_LINK, ReasonCode.CSS_HIDDEN_LINK, ReasonCode.IMAGE_MAP_LINK,
+    ReasonCode.HTML_ATTACHMENT_LINK, ReasonCode.LINKS_TRUNCATED, ReasonCode.IDN_LINK_DOMAIN, ReasonCode.IMAGE_ONLY_BODY,
 })
+
+
+class LinkKind(StrEnum):
+    """What a link's href does when followed, from its scheme alone."""
+
+    WEB = "web"        # http or https
+    MAILTO = "mailto"
+    TEL = "tel"
+    SCRIPT = "script"  # javascript: or vbscript:
+    DATA = "data"      # data: (an inline page or file)
+    OTHER = "other"    # fragments, bare paths and any other scheme
+
+
+class HiddenBy(StrEnum):
+    """How a link hides what it is, if it does."""
+
+    NONE = "none"
+    NO_TEXT = "no_text"        # no visible text and no image
+    IMAGE_ONLY = "image_only"  # an image (or an image-map region) is the only thing to click
+    CSS = "css"                # an inline style (display:none, visibility:hidden or collapse, mso-hide:all, opacity under 0.1,
+                               # font-size under 1px) or the hidden attribute, on the anchor or an ancestor
+
+
+class LinkSource(StrEnum):
+    """Where in the email a link was found."""
+
+    HTML_PART = "html_part"              # an <a href> in the HTML body
+    IMAGE_MAP = "image_map"              # an <area href> in the HTML body
+    HTML_ATTACHMENT = "html_attachment"  # an <a href> in any other HTML or SVG part: an attachment, a forward, a second HTML part
 
 
 class IndicatorKind(StrEnum):
@@ -431,3 +470,18 @@ class CaseAgentRuntime(StrEnum):
 
     AGENTCORE = "agentcore"
     LAMBDA = "lambda"
+
+
+class UnsafeTextKind(StrEnum):
+    """What the output gate found in agent text bound for a person; any one refuses the text."""
+
+    LINK = "link"
+    EMAIL_ADDRESS = "email_address"
+    LONG_NUMBER = "long_number"  # 6+ digits: a phone, an account, a code; not a calendar date
+
+
+class AgentRunFailure(StrEnum):
+    """Why one tool-holding agent run produced no output."""
+
+    TURN_LIMIT = "turn_limit"
+    NO_OUTPUT = "no_output"

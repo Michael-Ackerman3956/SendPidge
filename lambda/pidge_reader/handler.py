@@ -61,7 +61,7 @@ def process_email_object(bucket_name: str, object_key: str) -> None:
         logger.warning("email %s was claimed but never decided; this retry runs it again", object_key)
     push_email_reading(email_row)
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
-    reasons.extend(link_checks.link_reasons(link_assessments, parsed_email.links_unreadable))
+    reasons.extend(link_checks.link_reasons(link_assessments, parsed_email))
     reasons.extend(lists.sender_reasons_or_lookup_failure(
         list_store, parsed_email.sender_address, parsed_email.sender_domain, parsed_email.sender_name, contacts))
     # Same cap as the stored copy: a 10 MB email never becomes a full-context model call.
@@ -173,6 +173,8 @@ def build_email_row(object_key: str, parsed_email: ParsedEmail, link_assessments
         "subject": parsed_email.subject,
         "textBody": parsed_email.text_body[:TEXT_BODY_MAX_CHARACTERS],
         "links": [assessment.as_row() for assessment in link_assessments],
+        "imageCount": parsed_email.image_count,  # tracking pixels included; counted, never a reason on its own (D7)
+        "visibleHtmlCharacters": parsed_email.visible_html_characters,
         "receivedAt": received_at,
         "receiverEmail": RECEIVER_ADDRESS,
         "quarantined": False,

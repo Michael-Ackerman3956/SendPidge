@@ -182,6 +182,32 @@ export const REASON_CODE = Object.freeze({
   LOOKALIKE_SENDER_DOMAIN: "lookalike_sender_domain",
   REPORTED_SENDER: "reported_sender",
   LIST_LOOKUP_FAILED: "list_lookup_failed",
+  WHOLE_BODY_LINK: "whole_body_link",
+  SCRIPT_HREF_LINK: "script_href_link",
+  CSS_HIDDEN_LINK: "css_hidden_link",
+  IMAGE_MAP_LINK: "image_map_link",
+  HTML_ATTACHMENT_LINK: "html_attachment_link",
+  LINKS_TRUNCATED: "links_truncated",
+  IDN_LINK_DOMAIN: "idn_link_domain",
+  IMAGE_ONLY_BODY: "image_only_body",
+});
+
+// What a link's href does (links[].kind). Mirrors LinkKind in enums.py.
+export const LINK_KIND = Object.freeze({
+  WEB: "web",
+  MAILTO: "mailto",
+  TEL: "tel",
+  SCRIPT: "script",
+  DATA: "data",
+  OTHER: "other",
+});
+
+// How a link hides what it is (links[].hiddenBy). Mirrors HiddenBy in enums.py.
+export const HIDDEN_BY = Object.freeze({
+  NONE: "none",
+  NO_TEXT: "no_text",
+  IMAGE_ONLY: "image_only",
+  CSS: "css",
 });
 
 export const CALL_PROMISE = Object.freeze({

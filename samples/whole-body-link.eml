@@ -1,0 +1,25 @@
+From: Parcel Notice <notice@parcel-update.example>
+To: grandma@sendpidge.example
+Subject: Your parcel is waiting
+Date: Mon, 27 Oct 2026 10:00:00 +0900
+X-Pidge-Auth: spf=pass;dkim=pass
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="pidge-sample-boundary"
+
+--pidge-sample-boundary
+Content-Type: text/plain; charset="utf-8"
+
+Your parcel is waiting at the depot.
+We tried to deliver it on Saturday. It will stay at the depot for five days.
+
+--pidge-sample-boundary
+Content-Type: text/html; charset="utf-8"
+
+<html><body>
+<a href="https://parcel-redelivery.example/track?id=8812" style="color:#000;text-decoration:none">
+<p>Your parcel is waiting at the depot.</p>
+<p>We tried to deliver it on Saturday. It will stay at the depot for five days.</p>
+</a>
+</body></html>
+
+--pidge-sample-boundary--

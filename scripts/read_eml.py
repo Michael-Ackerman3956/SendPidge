@@ -83,7 +83,7 @@ def main() -> None:
     family_domains = domains_of(contacts)
     link_assessments = assess_links(parsed_email.links, family_domains)
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
-    reasons.extend(link_reasons(link_assessments, parsed_email.links_unreadable))
+    reasons.extend(link_reasons(link_assessments, parsed_email))
     if arguments.lists is not None:
         list_store = SeedListStore([list_row_from_seed(seed_row) for seed_row in json.loads(arguments.lists.read_text())])
         reasons.extend(lookup_sender_reasons(list_store, parsed_email.sender_address, parsed_email.sender_domain, parsed_email.sender_name, contacts))

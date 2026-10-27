@@ -22,7 +22,7 @@ LIST_PARTITION_PREFIX = "LIST#"
 # Digits and symbols that read as letters, plus Cyrillic and Greek letters that print like Latin ones.
 CONFUSABLE_CHARACTERS = str.maketrans({
     "0": "o", "1": "l", "3": "e", "5": "s", "7": "t", "8": "b", "9": "g", "|": "l",
-    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ј": "j", "ѕ": "s", "ԁ": "d", "ɡ": "g",
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ј": "j", "ѕ": "s", "ԁ": "d", "ɡ": "g", "ӏ": "l",
     "α": "a", "ο": "o", "ν": "v", "ι": "i", "κ": "k", "τ": "t",
 })
 CONFUSABLE_PAIRS = (("rn", "m"), ("vv", "w"), ("cl", "d"))
