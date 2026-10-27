@@ -175,7 +175,7 @@ def check_rcs_tester() -> list[CheckResult]:
 
 
 def check_receiver_mx(stack: DeployedStack) -> list[CheckResult]:
-    receiver_domain = CDK_CONTEXT["receiverAddress"].partition("@")[2]
+    receiver_domain = CDK_CONTEXT["receiverDomain"]
     dig_output = subprocess.run(["dig", "+short", "MX", receiver_domain], capture_output=True, text=True, timeout=10, check=True).stdout
     mx_hosts = [line.split()[-1].rstrip(".").casefold() for line in dig_output.splitlines() if line.strip()]
     ingress_host = stack.outputs["MailManagerARecord"].rstrip(".").casefold()
@@ -228,7 +228,7 @@ def check_ses_identities(session: boto3.Session, stack: DeployedStack) -> list[C
 
 def read_contact_row(session: boto3.Session, stack: DeployedStack) -> dict | None:
     table = session.resource("dynamodb").Table(stack.outputs["TableName"])
-    return table.get_item(Key={"PK": f"RECEIVER#{CDK_CONTEXT['receiverAddress']}", "SK": CONTACT_SORT_KEY}).get("Item")
+    return table.get_item(Key={"PK": f"RECEIVER#{CDK_CONTEXT['mailboxResidentAddress']}", "SK": CONTACT_SORT_KEY}).get("Item")
 
 
 def check_contact_row(session: boto3.Session, stack: DeployedStack) -> list[CheckResult]:

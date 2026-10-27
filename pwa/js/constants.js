@@ -117,6 +117,7 @@ export const CHANNEL = Object.freeze({
 export const USER_ROLE = Object.freeze({
   RECEIVER: "receiver",
   CONTACT: "contact",
+  ORG_ADMIN: "org_admin",
 });
 
 export const REQUEST_STATUS = Object.freeze({

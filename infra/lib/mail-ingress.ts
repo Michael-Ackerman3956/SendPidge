@@ -1,7 +1,9 @@
 import { Duration, Stack } from "aws-cdk-lib";
 import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { BlockPublicAccess, Bucket, BucketEncryption } from "aws-cdk-lib/aws-s3";
-import { CfnMailManagerIngressPoint, CfnMailManagerRuleSet, CfnMailManagerTrafficPolicy } from "aws-cdk-lib/aws-ses";
+import {
+  CfnMailManagerAddressList, CfnMailManagerIngressPoint, CfnMailManagerRuleSet, CfnMailManagerTrafficPolicy,
+} from "aws-cdk-lib/aws-ses";
 import { StackSettings } from "./stack-settings.js";
 
 // Raw emails land under this prefix (Mail Manager in slice 4, a hand-dropped .eml before that).
@@ -21,6 +23,7 @@ const MAXIMUM_INBOUND_MESSAGE_BYTES = 10 * 1024 * 1024;
 export interface MailIngress {
   emailBucket: Bucket;
   ingressPoint: CfnMailManagerIngressPoint;
+  residentAddressList: CfnMailManagerAddressList;
 }
 
 // The email bucket and the Mail Manager ingress that fills it: one rule set, one receiver-only traffic policy.
@@ -112,13 +115,16 @@ export function buildMailIngress(stack: Stack, settings: StackSettings): MailIng
     }],
   });
 
+  // The enrolled residents' addresses (scripts/enrol_resident.py registers each); no rule or policy reads it yet.
+  const residentAddressList = new CfnMailManagerAddressList(stack, "ResidentAddressList", { addressListName: "sendpidge-residents" });
+
   const ingressPoint = new CfnMailManagerIngressPoint(stack, "IngressPoint", {
     ingressPointName: "sendpidge-inbound",
     type: "OPEN",
     ruleSetId: inboundRuleSet.attrRuleSetId,
     trafficPolicyId: inboundTrafficPolicy.attrTrafficPolicyId,
   });
-  return { emailBucket, ingressPoint };
+  return { emailBucket, ingressPoint, residentAddressList };
 }
 
 /** One rule per SPF × DKIM outcome; the four are mutually exclusive, so exactly one header is added. */

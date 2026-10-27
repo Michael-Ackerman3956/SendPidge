@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from botocore.exceptions import ClientError
 
 from shared import graph, reach_points
-from shared.enums import ActionOutcome, Channel, Relationship, VerifiedVia
+from shared.enums import ActionOutcome, Channel, Relationship, UserRole, VerifiedVia
 from shared.reach_points import ReachPoint, verified_via_of
 
 CIRCLE_MAXIMUM_SIZE = 10
@@ -109,22 +109,29 @@ def parse_email_address(value) -> str:
     return address
 
 
-def access_token_rows(user_id: str) -> tuple[str, list[dict]]:
-    """A fresh PWA token for one user and its two rows: TOKEN#<sha256> (what the socket checks) and USER#/PROFILE (remembers
-    the hash so a later rotation can delete it). The token itself is returned once; the caller alone decides where it goes."""
+def new_access_token(user_id: str) -> tuple[str, str, dict]:
+    """A fresh PWA token, its sha256 hash and its TOKEN#<hash> row (what the socket checks)."""
     access_token = secrets.token_urlsafe(32)
     token_hash = graph.hash_access_token(access_token)
-    return access_token, [
-        {"PK": f"TOKEN#{token_hash}", "SK": graph.METADATA_SORT_KEY, "userId": user_id},
-        {"PK": f"USER#{user_id}", "SK": PROFILE_SORT_KEY, "tokenHash": token_hash},
-    ]
+    return access_token, token_hash, {"PK": f"TOKEN#{token_hash}", "SK": graph.METADATA_SORT_KEY, "userId": user_id}
+
+
+def access_token_rows(user_id: str, role: UserRole) -> tuple[str, list[dict]]:
+    """A fresh PWA token for a new user and its two rows: TOKEN#<sha256> and USER#/PROFILE {tokenHash, role} (the hash, so a
+    later rotation can delete it). The token itself is returned once; the caller alone decides where it goes."""
+    access_token, token_hash, token_row = new_access_token(user_id)
+    return access_token, [token_row, {"PK": f"USER#{user_id}", "SK": PROFILE_SORT_KEY, "tokenHash": token_hash, "role": str(role)}]
 
 
 def issue_access_token(user_id: str) -> str:
-    """Writes a fresh token's rows for an existing user (scripts/seed_graph.py); returns the token."""
-    access_token, rows = access_token_rows(user_id)
-    for row in rows:
-        graph.get_table().put_item(Item=row)
+    """Writes a fresh TOKEN# row for a user and sets tokenHash on USER#/PROFILE in place, so role, receiverEmail and orgId
+    survive the rotation (scripts/seed_graph.py, scripts/enrol_resident.py); returns the token. Deleting the previous
+    TOKEN# row is the caller's job."""
+    access_token, token_hash, token_row = new_access_token(user_id)
+    table = graph.get_table()
+    table.put_item(Item=token_row)
+    table.update_item(Key={"PK": f"USER#{user_id}", "SK": PROFILE_SORT_KEY}, UpdateExpression="SET tokenHash = :tokenHash",
+                      ExpressionAttributeValues={":tokenHash": token_hash})
     return access_token
 
 
@@ -158,7 +165,7 @@ def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> En
         "verificationExpiresAt": graph.iso_timestamp(now + VERIFICATION_CODE_LIFETIME),
         "addedAt": same_name_row["addedAt"] if same_name_row is not None else graph.iso_timestamp(now),
     }
-    access_token, token_rows = access_token_rows(contact_user_id)
+    access_token, token_rows = access_token_rows(contact_user_id, UserRole.CONTACT)
     table = graph.get_table()
     # The table resource's client takes plain Python values (boto3 converts them), unlike a bare dynamodb client.
     row_condition = ({"ConditionExpression": "attribute_not_exists(PK)"} if same_name_row is None else

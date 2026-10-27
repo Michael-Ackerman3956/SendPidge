@@ -388,6 +388,7 @@ class UserRole(StrEnum):
 
     RECEIVER = "receiver"
     CONTACT = "contact"
+    ORG_ADMIN = "org_admin"  # no PWA screen yet
 
 
 class ActionOutcome(StrEnum):

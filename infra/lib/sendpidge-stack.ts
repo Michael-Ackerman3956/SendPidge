@@ -57,7 +57,7 @@ export class SendPidgeStack extends Stack {
       sortKey: { name: "userIndexSK", type: AttributeType.STRING },
     });
 
-    const { emailBucket, ingressPoint } = buildMailIngress(this, settings);
+    const { emailBucket, ingressPoint, residentAddressList } = buildMailIngress(this, settings);
 
     const dependencyLayer = new LayerVersion(this, "DependencyLayer", {
       code: Code.fromAsset("build/layer"),
@@ -117,6 +117,7 @@ export class SendPidgeStack extends Stack {
       value: ingressPoint.attrARecord,
       description: `Create an MX record for the receiver's domain pointing at this host`,
     });
+    new CfnOutput(this, "ResidentAddressListId", { value: residentAddressList.attrAddressListId });
     new CfnOutput(this, "RcsInboundTopicArn", { value: topics.rcsInboundTopic.topicArn });
     new CfnOutput(this, "CaseAgentRuntimeArn", { value: caseAgent.caseAgentRuntime.agentRuntimeArn });
     new CfnOutput(this, "CaseAgentMemoryId", { value: caseAgent.caseAgentMemory.memoryId });
