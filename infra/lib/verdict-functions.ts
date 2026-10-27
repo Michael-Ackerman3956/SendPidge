@@ -154,7 +154,7 @@ export interface VerdictDependencies {
   topics: InboundTopics;
   releaseFunction: Function;
   caseFollowUpFunction: Function;
-  callReminderFunction: Function;
+  callReminderFunction: Function | undefined;  // undefined while callNudgeEnabled is off
 }
 
 // pidge-ask-link: the signed "No, that wasn't me" link in the ask by email, reached through the PWA's CloudFront (/no/*).
@@ -219,7 +219,7 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
       CALL_NUDGES_PER_CONTACT_PER_HOUR: String(settings.callNudgesPerContactPerHour),
       CALL_REMINDER_TODAY_DELAY_SECONDS: String(settings.callReminderTodayDelaySeconds),
       CALL_REMINDER_TOMORROW_DELAY_SECONDS: String(settings.callReminderTomorrowDelaySeconds),
-      CALL_REMINDER_FUNCTION_ARN: dependencies.callReminderFunction.functionArn,
+      ...(dependencies.callReminderFunction ? { CALL_REMINDER_FUNCTION_ARN: dependencies.callReminderFunction.functionArn } : {}),
     },
   });
   shared.table.grantReadWriteData(verdictFunction);

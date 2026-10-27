@@ -52,6 +52,28 @@ def verdict_fields_for_request(reader_outcome: EmailVerdict | ReaderFailure, sum
     return {**reader_outcome.model_dump(mode="json"), "summary": summary}
 
 
+def is_impersonator_of(contact_by_name: Contact | None, sender_address: str) -> bool:
+    """Gate 1: the From display name is a contact's and the address is not one they are known to write from."""
+    return contact_by_name is not None and not contact_by_name.is_known_address(sender_address)
+
+
+def reader_failure_outcome(
+    contact_by_name: Contact | None, is_impersonator: bool, reasons: tuple[ReasonCode, ...]
+) -> PolicyOutcome:
+    """A Reader failure is a gate-1 HOLD (single tap) when gate 1 fires, otherwise WARN unreadable; never PASS."""
+    if is_impersonator:
+        return PolicyOutcome(PolicyDecision.HOLD, None, reasons, contact_by_name, GateFired.GATE_1, Friction.SINGLE_TAP)
+    return PolicyOutcome(PolicyDecision.WARN, WarnReason.UNREADABLE, reasons)
+
+
+def outcome_for_reasons_alone(reasons: tuple[ReasonCode, ...]) -> PolicyOutcome:
+    """No ask: reasons give WARN (link_reasons when every reason is a link reason, else listed_sender); none give PASS."""
+    if reasons:
+        is_links_only = all(reason in LINK_REASON_CODES for reason in reasons)
+        return PolicyOutcome(PolicyDecision.WARN, WarnReason.LINK_REASONS if is_links_only else WarnReason.LISTED_SENDER, reasons)
+    return PolicyOutcome(PolicyDecision.PASS, None, reasons)
+
+
 def decide(
     reader_outcome: EmailVerdict | ReaderFailure,
     contact_by_name: Contact | None,
@@ -64,13 +86,11 @@ def decide(
     contact_by_name comes from the From display name only, so gate 1 never depends on the model.
     """
     reasons_list = list(reasons)
-    is_impersonator = contact_by_name is not None and not contact_by_name.is_known_address(sender_address)
+    is_impersonator = is_impersonator_of(contact_by_name, sender_address)
     if is_impersonator:
         reasons_list.append(ReasonCode.UNKNOWN_ADDRESS)
     if isinstance(reader_outcome, ReaderFailure):
-        if is_impersonator:
-            return PolicyOutcome(PolicyDecision.HOLD, None, tuple(reasons_list), contact_by_name, GateFired.GATE_1, Friction.SINGLE_TAP)
-        return PolicyOutcome(PolicyDecision.WARN, WarnReason.UNREADABLE, tuple(reasons_list))
+        return reader_failure_outcome(contact_by_name, is_impersonator, tuple(reasons_list))
     verdict = reader_outcome
     has_ask = verdict.intent is not Intent.NONE
     is_clear_ask = has_ask and verdict.confidence >= HOLD_CONFIDENCE_THRESHOLD
@@ -87,15 +107,17 @@ def decide(
         return PolicyOutcome(PolicyDecision.WARN, WarnReason.UNKNOWN_NAME, tuple(reasons_list))
     if has_ask:
         return PolicyOutcome(PolicyDecision.WARN, WarnReason.LOW_CONFIDENCE, tuple(reasons_list))
-    if reasons_list:
-        is_links_only = all(reason in LINK_REASON_CODES for reason in reasons_list)
-        return PolicyOutcome(PolicyDecision.WARN, WarnReason.LINK_REASONS if is_links_only else WarnReason.LISTED_SENDER, tuple(reasons_list))
-    return PolicyOutcome(PolicyDecision.PASS, None, tuple(reasons_list))
+    return outcome_for_reasons_alone(tuple(reasons_list))
 
 
 def needs_escalation(outcome: PolicyOutcome, is_escalation_enabled: bool) -> bool:
     """Only an unknown-address hold is shown to the second reviewer; flag off → no call, the hold stands."""
     return is_escalation_enabled and outcome.decision is PolicyDecision.HOLD and not outcome.is_address_known
+
+
+def is_cleared_by_reviewer(outcome: PolicyOutcome, answer: EscalationAnswer) -> bool:
+    """Only a gate-2 hold the reviewer calls `warn` is cleared; gate 1 is code and never downgraded."""
+    return outcome.gate is GateFired.GATE_2 and answer.decision is EscalationDecision.WARN
 
 
 def apply_escalation(outcome: PolicyOutcome, answer: EscalationAnswer | EscalationFailure) -> PolicyOutcome:
@@ -104,7 +126,7 @@ def apply_escalation(outcome: PolicyOutcome, answer: EscalationAnswer | Escalati
         return replace(outcome, reasons=(*outcome.reasons, ReasonCode.ESCALATION_FAILED))
     if answer.contact_by_claim != outcome.contact:
         return replace(outcome, reasons=(*outcome.reasons, ReasonCode.PERSON_CONFLICT))
-    if outcome.gate is GateFired.GATE_2 and answer.decision is EscalationDecision.WARN:
+    if is_cleared_by_reviewer(outcome, answer):
         return PolicyOutcome(
             PolicyDecision.WARN, WarnReason.ESCALATION_CLEARED, (*outcome.reasons, ReasonCode.ESCALATION_CLEARED)
         )

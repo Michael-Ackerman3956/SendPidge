@@ -9,6 +9,8 @@ import { Bucket } from "aws-cdk-lib/aws-s3";
 import { buildPythonFunction } from "./python-function.js";
 
 const WEBSOCKET_STAGE_NAME = "live";
+// Caps every route of the stage across all clients (a handful of phones send a few frames a minute); a client over it gets 429.
+const WEBSOCKET_THROTTLE = { rateLimit: 20, burstLimit: 40 };
 
 // What every Lambda builder needs: the table, the email bucket, the shared code asset and layer, the socket, the scheduler.
 export interface SharedResources {
@@ -41,6 +43,7 @@ export function buildWebSocketApi(stack: Stack, table: Table, lambdaCode: Code):
     webSocketApi,
     stageName: WEBSOCKET_STAGE_NAME,
     autoDeploy: true,
+    throttle: WEBSOCKET_THROTTLE,
   });
   return { webSocketApi, webSocketStage };
 }

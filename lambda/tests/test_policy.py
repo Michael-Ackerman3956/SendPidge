@@ -6,33 +6,17 @@ from shared.auth import authentication_reasons
 from shared.enums import EscalationDecision, Friction, GateFired, Intent, PolicyDecision, ReasonCode, WarnReason
 from shared.graph import Contact
 from shared.policy import (
-    HOLD_CONFIDENCE_THRESHOLD, UNREADABLE_SUMMARY, EscalationAnswer, EscalationFailure, PolicyOutcome, ReaderFailure,
+    UNREADABLE_SUMMARY, EscalationAnswer, EscalationFailure, PolicyOutcome, ReaderFailure,
     apply_escalation, decide, needs_escalation, verdict_fields_for_request,
 )
-from shared.reader_agent import EmailVerdict
-
-JIMIN = Contact("CONTACT#jimin", "Jimin", "jimin", known_addresses=("jimin@example.com",))
-JIMIN_ADDRESS = "jimin@example.com"
-STRANGER_ADDRESS = "jimin.kim@jimin-help.example"
-
-
-def make_verdict(intent: Intent, confidence: float, claimed_person: str | None = "Jimin") -> EmailVerdict:
-    return EmailVerdict(claimed_person=claimed_person, intent=intent, confidence=confidence, summary="Someone asks for something.")
+from tests.policy_golden import (
+    AUTHENTICATION_ROWS, GATE_1_ROWS, GATE_2_ROWS, JIMIN, JIMIN_ADDRESS, STRANGER_ADDRESS, make_verdict,
+)
 
 
 @pytest.mark.parametrize(
     ("intent", "confidence", "contact_by_claim", "reasons", "expected_decision", "expected_warn_reason"),
-    [
-        (Intent.MONEY, 0.9, JIMIN, [], PolicyDecision.HOLD, None),
-        (Intent.CODE, HOLD_CONFIDENCE_THRESHOLD, JIMIN, [], PolicyDecision.HOLD, None),
-        (Intent.URGENT_ACTION, 0.7, JIMIN, [ReasonCode.AUTH_FAILED], PolicyDecision.HOLD, None),
-        (Intent.MONEY, 0.9, None, [], PolicyDecision.WARN, WarnReason.UNKNOWN_NAME),
-        (Intent.MONEY, 0.3, None, [], PolicyDecision.WARN, WarnReason.UNKNOWN_NAME),
-        (Intent.MONEY, 0.3, JIMIN, [], PolicyDecision.WARN, WarnReason.LOW_CONFIDENCE),
-        (Intent.NONE, 0.9, JIMIN, [ReasonCode.AUTH_TAMPERED], PolicyDecision.WARN, WarnReason.LISTED_SENDER),
-        (Intent.NONE, 0.9, JIMIN, [], PolicyDecision.PASS, None),
-        (Intent.NONE, 0.0, None, [], PolicyDecision.PASS, None),
-    ],
+    GATE_2_ROWS,
 )
 def test_gate_2_table_with_no_display_name_match(intent, confidence, contact_by_claim, reasons, expected_decision, expected_warn_reason):
     """The From display name matches no contact, so only the model's claim can hold (claimed-jimin.eml shape)."""
@@ -44,12 +28,7 @@ def test_gate_2_table_with_no_display_name_match(intent, confidence, contact_by_
 
 @pytest.mark.parametrize(
     ("intent", "confidence", "expected_friction"),
-    [
-        (Intent.MONEY, 0.95, Friction.DOUBLE_TAP),
-        (Intent.CODE, 0.2, Friction.DOUBLE_TAP),
-        (Intent.URGENT_ACTION, 0.9, Friction.SINGLE_TAP),
-        (Intent.NONE, 0.0, Friction.SINGLE_TAP),
-    ],
+    GATE_1_ROWS,
 )
 def test_gate_1_holds_a_contact_name_from_an_unknown_address_regardless_of_the_verdict(intent, confidence, expected_friction):
     outcome = decide(make_verdict(intent, confidence, claimed_person=None), JIMIN, None, STRANGER_ADDRESS, [])
@@ -130,15 +109,7 @@ def test_confidence_must_be_between_zero_and_one():
 
 @pytest.mark.parametrize(
     ("header_values", "expected_reasons"),
-    [
-        ([], [ReasonCode.AUTH_MISSING]),
-        (["spf=pass;dkim=pass"], []),
-        (["spf=fail;dkim=pass"], []),
-        (["spf=pass; dkim=FAIL"], []),
-        (["spf=fail;dkim=fail"], [ReasonCode.AUTH_FAILED]),
-        (["spf=pass;dkim=pass", "spf=pass;dkim=pass"], [ReasonCode.AUTH_TAMPERED]),
-        (["spf=fail;dkim=fail", "spf=pass;dkim=pass"], [ReasonCode.AUTH_TAMPERED]),
-    ],
+    AUTHENTICATION_ROWS,
 )
 def test_authentication_reasons(header_values, expected_reasons):
     assert authentication_reasons(header_values) == expected_reasons

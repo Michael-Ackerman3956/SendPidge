@@ -85,7 +85,8 @@ export class SendPidgeStack extends Stack {
     const { readerDeadLetterQueue } = buildReaderFunction(this, settings, shared, retryFunction, askLinkSecret);
     const topics = buildInboundTopics(this);
     const releaseFunction = buildReleaseFunction(this, settings, shared);
-    const callReminderFunction = buildCallReminderFunction(this, settings, shared);
+    // pidge_call_reminder is call-nudge wave 2 and not written yet, so the function exists only once the nudge is switched on.
+    const callReminderFunction = settings.callNudgeEnabled ? buildCallReminderFunction(this, settings, shared) : undefined;
     buildVerdictFunction(this, settings, shared, { topics, releaseFunction, caseFollowUpFunction, callReminderFunction });
     const askLinkUrl = buildAskLinkFunction(this, settings, shared, askLinkSecret);
     pwaDistribution.addBehavior(ASK_LINK_PATH_PATTERN, new FunctionUrlOrigin(askLinkUrl), {

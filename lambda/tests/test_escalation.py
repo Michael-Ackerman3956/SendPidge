@@ -12,6 +12,9 @@ FACTS = EscalationFacts(GateFired.GATE_2, False, False, "spf=pass;dkim=pass", (R
 
 
 class RaisingReviewer:
+    def __init__(self):
+        self.messages = []
+
     def __call__(self, prompt, structured_output_model):
         raise RuntimeError("AccessDeniedException")
 
@@ -20,6 +23,7 @@ class AnsweringReviewer:
     def __init__(self, verdict):
         self.verdict = verdict
         self.prompts = []
+        self.messages = [{"role": "user", "content": [{"text": "an earlier held email"}]}]  # what a warm Lambda's reviewer holds
 
     def __call__(self, prompt, structured_output_model):
         self.prompts.append(prompt)
@@ -36,6 +40,7 @@ def test_the_prompt_carries_the_facts_and_the_body_but_never_the_reader_summary(
                                                    decision=EscalationDecision.HOLD, rationale="asks for money"))
     verdict = escalate(reviewer, EMAIL, FACTS)
     assert verdict.decision is EscalationDecision.HOLD
+    assert reviewer.messages == []  # the earlier email is gone before this one is reviewed
     prompt = reviewer.prompts[0]
     assert "gate_fired: gate_2" in prompt and "auth_failed" in prompt and "Send money today." in prompt
     assert "SECRET SUMMARY" not in prompt and "SECRET SUMMARY" not in format_facts(FACTS)

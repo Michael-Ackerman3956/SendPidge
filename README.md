@@ -29,9 +29,10 @@ The PWA at `pwa/` is one static site on S3 + CloudFront. The access token in the
 ## Run the tests
 
 ```
-cd lambda
-../.venv/bin/python -m pytest -q
+bash scripts/run_tests.sh
 ```
+
+This runs pytest from `lambda/` (including the grep gate and `test_stack.py`, which synthesises the CDK stack with fake mailboxes and needs no AWS credentials or `.env`), then `infra/node_modules/.bin/tsc --noEmit`. It needs `.venv` and `infra/node_modules` installed and exits non-zero on the first failure.
 
 ## Deploy
 

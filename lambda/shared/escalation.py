@@ -66,6 +66,7 @@ def format_facts(facts: EscalationFacts) -> str:
 
 def escalate(reviewer: Agent, parsed_email: ParsedEmail, facts: EscalationFacts) -> EscalationVerdict | EscalationFailure:
     """Any raised call (no access, throttling, invalid schema) is an EscalationFailure; the caller keeps the hold."""
+    reviewer.messages.clear()  # each held email is reviewed alone, never beside the ones before it in a warm Lambda
     boundary_tag = f"email-{secrets.token_hex(8)}"
     prompt = f"{format_facts(facts)}\n{format_email_as_data(parsed_email, boundary_tag)}"
     try:

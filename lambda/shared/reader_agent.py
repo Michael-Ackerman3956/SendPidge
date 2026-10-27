@@ -79,6 +79,7 @@ def format_email_as_data(parsed_email: ParsedEmail, boundary_tag: str) -> str:
 
 def read_email(reader: Agent, parsed_email: ParsedEmail) -> EmailVerdict:
     """Raises strands.types.exceptions.StructuredOutputException when no valid verdict comes back."""
+    reader.messages.clear()  # Strands keeps every call; a warm Lambda's Reader would otherwise see the emails before this one
     boundary_tag = f"email-{secrets.token_hex(8)}"
     result = reader(format_email_as_data(parsed_email, boundary_tag), structured_output_model=EmailVerdict)
     return result.structured_output
