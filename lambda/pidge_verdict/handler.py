@@ -69,7 +69,7 @@ def handle(event, context):
         body = json.loads(event.get("body") or "")
         action = ClientAction(body["action"])
     except (ValueError, TypeError, KeyError):
-        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
+        channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
         return HANDLED
     if action is ClientAction.SYNC:
         handle_sync(connection_id, user_id)
@@ -94,12 +94,8 @@ def handle(event, context):
     elif action is ClientAction.CONFIRM:
         handle_confirm(connection_id, user_id, body)
     else:
-        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)  # a member nobody routed: never fall through to a write
+        channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)  # a member nobody routed: never fall through to a write
     return HANDLED
-
-
-def reject(connection_id: str, request_id: str | None, outcome: ActionOutcome) -> None:
-    channels.reject_action(connection_id, request_id, outcome)
 
 
 def contact_name_for(request_row: dict) -> str:
@@ -150,12 +146,12 @@ def parse_answer(body: dict) -> VerdictAnswer | None:
 def handle_answer(connection_id: str, user_id: str, body: dict, websocket_message_id: str, answer: VerdictAnswer | None) -> None:
     request_id = body.get("requestId")
     if answer is None or not isinstance(request_id, str):
-        reject(connection_id, request_id if isinstance(request_id, str) else None, ActionOutcome.BAD_MESSAGE)
+        channels.reject_action(connection_id, request_id if isinstance(request_id, str) else None, ActionOutcome.BAD_MESSAGE)
         return
     sender = verdict.SenderIdentity(Channel.INAPP, user_id)
     result = verdict.record_answer(request_id, answer, sender, f"inapp:{websocket_message_id}", graph.now_timestamp())
     if result.outcome is not ActionOutcome.RECORDED:
-        reject(connection_id, request_id, result.outcome)
+        channels.reject_action(connection_id, request_id, result.outcome)
         return
     announce_recorded_answer(request_id, result)
 
@@ -179,10 +175,8 @@ def schedule_release(request_id: str, release_at: str) -> None:
         logger.exception("release schedule for %s failed; the next read releases it", request_id)
 
 
-def parse_phone_reply(record: dict) -> tuple[Channel, verdict.SenderIdentity, str, VerdictAnswer, str] | None:
-    """Routes one SNS record by its topic: the RCS two-way topic or the WhatsApp event topic. Never by content."""
-    topic_arn = record["Sns"]["TopicArn"]
-    sns_message = json.loads(record["Sns"]["Message"])
+def parse_phone_reply(topic_arn: str, sns_message: dict) -> tuple[Channel, verdict.SenderIdentity, str, VerdictAnswer, str] | None:
+    """Routes one SNS message by its topic: the RCS two-way topic or the WhatsApp event topic. Never by content."""
     if topic_arn == RCS_TOPIC_ARN:
         reply = rcs.parse_inbound_reply(sns_message)
         if reply is None:
@@ -202,11 +196,11 @@ def parse_phone_reply(record: dict) -> tuple[Channel, verdict.SenderIdentity, st
     return None
 
 
-def whatsapp_text_of(record: dict) -> whatsapp.InboundText | None:
+def whatsapp_text_of(topic_arn: str, sns_message: dict) -> whatsapp.InboundText | None:
     """Typed text on Pidge's WhatsApp number (the only channel that carries one); taps and statuses → None."""
-    if record["Sns"]["TopicArn"] != WHATSAPP_TOPIC_ARN:
+    if topic_arn != WHATSAPP_TOPIC_ARN:
         return None
-    return whatsapp.parse_inbound_text(json.loads(record["Sns"]["Message"]))
+    return whatsapp.parse_inbound_text(sns_message)
 
 
 def handle_sns_records(records: list) -> None:
@@ -214,8 +208,9 @@ def handle_sns_records(records: list) -> None:
     raised (SNS would only redeliver it); a failing table write still raises so the record is redelivered."""
     for record in records:
         try:
-            inbound_text = whatsapp_text_of(record)
-            parsed = None if inbound_text is not None else parse_phone_reply(record)
+            topic_arn, sns_message = record["Sns"]["TopicArn"], json.loads(record["Sns"]["Message"])
+            inbound_text = whatsapp_text_of(topic_arn, sns_message)
+            parsed = None if inbound_text is not None else parse_phone_reply(topic_arn, sns_message)
         except (KeyError, TypeError, ValueError):
             logger.warning("unreadable SNS record ignored")
             continue
@@ -270,13 +265,13 @@ def handle_emailed_answer_object(bucket_name: str, object_key: str) -> None:
 def handle_confirm(connection_id: str, user_id: str, body: dict) -> None:
     request_id = body.get("requestId")
     if not isinstance(request_id, str):
-        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
+        channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
         return
     result = verdict.confirm_quarantine(
         request_id, user_id, RECEIVER_USER_ID, RECEIVER_ADDRESS, s3_client, EMAIL_BUCKET
     )
     if result.outcome is not ActionOutcome.RECORDED:
-        reject(connection_id, request_id, result.outcome)
+        channels.reject_action(connection_id, request_id, result.outcome)
         return
     contact_row = graph.get_contact_row(result.request_row["receiverEmail"], result.request_row["contactSK"])
     message = payloads.request_state_message(result.request_row, result.status, contact_row["contactName"], True)
@@ -289,11 +284,11 @@ def handle_report_payment(connection_id: str, user_id: str, body: dict) -> None:
     try:
         report = verdict.PaymentReport.from_client_body(body)
     except (KeyError, TypeError, ValueError, ArithmeticError):
-        reject(connection_id, body.get("requestId") if isinstance(body.get("requestId"), str) else None, ActionOutcome.BAD_MESSAGE)
+        channels.reject_action(connection_id, body.get("requestId") if isinstance(body.get("requestId"), str) else None, ActionOutcome.BAD_MESSAGE)
         return
     result = verdict.report_payment(report, user_id, RECEIVER_USER_ID, RECEIVER_ADDRESS)
     if result.outcome is not ActionOutcome.RECORDED:
-        reject(connection_id, report.request_id, result.outcome)
+        channels.reject_action(connection_id, report.request_id, result.outcome)
         return
     channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.email_row, [], CaseEvent.OPENED))
 
@@ -307,15 +302,15 @@ def handle_send_report(connection_id: str, user_id: str, body: dict) -> None:
     """Send to my bank: code emails the SIMULATED bank mailbox and books the one reminder."""
     case_id = case_id_from(body)
     if case_id is None:
-        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
+        channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
         return
     if not MOCK_BANK_MAILBOX or not CASES_ADDRESS:
         logger.error("MOCK_BANK_MAILBOX / CASES_ADDRESS not configured; Send to my bank refused")
-        reject(connection_id, case_id, ActionOutcome.NOT_ALLOWED)
+        channels.reject_action(connection_id, case_id, ActionOutcome.NOT_ALLOWED)
         return
     result = cases.send_report(case_id, user_id, RECEIVER_USER_ID, RECEIVER_NAME, ses_client, RECEIPT_SENDER, CASES_ADDRESS, MOCK_BANK_MAILBOX)
     if result.outcome is not ActionOutcome.RECORDED:
-        reject(connection_id, case_id, result.outcome)
+        channels.reject_action(connection_id, case_id, result.outcome)
         return
     channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.REPORT_SENT))
     if BANK_FOLLOW_UP_ENABLED:
@@ -329,11 +324,11 @@ def handle_send_report(connection_id: str, user_id: str, body: dict) -> None:
 def handle_close_case(connection_id: str, user_id: str, body: dict) -> None:
     case_id = case_id_from(body)
     if case_id is None:
-        reject(connection_id, None, ActionOutcome.BAD_MESSAGE)
+        channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
         return
     result = cases.close_case(case_id, user_id, RECEIVER_USER_ID)
     if result.outcome is not ActionOutcome.RECORDED:
-        reject(connection_id, case_id, result.outcome)
+        channels.reject_action(connection_id, case_id, result.outcome)
         return
     channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.CLOSED))
 
@@ -342,13 +337,13 @@ def handle_save_push_subscription(connection_id: str, user_id: str, body: dict) 
     """Stores this browser's Web Push subscription under the caller's own USER# row; only a refusal is answered."""
     outcome = push_subscriptions.save_subscription(user_id, body)
     if outcome is not ActionOutcome.RECORDED:
-        reject(connection_id, None, outcome)
+        channels.reject_action(connection_id, None, outcome)
 
 
 def handle_ask_pidge(connection_id: str, user_id: str, body: dict) -> None:
     """The receiver's question: cap and grandma row here; pidge-dispatch answers from the stream. A refusal is a reply bubble."""
     if user_id != RECEIVER_USER_ID:
-        reject(connection_id, None, ActionOutcome.NOT_ALLOWED)
+        channels.reject_action(connection_id, None, ActionOutcome.NOT_ALLOWED)
         return
     accepted = chat.accept_question(user_id, body.get("text"), ChatVia.WINDOW)
     if accepted.refusal_text is not None:

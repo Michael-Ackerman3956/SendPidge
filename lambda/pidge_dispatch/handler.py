@@ -110,11 +110,15 @@ def mail_recovery_pack(note_row: dict) -> dict:
         return note_row
     try:
         recovery_drafts.send_pack_email(get_ses_client(), RECEIPT_SENDER, RECEIVER_MAILBOX, note_row["recoveryPack"])
-        mailed_at = graph.now_timestamp()
-        graph.record_pack_mailed(note_row, mailed_at)
     except Exception:
         logger.exception("recovery pack email for %s failed", note_row["PK"])
         emit_count_metric(PACK_MAIL_FAILED_METRIC_NAME)
+        return note_row
+    mailed_at = graph.now_timestamp()
+    try:
+        graph.record_pack_mailed(note_row, mailed_at)
+    except Exception:  # the email went out; only the stamp is missing, so the screen does not claim a copy was sent
+        logger.exception("recovery pack for %s was mailed but the packMailedAt stamp failed", note_row["PK"])
         return note_row
     return {**note_row, "packMailedAt": mailed_at}
 
