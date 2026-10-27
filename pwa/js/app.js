@@ -1,7 +1,8 @@
-// SendPidge PWA entry: access token, socket, role routing from sync_state, and push dispatch to the receiver or contact view.
-// The role is never stored: every sync_state names it again.
+// SendPidge PWA entry: sign-in or access token, socket, role routing from sync_state, and push dispatch to the receiver or
+// contact view. The role is never stored: every sync_state names it again.
 import { ACTION_REJECTED_REASON, CONNECTION_STATUS, PUSH_MESSAGE_TYPE, USER_ROLE } from "./constants.js";
 import { connectToPushChannel } from "./websocket.js";
+import { completeSignInFromRedirect, hasSignInSession, readSignInConfig, resolveIdToken, startSignIn } from "./auth.js";
 import { refreshPushSubscriptionAfterSync, startPushNotifications } from "./push-notifications.js";
 import { ACTION_STATUS_MESSAGE, showActionStatusMessage } from "./action-status.js";
 import {
@@ -38,6 +39,7 @@ const pageElements = {
   connectionDots: document.querySelectorAll(".connection-dot"), // one in the top bar (phone), one on the desktop rail
   connectionLabel: document.getElementById("connection-label"),
   tokenError: document.getElementById("token-error"),
+  signInButton: document.getElementById("sign-in-button"),
   loadingState: document.getElementById("loading-state"),
   receiverTabs: document.getElementById("receiver-tabs"),
   inboxTabDot: document.getElementById("tab-inbox-dot"),
@@ -258,7 +260,34 @@ function updateConnectionDot(connectionStatus) {
   pageElements.connectionLabel.textContent = isConnected ? "Connected" : "Reconnecting";
 }
 
-function startApp() {
+// No token to connect with: the token error, plus Sign in when sign-in is on.
+function showTokenErrorScreen(isSignInEnabled) {
+  pageElements.loadingState.hidden = true;
+  pageElements.tokenError.hidden = false;
+  pageElements.signInButton.hidden = !isSignInEnabled;
+}
+
+// Sign in stays visible until the socket first connects; a signed-out socket (refresh failed) shows the token error again.
+function handleConnectionStatusChange(connectionStatus) {
+  updateConnectionDot(connectionStatus);
+  if (connectionStatus === CONNECTION_STATUS.CONNECTED) {
+    pageElements.signInButton.hidden = true;
+  } else if (connectionStatus === CONNECTION_STATUS.SIGNED_OUT) {
+    showTokenErrorScreen(true);
+  }
+}
+
+// The Cognito ID token when sign-in is on and a session exists, else the opaque access token as before; null when neither.
+function buildConnectionTokenResolver(signInConfig) {
+  const accessToken = resolveAccessToken(); // also strips ?token= from the address bar
+  if (signInConfig.isSignInEnabled && hasSignInSession()) {
+    return () => resolveIdToken(signInConfig);
+  }
+  if (!accessToken) return null;
+  return async () => accessToken;
+}
+
+async function startApp() {
   Object.entries(tabButtons).forEach(([tabName, button]) => button.addEventListener("click", () => showReceiverTab(tabName)));
   setUnseenHoldListener((hasUnseenPendingHold) => { hasUnseenHold = hasUnseenPendingHold; renderInboxTabDot(); });
   startCircleView({
@@ -267,14 +296,22 @@ function startApp() {
   });
   startReadingPane(() => { if (activeUserRole === USER_ROLE.RECEIVER && activeReceiverTab === RECEIVER_TAB.INBOX) applyReadingPaneLayout(); });
   startPidgeChat({ onReportPaymentRequested: () => { showReceiverTab(RECEIVER_TAB.CASES); openReportPaymentForm(); } });
-  const accessToken = resolveAccessToken();
-  if (!accessToken) {
-    pageElements.tokenError.hidden = false;
+  const signInConfig = await readSignInConfig();
+  if (signInConfig.isSignInEnabled) {
+    pageElements.signInButton.addEventListener("click", () => startSignIn(signInConfig));
+    pageElements.signInButton.hidden = false;
+    await completeSignInFromRedirect(signInConfig);
+  }
+  const resolveConnectionToken = buildConnectionTokenResolver(signInConfig);
+  if (resolveConnectionToken === null) {
+    showTokenErrorScreen(signInConfig.isSignInEnabled);
     return;
   }
   pageElements.loadingState.hidden = false;
   startPushNotifications();
-  connectToPushChannel({ accessToken, onPushMessage: handlePushMessage, onConnectionStatusChange: updateConnectionDot });
+  connectToPushChannel({
+    resolveConnectionToken, onPushMessage: handlePushMessage, onConnectionStatusChange: handleConnectionStatusChange,
+  });
 }
 
 startApp();

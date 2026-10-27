@@ -14,6 +14,10 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
 
 from enrol_resident import RESIDENT_ADDRESS_LIST_OUTPUT_NAME  # noqa: E402
+from shared.cognito_auth import APP_CLIENT_ID_ENVIRONMENT_NAME, ISSUER_ENVIRONMENT_NAME  # noqa: E402
+from shared.metrics import METRIC_NAMESPACE  # noqa: E402
+from shared.profiles import PROFILE_REJECTED_DIMENSION_NAME, PROFILE_REJECTED_METRIC_NAME, ProfileRejectionReason  # noqa: E402
+from shared.sanitize import AGENT_OUTPUT_REFUSED_METRIC_NAME, SUMMARY_FALLBACK_METRIC_NAME  # noqa: E402
 
 INFRA_DIRECTORY = REPOSITORY_ROOT / "infra"
 SYNTH_TEST_ENTRY = INFRA_DIRECTORY / "test-entry" / "synth-for-tests.ts"
@@ -457,3 +461,49 @@ def test_dispatch_failures_reach_a_dead_letter_queue(synthesized_template):
                     if alarm["Properties"].get("MetricName") == "ApproximateNumberOfMessagesVisible"
                     and {"Name": "QueueName", "Value": {"Fn::GetAtt": [queue_logical_id, "QueueName"]}} in alarm["Properties"].get("Dimensions", [])]
     assert len(queue_alarms) == 1 and queue_alarms[0]["Threshold"] == 1
+
+
+def find_alarm_properties(template: dict, construct_id: str) -> dict:
+    [alarm] = [alarm["Properties"] for logical_id, alarm in resources_of_type(template, "AWS::CloudWatch::Alarm").items()
+               if strip_trailing_logical_id_hash(logical_id) == construct_id]
+    return alarm
+
+
+@pytest.mark.parametrize(
+    ("construct_id", "metric_name", "dimensions"),
+    [
+        ("ReceiverMismatchAlarm", PROFILE_REJECTED_METRIC_NAME,
+         [{"Name": PROFILE_REJECTED_DIMENSION_NAME, "Value": str(ProfileRejectionReason.RECEIVER_MISMATCH)}]),
+        ("SummaryFallbackAlarm", SUMMARY_FALLBACK_METRIC_NAME, None),
+        ("AgentOutputRefusedAlarm", AGENT_OUTPUT_REFUSED_METRIC_NAME, None),
+    ],
+)
+def test_security_counts_page_on_the_first_event(synthesized_template, construct_id, metric_name, dimensions):
+    alarm = find_alarm_properties(synthesized_template, construct_id)
+    assert (alarm["Namespace"], alarm["MetricName"], alarm["Statistic"], alarm["Period"]) == (METRIC_NAMESPACE, metric_name, "Sum", 300)
+    assert (alarm["Threshold"], alarm["ComparisonOperator"]) == (1, "GreaterThanOrEqualToThreshold")
+    if dimensions is None:
+        assert "Dimensions" not in alarm
+    else:
+        assert alarm["Dimensions"] == dimensions
+
+
+def test_passkey_sign_in_is_choice_based_with_user_verification(synthesized_template):
+    [(user_pool_logical_id, user_pool)] = resources_of_type(synthesized_template, "AWS::Cognito::UserPool").items()
+    user_pool_properties = user_pool["Properties"]
+    assert sorted(user_pool_properties["Policies"]["SignInPolicy"]["AllowedFirstAuthFactors"]) == ["PASSWORD", "WEB_AUTHN"]
+    assert user_pool_properties["UserPoolTier"] == "ESSENTIALS"
+    assert user_pool_properties["WebAuthnUserVerification"] == "required"
+    assert user_pool_properties["AdminCreateUserConfig"]["AllowAdminCreateUserOnly"] is True
+    [(app_client_logical_id, app_client)] = resources_of_type(synthesized_template, "AWS::Cognito::UserPoolClient").items()
+    app_client_properties = app_client["Properties"]
+    assert app_client_properties["GenerateSecret"] is False
+    assert "ALLOW_USER_AUTH" in app_client_properties["ExplicitAuthFlows"]
+    assert app_client_properties["AllowedOAuthFlows"] == ["code"]
+    [domain] = resources_of_type(synthesized_template, "AWS::Cognito::UserPoolDomain").values()
+    assert domain["Properties"]["ManagedLoginVersion"] == 2
+    _connect_logical_id, connect_function = find_function_by_handler(synthesized_template, "ws_connect.handler.handle")
+    connect_environment = connect_function["Properties"]["Environment"]["Variables"]
+    assert render_intrinsic_as_text(connect_environment[ISSUER_ENVIRONMENT_NAME]) == (
+        "https://cognito-idp.us-east-1.amazonaws.com/${%s}" % user_pool_logical_id)
+    assert connect_environment[APP_CLIENT_ID_ENVIRONMENT_NAME] == {"Ref": app_client_logical_id}

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src wss://caw0noryy3.execute-api.us-east-1.amazonaws.com; style-src 'self'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src 'self' wss://caw0noryy3.execute-api.us-east-1.amazonaws.com https://*.auth.us-east-1.amazoncognito.com; style-src 'self'; script-src 'self'">
   <meta name="theme-color" content="#0e0e0e">
   <title>SendPidge</title>
   <link rel="manifest" href="manifest.json">
@@ -50,6 +50,7 @@
     <main class="screen-body">
       <p id="token-error" class="token-error" role="alert" hidden>Open the link with your access token.</p>
       <p id="loading-state" class="loading-state" role="status" hidden>Loading…</p>
+      <button id="sign-in-button" class="contact-secondary-button sign-in-button" type="button" hidden>Sign in</button>
       <p id="action-status" class="action-status" aria-live="polite"></p>
       <div id="reading-pane" class="reading-pane">
         <section id="inbox-screen" class="inbox-screen" aria-label="Inbox" hidden>

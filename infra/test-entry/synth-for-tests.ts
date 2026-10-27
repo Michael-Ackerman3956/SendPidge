@@ -9,6 +9,7 @@ const FAKE_PERSONAL_CONTEXT: Record<string, string> = {
   receiverMailbox: "grandma.mailbox@example.com",
   mockBankMailbox: "mock.bank@example.net",
   whatsappDisplayNumber: "+15550100000",
+  cognitoDomainPrefix: "sendpidge-test",  // passkey sign-in on, so the Cognito resources are synthesised
 };
 
 const outputDirectory = process.argv[2];

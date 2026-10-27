@@ -1,4 +1,4 @@
-// Live push channel: connects with the access token, reconnects with backoff, sends SYNC on every open,
+// Live push channel: connects with a token resolved before every open, reconnects with backoff, sends SYNC on every open,
 // parses JSON and hands each message on. sendClientAction writes one client action to the open socket.
 import { WEBSOCKET_URL } from "./config.js";
 import { CLIENT_ACTION, CONNECTION_STATUS } from "./constants.js";
@@ -8,8 +8,8 @@ const MAXIMUM_RECONNECT_DELAY_MS = 10000;
 
 let openSocketForActions = null;
 
-function buildWebSocketUrlWithToken(accessToken) {
-  return `${WEBSOCKET_URL}?token=${encodeURIComponent(accessToken)}`;
+function buildWebSocketUrlWithToken(connectionToken) {
+  return `${WEBSOCKET_URL}?token=${encodeURIComponent(connectionToken)}`;
 }
 
 function parsePushMessageOrReportError(rawMessageText) {
@@ -21,8 +21,10 @@ function parsePushMessageOrReportError(rawMessageText) {
   }
 }
 
-// Opens the socket and keeps it open. onPushMessage gets every parsed message; onConnectionStatusChange gets CONNECTION_STATUS values.
-export function connectToPushChannel({ accessToken, onPushMessage, onConnectionStatusChange }) {
+// Opens the socket and keeps it open. resolveConnectionToken (async, a token or null) runs before every open; null stops
+// reconnecting and reports CONNECTION_STATUS.SIGNED_OUT. onPushMessage gets every parsed message; onConnectionStatusChange
+// gets CONNECTION_STATUS values.
+export function connectToPushChannel({ resolveConnectionToken, onPushMessage, onConnectionStatusChange }) {
   let reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
 
   function scheduleReconnectWithBackoff() {
@@ -41,11 +43,17 @@ export function connectToPushChannel({ accessToken, onPushMessage, onConnectionS
     onPushMessage(pushMessage);
   }
 
-  function openSocket() {
+  async function openSocket() {
     onConnectionStatusChange(CONNECTION_STATUS.RECONNECTING);
+    const connectionToken = await resolveConnectionToken();
+    if (connectionToken === null) {
+      console.warn("SendPidge: no connection token; not reconnecting");
+      onConnectionStatusChange(CONNECTION_STATUS.SIGNED_OUT);
+      return;
+    }
     let socket;
     try {
-      socket = new WebSocket(buildWebSocketUrlWithToken(accessToken));
+      socket = new WebSocket(buildWebSocketUrlWithToken(connectionToken));
     } catch (socketCreationError) {
       // The error never includes the URL, so the token is not logged.
       console.error("SendPidge: could not open WebSocket", socketCreationError.name);

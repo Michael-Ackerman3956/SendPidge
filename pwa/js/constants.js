@@ -239,6 +239,7 @@ export const INTENT = Object.freeze({
 export const CONNECTION_STATUS = Object.freeze({
   CONNECTED: "connected",
   RECONNECTING: "reconnecting",
+  SIGNED_OUT: "signed_out", // no token to connect with (sign-in refresh failed); the socket stops reconnecting
 });
 
 // PWA-only: how one inbox row and its detail look, derived from state, request.status, quarantined and local release.

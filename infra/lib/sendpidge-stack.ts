@@ -11,6 +11,7 @@ import { Construct } from "constructs";
 import { buildCaseAgent, buildChatGuardrail, buildDispatchFunction } from "./case-agent.js";
 import { buildCaseInboundFunction, buildQuestionInboundFunction, buildReaderFunction } from "./inbound-functions.js";
 import { buildEmailStore, buildInboundRouting } from "./mail-ingress.js";
+import { buildPasskeySignIn, buildPwaSignInConfig } from "./passkey-sign-in.js";
 import { SharedResources, buildScheduler, buildWebSocketApi } from "./realtime.js";
 import { readStackSettings } from "./stack-settings.js";
 import { buildStaticSite } from "./static-site.js";
@@ -46,8 +47,15 @@ export class SendPidgeStack extends Stack {
     // Sending identity for pidge@<domain> (receipts, case reports, emailed chat replies); Easy DKIM, three CNAMEs at the DNS host.
     const sendingIdentity = new EmailIdentity(this, "SendingIdentity", { identity: Identity.domain(settings.sendingDomain) });
 
-    // The PWA ships the current pwa/ plus the public privacy and terms pages; the landing page is static files only.
-    const pwaDistribution = buildStaticSite(this, "Pwa", settings.pwaDomain, [Source.asset("../pwa"), Source.asset("../edge/public")]);
+    // Passkey sign-in (slice 13) is built first: the PWA's auth-config.json names its client and managed-login domain.
+    const passkeySignIn = buildPasskeySignIn(this, settings);
+
+    // The PWA ships the current pwa/, the public privacy and terms pages and its sign-in config; the landing page is static files only.
+    const pwaDistribution = buildStaticSite(this, "Pwa", settings.pwaDomain, [
+      Source.asset("../pwa"),
+      Source.asset("../edge/public"),
+      Source.jsonData("auth-config.json", buildPwaSignInConfig(settings, passkeySignIn)),
+    ]);
     const landingDistribution = buildStaticSite(this, "Landing", settings.landingDomain, [Source.asset("../landing")]);
 
     const table = new Table(this, "Table", {
@@ -75,12 +83,12 @@ export class SendPidgeStack extends Stack {
       code: Code.fromAsset("build/layer"),
       compatibleRuntimes: [Runtime.PYTHON_3_12],
       compatibleArchitectures: [Architecture.X86_64],
-      description: "strands-agents 1.62.0 + pydantic 2.14.1 + pywebpush 2.5.0 (infra/scripts/build_layer.sh)",
+      description: "strands-agents 1.62.0 + pydantic 2.14.1 + pywebpush 2.5.0 + PyJWT 2.15.1 (infra/scripts/build_layer.sh)",
     });
     const lambdaCode = Code.fromAsset(LAMBDA_SOURCE_DIRECTORY, {
       exclude: ["tests", "**/__pycache__", "requirements.txt"],
     });
-    const { webSocketApi, webSocketStage } = buildWebSocketApi(this, table, lambdaCode);
+    const { webSocketApi, webSocketStage } = buildWebSocketApi(this, table, lambdaCode, passkeySignIn);
     const { scheduleGroup, schedulerRole } = buildScheduler(this);
     const shared: SharedResources = { table, emailBucket, lambdaCode, dependencyLayer, webSocketApi, webSocketStage, scheduleGroup, schedulerRole };
 
@@ -200,5 +208,11 @@ export class SendPidgeStack extends Stack {
       ].join(" | "),
       description: `Create these three CNAME records (DNS-only) so SES can sign mail from ${settings.sendingDomain}`,
     });
+    if (passkeySignIn !== undefined) {
+      // scripts/seed_auth_users.py reads UserPoolId to create and link the Cognito users.
+      new CfnOutput(this, "UserPoolId", { value: passkeySignIn.userPool.userPoolId });
+      new CfnOutput(this, "UserPoolClientId", { value: passkeySignIn.appClient.userPoolClientId });
+      new CfnOutput(this, "CognitoHostedUiDomain", { value: passkeySignIn.domain.baseUrl() });
+    }
   }
 }

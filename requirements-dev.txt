@@ -4,3 +4,4 @@ boto3==1.43.117
 pytest==8.4.2
 awscrt==0.36.0
 moto[dynamodb,s3]==5.2.4
+PyJWT[crypto]==2.15.1

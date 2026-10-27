@@ -6,6 +6,7 @@ import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Code, LayerVersion } from "aws-cdk-lib/aws-lambda";
 import { ScheduleGroup } from "aws-cdk-lib/aws-scheduler";
 import { Bucket } from "aws-cdk-lib/aws-s3";
+import { PasskeySignIn } from "./passkey-sign-in.js";
 import { buildPythonFunction } from "./python-function.js";
 
 const WEBSOCKET_STAGE_NAME = "live";
@@ -25,11 +26,18 @@ export interface SharedResources {
 }
 
 // The PWA's push channel: ws_connect handles $connect/$disconnect; $default is routed to pidge-verdict later.
-export function buildWebSocketApi(stack: Stack, table: Table, lambdaCode: Code): { webSocketApi: WebSocketApi; webSocketStage: WebSocketStage } {
+// With passkey sign-in, $connect also verifies Cognito ID tokens against this pool's issuer and app client.
+export function buildWebSocketApi(
+  stack: Stack, table: Table, lambdaCode: Code, passkeySignIn?: PasskeySignIn,
+): { webSocketApi: WebSocketApi; webSocketStage: WebSocketStage } {
+  const signInEnvironment: Record<string, string> = passkeySignIn === undefined ? {} : {
+    COGNITO_ISSUER: `https://cognito-idp.${stack.region}.amazonaws.com/${passkeySignIn.userPool.userPoolId}`,
+    COGNITO_APP_CLIENT_ID: passkeySignIn.appClient.userPoolClientId,
+  };
   const webSocketConnectFunction = buildPythonFunction(stack, "WebSocketConnect", lambdaCode, {
     handler: "ws_connect.handler.handle",
     timeout: Duration.seconds(10),
-    environment: { TABLE_NAME: table.tableName },
+    environment: { TABLE_NAME: table.tableName, ...signInEnvironment },
   });
   table.grantReadWriteData(webSocketConnectFunction);
 

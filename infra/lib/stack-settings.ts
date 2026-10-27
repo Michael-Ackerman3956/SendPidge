@@ -41,9 +41,16 @@ export interface StackSettings {
   callReminderTodayDelaySeconds: number;
   callReminderTomorrowDelaySeconds: number;
   vapidSecretName: string;
+  // The Cognito managed-login domain prefix; "" → passkey sign-in off (no user pool, no COGNITO_* env).
+  cognitoDomainPrefix: string;
+  // Where managed login returns the PWA after sign-in: its root URL.
+  pwaCallbackUrl: string;
 }
 
 const MAXIMUM_CALL_REMINDER_DELAY_SECONDS = 82800;
+// Cognito prefix rules: lower-case letters, digits and inner hyphens, at most 63 characters, none of these reserved words.
+const COGNITO_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const COGNITO_DOMAIN_PREFIX_RESERVED_WORDS = ["aws", "amazon", "cognito"];
 
 export function readStackSettings(stack: Stack): StackSettings {
   const receiverDomain: string = stack.node.getContext("receiverDomain");
@@ -79,6 +86,7 @@ export function readStackSettings(stack: Stack): StackSettings {
   if ((chatEnabled || receiverMailbox !== "") && mailboxResidentAddress === "") {
     throw new Error("chatEnabled or RECEIVER_MAILBOX needs mailboxResidentAddress: the resident that mailbox belongs to");
   }
+  const pwaDomain: string = stack.node.getContext("pwaDomain");
   return {
     receiverDomain,
     mailboxResidentAddress,
@@ -86,7 +94,7 @@ export function readStackSettings(stack: Stack): StackSettings {
     receiptSender,
     sendingDomain,
     casesAddress: `cases@${receiverDomain}`,
-    pwaDomain: stack.node.getContext("pwaDomain"),
+    pwaDomain,
     landingDomain: stack.node.getContext("landingDomain"),
     // The ask cap: how many "Was this you?" asks one contact can get per hour; later holds stay silent (slice 9).
     asksPerContactPerHour: Number(stack.node.tryGetContext("asksPerContactPerHour") ?? 3),
@@ -123,7 +131,23 @@ export function readStackSettings(stack: Stack): StackSettings {
     callReminderTomorrowDelaySeconds,
     // The Web Push signing key (raw P-256, base64url), created once by scripts/create_vapid_key.py; never in context or code.
     vapidSecretName: stack.node.tryGetContext("vapidSecretName") ?? "sendpidge/vapid-private-key",
+    cognitoDomainPrefix: readCognitoDomainPrefix(stack),
+    pwaCallbackUrl: `https://${pwaDomain}/`,
   };
+}
+
+// The managed-login domain prefix; absent or "" reads as "" (sign-in off). Throws when it is set but Cognito would refuse it.
+function readCognitoDomainPrefix(stack: Stack): string {
+  const cognitoDomainPrefix = readOptionalTextContext(stack, "cognitoDomainPrefix");
+  if (cognitoDomainPrefix === "") {
+    return cognitoDomainPrefix;
+  }
+  const hasReservedWord = COGNITO_DOMAIN_PREFIX_RESERVED_WORDS.some((reservedWord) => cognitoDomainPrefix.includes(reservedWord));
+  if (!COGNITO_DOMAIN_PREFIX_PATTERN.test(cognitoDomainPrefix) || hasReservedWord) {
+    const reservedWords = COGNITO_DOMAIN_PREFIX_RESERVED_WORDS.join(", ");
+    throw new Error(`cognitoDomainPrefix must be lower-case letters, digits and inner hyphens (1-63) without ${reservedWords}`);
+  }
+  return cognitoDomainPrefix;
 }
 
 // The mailbox resident's address, lower-cased; absent reads as "". Throws when it is set but not on receiverDomain.
