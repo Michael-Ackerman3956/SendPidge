@@ -7,6 +7,7 @@ import json
 import pytest
 
 from shared import graph
+from tests.helpers.profiles import seed_resident
 from tests.test_verdict import BUCKET_NAME, CONTACT_EMAIL, JIMIN_WHATSAPP_NUMBER, RECEIVER_ADDRESS, RECEIVER_USER_ID, aws  # noqa: F401
 
 CONTACT_SORT_KEY = "CONTACT#jimin"
@@ -15,12 +16,8 @@ MINSOO_FORM = {"action": "add_contact", "contactName": "Minsoo", "relationship":
                "phoneNumbers": [], "emailAddresses": ["minsoo@example.com"]}
 
 
-@pytest.fixture
-def verdict_handler(aws, monkeypatch):  # noqa: F811
+def build_verdict_handler(monkeypatch) -> tuple:
     """pidge-verdict as deployed (env names from the CDK stack); pushes to the caller's socket are captured as wire JSON."""
-    monkeypatch.setenv("RECEIVER_ADDRESS", RECEIVER_ADDRESS)
-    monkeypatch.setenv("RECEIVER_USER_ID", RECEIVER_USER_ID)
-    monkeypatch.setenv("RECEIVER_NAME", "Grandma")
     monkeypatch.setenv("EMAIL_BUCKET", BUCKET_NAME)
     monkeypatch.setenv("RECEIPT_SENDER", "pidge@sendpidge.example")
     monkeypatch.setenv("RCS_TOPIC_ARN", "arn:aws:sns:us-east-1:123456789012:rcs")
@@ -37,6 +34,19 @@ def verdict_handler(aws, monkeypatch):  # noqa: F811
                         lambda _connection_id, message: pushed_messages.append(json.loads(handler.channels.encode_push_message(message))))
     monkeypatch.setattr(handler.channels, "push_to_user", lambda _user_id, _message: 0)
     return handler, pushed_messages
+
+
+@pytest.fixture
+def verdict_handler_without_profiles(aws, monkeypatch):  # noqa: F811
+    """The handler with no PROFILE rows yet."""
+    return build_verdict_handler(monkeypatch)
+
+
+@pytest.fixture
+def verdict_handler(aws, monkeypatch):  # noqa: F811
+    """The handler with Grandma enrolled as a resident by the production enrolment code."""
+    seed_resident(RECEIVER_ADDRESS, RECEIVER_USER_ID, "Grandma")
+    return build_verdict_handler(monkeypatch)
 
 
 def seed_circle_contact(receiver_address: str = RECEIVER_ADDRESS, contact_user_id: str = "jimin") -> dict:

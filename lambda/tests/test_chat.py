@@ -11,8 +11,9 @@ from shared import chat, chat_agent, graph, verdict
 from shared.enums import (
     ChatCardKind, ChatVia, GuardrailOutcome, PolicyDecision, PushMessageType, UnsafeTextKind, VerdictAnswer,
 )
+from tests.helpers.profiles import seed_contact_roles
 from tests.helpers.scripted_model import ScriptedModel, tool_call_step, verdict_step
-from tests.test_verdict import JIMIN, RECEIVER_USER_ID, aws, at, new_request  # noqa: F401
+from tests.test_verdict import JIMIN, RECEIVER_ADDRESS, RECEIVER_USER_ID, aws, at, new_request  # noqa: F401
 from tests.test_verify_contact import seed_circle_contact, send_action, verdict_handler  # noqa: F401
 
 RED_TEAM_QUESTIONS = [
@@ -240,7 +241,10 @@ def test_sync_carries_the_flag_the_last_twenty_messages_oldest_first_and_the_cir
                                        "reachPoints": [{"channel": "whatsapp", "address": "+821012345678", "verifiedVia": "seed"},
                                                        {"channel": "email", "address": "jimin@example.com", "verifiedVia": None}]}]
     assert sync_message["contactVerification"] == {"whatsapp": False, "mock": False}
+    graph.get_table().put_item(Item={"PK": "USER#jimin", "SK": "PROFILE", "tokenHash": "jimin-token-hash"})
+    assert seed_contact_roles(RECEIVER_ADDRESS) == []
     send_action(handler, "jimin", {"action": "sync"})
+    assert pushed_messages[-1]["role"] == "contact"
     assert "circle" not in pushed_messages[-1] and "+82" not in json.dumps(pushed_messages[-1])  # her numbers reach her sockets only
     monkeypatch.delenv("CHAT_ENABLED")
     send_action(handler, RECEIVER_USER_ID, {"action": "sync"})

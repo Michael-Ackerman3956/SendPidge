@@ -8,7 +8,8 @@ import pytest
 
 from shared import ask_link, graph
 from shared.enums import AskLinkOutcome, Channel, RequestState
-from tests.test_verdict import RECEIVER_USER_ID, aws, new_request, status_of  # noqa: F401
+from tests.helpers.profiles import seed_resident
+from tests.test_verdict import RECEIVER_ADDRESS, RECEIVER_USER_ID, aws, new_request, status_of  # noqa: F401
 
 BASE_URL = "https://app.sendpidge.example"
 REQUEST_ID = "req-0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b"
@@ -22,8 +23,7 @@ def signing_key(monkeypatch):
 
 @pytest.fixture
 def link_handler(aws, signing_key, monkeypatch):  # noqa: F811
-    monkeypatch.setenv("RECEIVER_USER_ID", RECEIVER_USER_ID)
-    monkeypatch.setenv("RECEIVER_NAME", "Grandma")
+    seed_resident(RECEIVER_ADDRESS, RECEIVER_USER_ID, "Grandma")
     monkeypatch.setenv("RECEIPT_SENDER", "pidge@sendpidge.example")
     monkeypatch.setenv("WEBSOCKET_ENDPOINT", "https://example.com")
     handler = importlib.import_module("pidge_ask_link.handler")

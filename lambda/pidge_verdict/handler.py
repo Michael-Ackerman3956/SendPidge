@@ -2,7 +2,8 @@
 to Pidge, a browser's Web Push subscription, the receiver's Add-someone form and demo code reply (circle_handlers);
 SNS: phone-channel taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's reply to the ask by email.
 
-The user comes from the connection row, never from the message body.
+The user comes from the connection row, never from the message body; their role and resident come from their own
+USER#<id>/PROFILE row, and an answer's resident from the REQUEST# row's receiverEmail.
 """
 
 import json
@@ -14,19 +15,17 @@ from urllib.parse import unquote_plus
 import boto3
 
 from pidge_verdict import circle_handlers
-from shared import cases, channels, chat, email_ask, graph, payloads, push_subscriptions, rcs, schedules, verdict, whatsapp
+from shared import cases, channels, chat, email_ask, graph, payloads, profiles, push_subscriptions, rcs, schedules, verdict, whatsapp
 from shared.enums import (
     ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, EmailedAnswerOutcome, PushMessageType, RequestState,
     UserRole, VerdictAnswer,
 )
 from shared.metrics import emit_count_metric
+from shared.profiles import ReceiverProfile, UnknownReceiverError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-RECEIVER_ADDRESS = os.environ["RECEIVER_ADDRESS"]
-RECEIVER_USER_ID = os.environ["RECEIVER_USER_ID"]
-RECEIVER_NAME = os.environ["RECEIVER_NAME"]
 EMAIL_BUCKET = os.environ["EMAIL_BUCKET"]
 RECEIPT_SENDER = os.environ["RECEIPT_SENDER"]
 RCS_TOPIC_ARN = os.environ["RCS_TOPIC_ARN"]
@@ -71,33 +70,29 @@ def handle(event, context):
     except (ValueError, TypeError, KeyError):
         channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
         return HANDLED
-    if action is ClientAction.SYNC:
+    if action in RESIDENT_ACTION_HANDLERS:
+        route_resident_action(connection_id, user_id, action, body)
+    elif action is ClientAction.SYNC:
         handle_sync(connection_id, user_id)
     elif action is ClientAction.ANSWER:
         handle_answer(connection_id, user_id, body, request_context["messageId"], parse_answer(body))
     elif action in ANSWER_FOR_ACTION:
         handle_answer(connection_id, user_id, body, request_context["messageId"], ANSWER_FOR_ACTION[action])
-    elif action is ClientAction.REPORT_PAYMENT:
-        handle_report_payment(connection_id, user_id, body)
-    elif action is ClientAction.SEND_REPORT:
-        handle_send_report(connection_id, user_id, body)
-    elif action is ClientAction.CLOSE_CASE:
-        handle_close_case(connection_id, user_id, body)
     elif action is ClientAction.SAVE_PUSH_SUBSCRIPTION:
         handle_save_push_subscription(connection_id, user_id, body)
-    elif action is ClientAction.ASK_PIDGE:
-        handle_ask_pidge(connection_id, user_id, body)
-    elif action is ClientAction.ADD_CONTACT:
-        circle_handlers.handle_add_contact(connection_id, user_id, body)
-    elif action is ClientAction.VERIFY_CONTACT:
-        circle_handlers.handle_verify_contact(connection_id, user_id, body)
-    elif action is ClientAction.EDIT_CONTACT:
-        circle_handlers.handle_edit_contact(connection_id, user_id, body)
-    elif action is ClientAction.CONFIRM:
-        handle_confirm(connection_id, user_id, body)
     else:
         channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)  # a member nobody routed: never fall through to a write
     return HANDLED
+
+
+def route_resident_action(connection_id: str, user_id: str, action: ClientAction, body: dict) -> None:
+    """Authorization first: the caller's own resident from USER#<id>/PROFILE (role RECEIVER, named back by RECEIVER#), never
+    an id from the body. Anyone else is NOT_ALLOWED before the action reads the body."""
+    resident = profiles.require_resident_caller(user_id)
+    if resident is None:
+        channels.reject_action(connection_id, None, ActionOutcome.NOT_ALLOWED)
+        return
+    RESIDENT_ACTION_HANDLERS[action](connection_id, resident, body)
 
 
 def contact_name_for(request_row: dict) -> str:
@@ -106,34 +101,59 @@ def contact_name_for(request_row: dict) -> str:
 
 
 def handle_sync(connection_id: str, user_id: str) -> None:
-    """Reconnect or reload: the role and the rows this user should see right now (a past releaseAt reads as confirmed)."""
-    now = graph.now_timestamp()
-    if user_id == RECEIVER_USER_ID:
-        emails = []
-        for email_row in graph.list_recent_rows(user_id, graph.EMAIL_ROW_KIND, SYNC_EMAIL_LIMIT):
-            if "state" not in email_row:
-                emails.append(payloads.reading_email_for_receiver(email_row))  # the Reader is on it, or its retry will be
-                continue
-            request_row = graph.get_request(email_row["requestId"]) if email_row.get("requestId") else None
-            contact_name = contact_name_for(request_row) if request_row else None
-            status = verdict.effective_status(request_row, now) if request_row else None
-            emails.append(payloads.email_for_receiver(email_row, request_row, contact_name, status))
-        notes = [payloads.note_for_receiver(note_row) for note_row in graph.list_recent_rows(user_id, graph.NOTE_ROW_KIND, SYNC_NOTE_LIMIT)]
-        case_rows = graph.list_recent_rows(user_id, graph.CASE_ROW_KIND, SYNC_CASE_LIMIT)
-        case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(graph.case_id_of(case_row))) for case_row in case_rows]
-        chat_messages = [chat.chat_message_for_sync(message_row) for message_row in chat.list_recent_messages(user_id, SYNC_CHAT_LIMIT)]
-        circle_settings = circle_handlers.read_settings()
-        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "receiverName": RECEIVER_NAME, "emails": emails,
-                   "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages,
-                   "circle": circle_handlers.circle_entries(circle_settings),
-                   "contactVerification": circle_handlers.verification_flags(circle_settings)}
+    """Reconnect or reload: the role from the caller's own PROFILE row and the rows that role should see right now (a past
+    releaseAt reads as confirmed). No PROFILE, an unknown role, an org admin or an unmatched resident: NOT_ALLOWED."""
+    user_profile = profiles.get_user_profile(user_id)
+    role = user_profile.role if user_profile is not None else None
+    resident = profiles.require_resident_caller(user_id) if role is UserRole.RECEIVER else None
+    if resident is not None:
+        channels.push_to_connection(connection_id, receiver_sync_message(resident))
+    elif role is UserRole.CONTACT:
+        channels.push_to_connection(connection_id, contact_sync_message(user_id))
     else:
-        cards = []
-        for request_row in graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT):
-            email_row = graph.get_email(request_row["emailId"])
-            cards.append(payloads.card_for_contact(request_row, email_row, RECEIVER_NAME, verdict.effective_status(request_row, now)))
-        message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.CONTACT, "requests": cards}
-    channels.push_to_connection(connection_id, message)
+        channels.reject_action(connection_id, None, ActionOutcome.NOT_ALLOWED)
+
+
+def receiver_sync_message(resident: ReceiverProfile) -> dict:
+    now = graph.now_timestamp()
+    user_id = resident.receiver_user_id
+    emails = []
+    for email_row in graph.list_recent_rows(user_id, graph.EMAIL_ROW_KIND, SYNC_EMAIL_LIMIT):
+        if "state" not in email_row:
+            emails.append(payloads.reading_email_for_receiver(email_row))  # the Reader is on it, or its retry will be
+            continue
+        request_row = graph.get_request(email_row["requestId"]) if email_row.get("requestId") else None
+        contact_name = contact_name_for(request_row) if request_row else None
+        status = verdict.effective_status(request_row, now) if request_row else None
+        emails.append(payloads.email_for_receiver(email_row, request_row, contact_name, status))
+    notes = [payloads.note_for_receiver(note_row) for note_row in graph.list_recent_rows(user_id, graph.NOTE_ROW_KIND, SYNC_NOTE_LIMIT)]
+    case_rows = graph.list_recent_rows(user_id, graph.CASE_ROW_KIND, SYNC_CASE_LIMIT)
+    case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(graph.case_id_of(case_row))) for case_row in case_rows]
+    chat_messages = [chat.chat_message_for_sync(message_row) for message_row in chat.list_recent_messages(user_id, SYNC_CHAT_LIMIT)]
+    circle_settings = circle_handlers.read_settings()
+    return {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "receiverName": resident.resident_name, "emails": emails,
+            "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages,
+            "circle": circle_handlers.circle_entries(circle_settings, resident),
+            "contactVerification": circle_handlers.verification_flags(circle_settings)}
+
+
+def contact_sync_message(user_id: str) -> dict:
+    """The contact's cards, each named for its own resident; a card whose resident has no profile is skipped (and counted)."""
+    now = graph.now_timestamp()
+    resident_names: dict[str, str] = {}
+    cards = []
+    for request_row in graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT):
+        receiver_address = request_row["receiverEmail"]
+        if receiver_address not in resident_names:
+            try:
+                resident_names[receiver_address] = profiles.require_receiver_profile(receiver_address).resident_name
+            except UnknownReceiverError:
+                logger.warning("request %s skipped in sync: its receiver has no profile", graph.request_id_of(request_row))
+                continue
+        email_row = graph.get_email(request_row["emailId"])
+        cards.append(payloads.card_for_contact(request_row, email_row, resident_names[receiver_address],
+                                               verdict.effective_status(request_row, now)))
+    return {"type": PushMessageType.SYNC_STATE, "role": UserRole.CONTACT, "requests": cards}
 
 
 def parse_answer(body: dict) -> VerdictAnswer | None:
@@ -150,17 +170,32 @@ def handle_answer(connection_id: str, user_id: str, body: dict, websocket_messag
     if answer is None or not isinstance(request_id, str):
         channels.reject_action(connection_id, request_id if isinstance(request_id, str) else None, ActionOutcome.BAD_MESSAGE)
         return
+    try:
+        resident = resident_of_request(request_id)
+    except UnknownReceiverError:
+        channels.reject_action(connection_id, request_id, ActionOutcome.NOT_ALLOWED)
+        return
     sender = verdict.SenderIdentity(Channel.INAPP, user_id)
     result = verdict.record_answer(request_id, answer, sender, f"inapp:{websocket_message_id}", graph.now_timestamp())
     if result.outcome is not ActionOutcome.RECORDED:
         channels.reject_action(connection_id, request_id, result.outcome)
         return
-    announce_recorded_answer(request_id, result)
+    announce_recorded_answer(request_id, result, resident)
 
 
-def announce_recorded_answer(request_id: str, result: verdict.ActionResult) -> None:
-    """Both PWAs learn the new status and Jimin gets the receipt (shared with the ask link); a Yes starts the release timer."""
-    channels.announce_recorded_answer(result, RECEIVER_USER_ID, RECEIVER_NAME, RECEIPT_SENDER, ses_client)
+def resident_of_request(request_id: str) -> ReceiverProfile | None:
+    """The resident the REQUEST# row's receiverEmail names, read before any answer is written. None when there is no such
+    request (record_answer then says UNKNOWN_REQUEST); raises UnknownReceiverError (counted) when the address has no profile."""
+    request_row = graph.get_request(request_id)
+    if request_row is None:
+        return None
+    return profiles.require_receiver_profile(request_row["receiverEmail"])
+
+
+def announce_recorded_answer(request_id: str, result: verdict.ActionResult, resident: ReceiverProfile) -> None:
+    """Both PWAs learn the new status and Jimin gets the receipt (shared with the ask link); a Yes starts the release timer.
+    Only called after a RECORDED answer, so the request existed and resident is set."""
+    channels.announce_recorded_answer(result, resident.receiver_user_id, resident.resident_name, RECEIPT_SENDER, ses_client)
     if result.status is RequestState.CONFIRMED_PENDING:
         schedule_release(request_id, result.request_row["releaseAt"])
 
@@ -222,19 +257,20 @@ def handle_sns_records(records: list) -> None:
         if parsed is None:
             continue
         channel, sender, request_id, answer, inbound_message_id = parsed
+        resident = resident_of_request(request_id)  # no profile raises: the record is redelivered
         result = verdict.record_answer(request_id, answer, sender, inbound_message_id, graph.now_timestamp())
         if result.outcome is not ActionOutcome.RECORDED:
             logger.info("%s answer on %s not recorded: %s", channel, request_id, result.outcome)
             continue
-        announce_recorded_answer(request_id, result)
+        announce_recorded_answer(request_id, result, resident)
         if channel is Channel.WHATSAPP:
-            acknowledge_on_whatsapp(request_id, result.status, sender.value)
+            acknowledge_on_whatsapp(request_id, result.status, sender.value, resident.resident_name)
 
 
-def acknowledge_on_whatsapp(request_id: str, status: RequestState, destination_number: str) -> None:
+def acknowledge_on_whatsapp(request_id: str, status: RequestState, destination_number: str, resident_name: str) -> None:
     """Only after a tap on WhatsApp itself (it opens Meta's 24-h window); a failed send is logged, the answer already landed."""
     try:
-        channels.acknowledge_on_whatsapp(request_id, status, destination_number, RECEIVER_NAME)
+        channels.acknowledge_on_whatsapp(request_id, status, destination_number, resident_name)
     except Exception:
         logger.exception("whatsapp acknowledgement for %s failed", request_id)
 
@@ -252,6 +288,7 @@ def handle_emailed_answer_object(bucket_name: str, object_key: str) -> None:
         logger.warning("emailed answer %s dropped: %s", object_key, emailed_answer.outcome)
         emit_count_metric(EMAILED_ANSWER_DROPPED_METRIC_NAME, "Outcome", str(emailed_answer.outcome))
         return
+    resident = resident_of_request(emailed_answer.request_id)  # no profile raises: the S3 event is retried
     sender = verdict.SenderIdentity(Channel.EMAIL, emailed_answer.sender_address)
     inbound_message_id = f"email:{emailed_answer.message_id or object_key}"
     result = verdict.record_answer(
@@ -261,38 +298,38 @@ def handle_emailed_answer_object(bucket_name: str, object_key: str) -> None:
         logger.info("email answer on %s not recorded: %s", emailed_answer.request_id, result.outcome)
         emit_count_metric(EMAILED_ANSWER_DROPPED_METRIC_NAME, "Outcome", str(result.outcome))
         return
-    announce_recorded_answer(emailed_answer.request_id, result)
+    announce_recorded_answer(emailed_answer.request_id, result, resident)
 
 
-def handle_confirm(connection_id: str, user_id: str, body: dict) -> None:
+def handle_confirm(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
     request_id = body.get("requestId")
     if not isinstance(request_id, str):
         channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
         return
     result = verdict.confirm_quarantine(
-        request_id, user_id, RECEIVER_USER_ID, RECEIVER_ADDRESS, s3_client, EMAIL_BUCKET
+        request_id, resident.receiver_user_id, resident.receiver_user_id, resident.receiver_address, s3_client, EMAIL_BUCKET
     )
     if result.outcome is not ActionOutcome.RECORDED:
         channels.reject_action(connection_id, request_id, result.outcome)
         return
     contact_row = graph.get_contact_row(result.request_row["receiverEmail"], result.request_row["contactSK"])
     message = payloads.request_state_message(result.request_row, result.status, contact_row["contactName"], True)
-    channels.push_to_user(RECEIVER_USER_ID, message)
+    channels.push_to_user(resident.receiver_user_id, message)
     channels.push_to_user(contact_row["contactPwaUserId"], message)
 
 
-def handle_report_payment(connection_id: str, user_id: str, body: dict) -> None:
+def handle_report_payment(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
     """Grandma's "I already paid": the CASE# row is written here; the stream wakes the case agent for the pack."""
     try:
         report = verdict.PaymentReport.from_client_body(body)
     except (KeyError, TypeError, ValueError, ArithmeticError):
         channels.reject_action(connection_id, body.get("requestId") if isinstance(body.get("requestId"), str) else None, ActionOutcome.BAD_MESSAGE)
         return
-    result = verdict.report_payment(report, user_id, RECEIVER_USER_ID, RECEIVER_ADDRESS)
+    result = verdict.report_payment(report, resident.receiver_user_id, resident.receiver_user_id, resident.receiver_address)
     if result.outcome is not ActionOutcome.RECORDED:
         channels.reject_action(connection_id, report.request_id, result.outcome)
         return
-    channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.email_row, [], CaseEvent.OPENED))
+    channels.push_to_user(resident.receiver_user_id, payloads.case_state_message(result.email_row, [], CaseEvent.OPENED))
 
 
 def case_id_from(body: dict) -> str | None:
@@ -300,7 +337,7 @@ def case_id_from(body: dict) -> str | None:
     return case_id if isinstance(case_id, str) and case_id else None
 
 
-def handle_send_report(connection_id: str, user_id: str, body: dict) -> None:
+def handle_send_report(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
     """Send to my bank: code emails the SIMULATED bank mailbox and books the one reminder."""
     case_id = case_id_from(body)
     if case_id is None:
@@ -310,11 +347,11 @@ def handle_send_report(connection_id: str, user_id: str, body: dict) -> None:
         logger.error("MOCK_BANK_MAILBOX / CASES_ADDRESS not configured; Send to my bank refused")
         channels.reject_action(connection_id, case_id, ActionOutcome.NOT_ALLOWED)
         return
-    result = cases.send_report(case_id, user_id, RECEIVER_USER_ID, RECEIVER_NAME, ses_client, RECEIPT_SENDER, CASES_ADDRESS, MOCK_BANK_MAILBOX)
+    result = cases.send_report(case_id, resident.receiver_user_id, resident, ses_client, RECEIPT_SENDER, CASES_ADDRESS, MOCK_BANK_MAILBOX)
     if result.outcome is not ActionOutcome.RECORDED:
         channels.reject_action(connection_id, case_id, result.outcome)
         return
-    channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.REPORT_SENT))
+    channels.push_to_user(resident.receiver_user_id, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.REPORT_SENT))
     if BANK_FOLLOW_UP_ENABLED:
         try:
             fire_at = datetime.now(timezone.utc) + timedelta(seconds=BANK_FOLLOW_UP_DELAY_SECONDS)
@@ -323,16 +360,16 @@ def handle_send_report(connection_id: str, user_id: str, body: dict) -> None:
             logger.exception("follow-up schedule for %s failed; no reminder will be sent", case_id)
 
 
-def handle_close_case(connection_id: str, user_id: str, body: dict) -> None:
+def handle_close_case(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
     case_id = case_id_from(body)
     if case_id is None:
         channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
         return
-    result = cases.close_case(case_id, user_id, RECEIVER_USER_ID)
+    result = cases.close_case(case_id, resident.receiver_user_id, resident)
     if result.outcome is not ActionOutcome.RECORDED:
         channels.reject_action(connection_id, case_id, result.outcome)
         return
-    channels.push_to_user(RECEIVER_USER_ID, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.CLOSED))
+    channels.push_to_user(resident.receiver_user_id, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.CLOSED))
 
 
 def handle_save_push_subscription(connection_id: str, user_id: str, body: dict) -> None:
@@ -342,11 +379,9 @@ def handle_save_push_subscription(connection_id: str, user_id: str, body: dict) 
         channels.reject_action(connection_id, None, outcome)
 
 
-def handle_ask_pidge(connection_id: str, user_id: str, body: dict) -> None:
-    """The receiver's question: cap and grandma row here; pidge-dispatch answers from the stream. A refusal is a reply bubble."""
-    if user_id != RECEIVER_USER_ID:
-        channels.reject_action(connection_id, None, ActionOutcome.NOT_ALLOWED)
-        return
+def handle_ask_pidge(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
+    """The resident's question: cap and grandma row here; pidge-dispatch answers from the stream. A refusal is a reply bubble."""
+    user_id = resident.receiver_user_id
     accepted = chat.accept_question(user_id, body.get("text"), ChatVia.WINDOW)
     if accepted.refusal_text is not None:
         logger.info("question from %s refused: %s", user_id, accepted.refusal_text)
@@ -355,3 +390,13 @@ def handle_ask_pidge(connection_id: str, user_id: str, body: dict) -> None:
     logger.info("question %s stored for %s (%d characters)", accepted.message_row["SK"], user_id, len(accepted.message_row["text"]))
 
 
+RESIDENT_ACTION_HANDLERS = {  # each acts for the caller's own resident, resolved first by route_resident_action
+    ClientAction.CONFIRM: handle_confirm,
+    ClientAction.REPORT_PAYMENT: handle_report_payment,
+    ClientAction.SEND_REPORT: handle_send_report,
+    ClientAction.CLOSE_CASE: handle_close_case,
+    ClientAction.ASK_PIDGE: handle_ask_pidge,
+    ClientAction.ADD_CONTACT: circle_handlers.handle_add_contact,
+    ClientAction.VERIFY_CONTACT: circle_handlers.handle_verify_contact,
+    ClientAction.EDIT_CONTACT: circle_handlers.handle_edit_contact,
+}

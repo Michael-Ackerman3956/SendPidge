@@ -6,13 +6,13 @@ import pytest
 
 from shared import graph, verdict
 from shared.enums import RequestState, VerdictAnswer
-from tests.test_verdict import JIMIN, aws, at, new_request  # noqa: F401
+from tests.helpers.profiles import seed_resident
+from tests.test_verdict import JIMIN, RECEIVER_ADDRESS, RECEIVER_USER_ID, aws, at, new_request  # noqa: F401
 
 
 @pytest.fixture
-def retry_handler(monkeypatch):
-    monkeypatch.setenv("RECEIVER_USER_ID", "grandma")
-    monkeypatch.setenv("RECEIVER_NAME", "Grandma")
+def retry_handler(aws, monkeypatch):  # noqa: F811
+    seed_resident(RECEIVER_ADDRESS, RECEIVER_USER_ID, "Grandma")
     monkeypatch.setenv("RE_ASK_DELAY_SECONDS", "600")
     monkeypatch.setenv("WEBSOCKET_ENDPOINT", "https://example.com")
     handler = importlib.import_module("pidge_retry.handler")

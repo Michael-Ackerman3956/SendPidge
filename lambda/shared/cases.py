@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from shared import graph, refund_rules
 from shared.enums import ActionOutcome, CaseState, Jurisdiction, PaymentRail, ReasonCode
+from shared.profiles import ReceiverProfile
 
 logger = logging.getLogger(__name__)
 
@@ -60,23 +61,31 @@ def build_report_body(case_row: dict, receiver_name: str) -> str:
     return "\n".join(lines)
 
 
-def is_receiver(user_id: str, receiver_user_id: str) -> bool:
-    return hmac.compare_digest(user_id, receiver_user_id)
-
-
-def send_report(case_id: str, user_id: str, receiver_user_id: str, receiver_name: str, ses_client, sender_address: str,
-                reply_to_address: str, mock_bank_mailbox: str) -> CaseActionResult:
-    """Token and CASETOKEN# first, then the send, then open→reported. A failed send leaves open with the token kept."""
-    if not is_receiver(user_id, receiver_user_id):
-        return CaseActionResult(ActionOutcome.NOT_ALLOWED)
+def read_residents_case(case_id: str, caller_user_id: str, resident: ReceiverProfile) -> tuple[CaseActionResult | None, dict | None]:
+    """(None, the case row) when the case exists and both the caller and the case's receiverEmail are this resident's; else
+    (the refusal, None). Another resident's case is NOT_ALLOWED and its row is never returned."""
+    if not hmac.compare_digest(caller_user_id, resident.receiver_user_id):
+        return CaseActionResult(ActionOutcome.NOT_ALLOWED), None
     case_row = graph.get_case(case_id)
     if case_row is None:
-        return CaseActionResult(ActionOutcome.UNKNOWN_REQUEST)
+        return CaseActionResult(ActionOutcome.UNKNOWN_REQUEST), None
+    if case_row["receiverEmail"] != resident.receiver_address:
+        return CaseActionResult(ActionOutcome.NOT_ALLOWED), None
+    return None, case_row
+
+
+def send_report(case_id: str, caller_user_id: str, resident: ReceiverProfile, ses_client, sender_address: str,
+                reply_to_address: str, mock_bank_mailbox: str) -> CaseActionResult:
+    """The resident's own case only. Token and CASETOKEN# first, then the send, then open→reported. A failed send leaves
+    open with the token kept."""
+    refusal, case_row = read_residents_case(case_id, caller_user_id, resident)
+    if refusal is not None:
+        return refusal
     if case_row["status"] != CaseState.OPEN:
         return CaseActionResult(ActionOutcome.NOT_APPLIED, case_row)
     reply_token = case_row.get("replyToken") or secrets.token_urlsafe(REPLY_TOKEN_BYTES)
     graph.write_case_token(reply_token, case_id)
-    report_body = build_report_body(case_row, receiver_name)
+    report_body = build_report_body(case_row, resident.resident_name)
     graph.update_case(case_id, {
         "UpdateExpression": "SET replyToken = :token, reportDraft = :draft",
         "ExpressionAttributeValues": {":token": reply_token, ":draft": report_body},
@@ -160,13 +169,11 @@ def record_bank_reply(reply: InboundCaseReply) -> CaseActionResult:
     return CaseActionResult(ActionOutcome.RECORDED, graph.get_case(case_id))
 
 
-def close_case(case_id: str, user_id: str, receiver_user_id: str) -> CaseActionResult:
-    """Done: reported → closed, by the receiver only."""
-    if not is_receiver(user_id, receiver_user_id):
-        return CaseActionResult(ActionOutcome.NOT_ALLOWED)
-    case_row = graph.get_case(case_id)
-    if case_row is None:
-        return CaseActionResult(ActionOutcome.UNKNOWN_REQUEST)
+def close_case(case_id: str, caller_user_id: str, resident: ReceiverProfile) -> CaseActionResult:
+    """Done: reported → closed, by the case's own resident only."""
+    refusal, case_row = read_residents_case(case_id, caller_user_id, resident)
+    if refusal is not None:
+        return refusal
     applied = graph.update_case(case_id, {
         "UpdateExpression": "SET #status = :closed, closedAt = :now",
         "ConditionExpression": "#status = :reported",

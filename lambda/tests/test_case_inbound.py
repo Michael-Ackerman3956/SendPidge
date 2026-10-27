@@ -5,7 +5,7 @@ from botocore.stub import ANY, Stubber
 
 from shared import case_agent, cases, graph
 from shared.enums import ActionOutcome, CaseTrigger, ReasonCode
-from tests.test_case_report import CASES_ADDRESS, MOCK_BANK, SENDER, open_case, stubbed_ses
+from tests.test_case_report import CASES_ADDRESS, MOCK_BANK, SENDER, grandma, open_case, stubbed_ses
 from tests.test_verdict import RECEIVER_USER_ID, aws  # noqa: F401
 
 REPLY_TEXT = "We opened dispute 4471 and blocked the card. A new card ships tomorrow."
@@ -14,7 +14,7 @@ REPLY_TEXT = "We opened dispute 4471 and blocked the card. A new card ships tomo
 def reported_case() -> dict:
     case_id = open_case()
     ses_client, _ = stubbed_ses(MOCK_BANK, CASES_ADDRESS)
-    return cases.send_report(case_id, RECEIVER_USER_ID, RECEIVER_USER_ID, "Grandma", ses_client, SENDER, CASES_ADDRESS, MOCK_BANK).case_row
+    return cases.send_report(case_id, RECEIVER_USER_ID, grandma(), ses_client, SENDER, CASES_ADDRESS, MOCK_BANK).case_row
 
 
 def reply(case_row: dict, s3_key: str = "cases/reply-1.eml", sender: str = MOCK_BANK, subject: str | None = None, auth=()) -> cases.InboundCaseReply:
@@ -47,7 +47,7 @@ def test_unknown_token_other_sender_and_failed_auth_are_dropped(aws):
 def test_a_reply_on_a_closed_case_is_not_applied(aws):
     case_row = reported_case()
     case_id = case_row["PK"].removeprefix("CASE#")
-    cases.close_case(case_id, RECEIVER_USER_ID, RECEIVER_USER_ID)
+    cases.close_case(case_id, RECEIVER_USER_ID, grandma())
     assert cases.record_bank_reply(reply(case_row)).outcome is ActionOutcome.NOT_APPLIED
     assert graph.list_case_replies(case_id) == []
 

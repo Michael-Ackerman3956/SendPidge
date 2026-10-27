@@ -1,8 +1,8 @@
 """The agent eval's fixed cases, its calibration set, and the synthetic families each case runs on.
 
 RULE# rows use put_item as scripts/seed_rows.py does, and the held email's EMAIL# fields are a dict that mirrors
-pidge_reader's build_email_row; every other row goes through the production writers (circle, graph, verdict, cases,
-case_agent.store_case_note, and pidge_retry's mark_timeout). Rows land in whatever table TABLE_NAME names;
+pidge_reader's build_email_row; every other row goes through the production writers (residents, circle, graph, verdict,
+cases, case_agent.store_case_note, and pidge_retry's mark_timeout). Rows land in whatever table TABLE_NAME names;
 eval_agents.py opens a moto table first, so nothing here reaches the live table. Nothing is sent: the one send on this
 path (cases.send_report) goes to a stubbed client.
 """
@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "lambda"))
 
-from shared import case_agent, cases, circle, graph, refund_rules, verdict  # noqa: E402
+from shared import case_agent, cases, circle, graph, profiles, refund_rules, residents, verdict  # noqa: E402
 from shared.enums import (  # noqa: E402
     ActionOutcome, CaseTrigger, Channel, Friction, Jurisdiction, PaymentRail, PolicyDecision, ReasonCode, Relationship,
     RequestState, VerdictAnswer, VerifiedVia,
@@ -49,9 +49,10 @@ PAYMENT_PAID_AT = "2026-10-24T01:00:00Z"
 CASE_SENDER_ADDRESS = "pidge@eval.invalid"
 CASE_REPLY_TO_ADDRESS = "cases@eval.invalid"
 MOCK_BANK_MAILBOX = "mock-bank@eval.invalid"
+EVAL_ORG_ID = "org-eval"
+EVAL_TIMEZONE = "America/New_York"
 # pidge_retry/handler.py reads these at import; set only around mark_timeout. No CONN# row exists, so nothing is pushed.
-RETRY_HANDLER_ENVIRONMENT = {"RECEIVER_USER_ID": "eval-push-target", "RECEIVER_NAME": RECEIVER_NAME,
-                             "RE_ASK_DELAY_SECONDS": "600", "WEBSOCKET_ENDPOINT": "https://eval.invalid"}
+RETRY_HANDLER_ENVIRONMENT = {"RE_ASK_DELAY_SECONDS": "600", "WEBSOCKET_ENDPOINT": "https://eval.invalid"}
 
 
 class EvalAgentKind(StrEnum):
@@ -268,10 +269,13 @@ def answer_as_contact(request_id: str, contact: graph.Contact, answer: VerdictAn
 
 
 def mark_timeout(request_id: str) -> None:
-    """The production timeout writer (pidge_retry's second silence), with its import-time settings set only around it."""
+    """The production timeout writer (pidge_retry's second silence), with its import-time settings set only around it and
+    the resident resolved from the request's receiverEmail as pidge_retry does."""
+    request_row = graph.get_request(request_id)
+    resident = profiles.require_receiver_profile(request_row["receiverEmail"])
     with mock.patch.dict(os.environ, RETRY_HANDLER_ENVIRONMENT):
         retry_handler = importlib.import_module("pidge_retry.handler")
-        retry_handler.mark_timeout(graph.get_request(request_id))
+        retry_handler.mark_timeout(request_row, resident)
     if graph.get_request(request_id)["status"] != RequestState.TIMEOUT:
         raise RuntimeError("eval seeding: mark_timeout did not land")
 
@@ -313,20 +317,23 @@ def stubbed_email_client() -> tuple:
     return email_client, stubber
 
 
-def report_and_close_case(receiver_user_id: str, case_id: str) -> None:
+def report_and_close_case(receiver_user_id: str, receiver_address: str, case_id: str) -> None:
+    resident = profiles.require_receiver_profile(receiver_address)
     email_client, stubber = stubbed_email_client()
     with stubber:
-        sent = cases.send_report(case_id, receiver_user_id, receiver_user_id, RECEIVER_NAME, email_client, CASE_SENDER_ADDRESS,
+        sent = cases.send_report(case_id, receiver_user_id, resident, email_client, CASE_SENDER_ADDRESS,
                                  CASE_REPLY_TO_ADDRESS, MOCK_BANK_MAILBOX)
         stubber.assert_no_pending_responses()
     require_recorded(sent.outcome, "send_report")
-    require_recorded(cases.close_case(case_id, receiver_user_id, receiver_user_id).outcome, "close_case")
+    require_recorded(cases.close_case(case_id, receiver_user_id, resident).outcome, "close_case")
 
 
 def seed_family(eval_case: EvalCase) -> SeededFamily:
     """A fresh family per case, so one case's notes never reach another's history."""
     receiver_user_id = f"eval-{eval_case.case_id}"
     receiver_address = f"{receiver_user_id}@eval.example"
+    residents.write_resident_rows(residents.ResidentEnrolment(receiver_address, receiver_user_id, RECEIVER_NAME, EVAL_ORG_ID,
+                                                              EVAL_TIMEZONE))
     contact = enrol_verified_contact(receiver_address)
     if eval_case.has_earlier_same_kind_note:
         earlier_request_id = hold_email_and_ask(receiver_user_id, receiver_address, contact)
@@ -338,7 +345,7 @@ def seed_family(eval_case: EvalCase) -> SeededFamily:
     if eval_case.trigger in (CaseTrigger.CASE, CaseTrigger.CASE_CLOSED) or eval_case.agent_kind is EvalAgentKind.CHAT_REPLY:
         case_id = report_card_payment(receiver_user_id, receiver_address, request_id)
     if eval_case.trigger is CaseTrigger.CASE_CLOSED:
-        report_and_close_case(receiver_user_id, case_id)
+        report_and_close_case(receiver_user_id, receiver_address, case_id)
     return SeededFamily(receiver_user_id, receiver_address, request_id, case_id)
 
 

@@ -9,6 +9,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from shared import graph, reach_points
@@ -28,6 +29,7 @@ EMAIL_ADDRESS_MAXIMUM_LENGTH = 254
 PROFILE_SORT_KEY = "PROFILE"
 CODE_FIELDS = ("verificationCodeHash", "verificationExpiresAt")
 TRANSACTION_CANCELLED = "TransactionCanceledException"
+WHATSAPP_CODE_PARTITION_PREFIX = "WACODE#"  # WACODE#<E.164>/RECEIVER#<address>: which residents a number's code may answer
 
 CONTACT_NOTE_TEMPLATE = (
     "{receiver_name} is using Pidge to catch fake emails. If something arrives in your name, Pidge will ask you first.\n"
@@ -141,8 +143,8 @@ def find_same_name_row(contact_rows: list[dict], contact_name: str) -> dict | No
 
 
 def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> Enrolment:
-    """Writes the PENDING row with a server-made id, a hashed six-digit code and a PWA token for the in-app channel, in one
-    transaction (no row without its token, no token without its row). Adding a name that is still PENDING re-issues it: the
+    """Writes the PENDING row with a server-made id, a hashed six-digit code, a PWA token for the in-app channel and a WACODE#
+    row per WhatsApp number, in one transaction (no row without its token, no token without its row). Adding a name that is still PENDING re-issues it: the
     row takes the new form, a new code and a new token, and the old token dies, so a lost note or an expired code is recovered
     by adding the person again. A verified name is refused (asks are matched by name), as is a full circle; both write nothing."""
     contact_rows = graph.list_contact_rows(receiver_address)
@@ -174,6 +176,7 @@ def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> En
         {"Put": {"TableName": table.name, "Item": contact_row, **row_condition}},
         *({"Put": {"TableName": table.name, "Item": row}} for row in token_rows),
         *dead_token_deletions(table.name, contact_user_id, same_name_row),
+        *whatsapp_code_index_puts(table.name, receiver_address, contact_row),
     ]
     try:
         table.meta.client.transact_write_items(TransactItems=transaction_items)
@@ -187,7 +190,8 @@ def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> En
 def edit_contact(receiver_address: str, contact_user_id: str, form: ContactForm, now: datetime) -> Enrolment:
     """Saves the edited form on the contact's row in place, as a contactReachPoints list. A point already on the row keeps
     its stored entry, so a checked number keeps being asked; a new WhatsApp number waits for a fresh code (one per edit, for
-    every number still waiting), returned once. Refused, writing nothing: an unknown contact, a name another row has, an edit
+    every number still waiting), returned once. The row and a WACODE# row per number still waiting are written in one
+    transaction. Refused, writing nothing: an unknown contact, a name another row has, an edit
     that drops every checked WhatsApp number, and a row whose points, check state or code changed since it was read (two
     edits that change only the name or relationship: the last one wins)."""
     contact_rows = graph.list_contact_rows(receiver_address)
@@ -208,10 +212,15 @@ def edit_contact(receiver_address: str, contact_user_id: str, form: ContactForm,
     edited_row = {name: value for name, value in contact_row.items() if name not in dropped_fields}
     edited_row.update({"contactName": form.contact_name, "relationship": str(form.relationship), "contactReachPoints": edited_items})
     code = code_for_edit(contact_row, edited_row, stored_items, form, now)
+    table = graph.get_table()
+    transaction_items = [
+        {"Put": {"TableName": table.name, "Item": edited_row, **unchanged_since_read_condition(contact_row)}},
+        *whatsapp_code_index_puts(table.name, receiver_address, edited_row),
+    ]
     try:
-        graph.get_table().put_item(Item=edited_row, **unchanged_since_read_condition(contact_row))
+        table.meta.client.transact_write_items(TransactItems=transaction_items)
     except ClientError as error:
-        if error.response["Error"]["Code"] == graph.CONDITIONAL_CHECK_FAILED:
+        if error.response["Error"]["Code"] == TRANSACTION_CANCELLED:
             return Enrolment(ActionOutcome.NOT_APPLIED)  # a number was checked or the row edited meanwhile; try again
         raise
     return Enrolment(ActionOutcome.RECORDED, edited_row, code)
@@ -278,6 +287,27 @@ def build_contact_note(receiver_name: str, code: str, pwa_link: str | None, pidg
 
 def build_welcome_text(receiver_name: str) -> str:
     return WELCOME_TEXT_TEMPLATE.format(receiver_name=receiver_name)
+
+
+def whatsapp_code_index_puts(table_name: str, receiver_address: str, contact_row: dict) -> list[dict]:
+    """A WACODE#<number>/RECEIVER#<address> Put for every WhatsApp number on the row still waiting for its code, living as
+    long as the code; none when the row holds no code."""
+    if "verificationCodeHash" not in contact_row:
+        return []
+    expiry = datetime.fromisoformat(contact_row["verificationExpiresAt"].replace("Z", "+00:00"))
+    waiting_numbers = [point.address for point in reach_points.reach_points_of(contact_row)
+                       if point.channel is Channel.WHATSAPP and point.verified_via is VerifiedVia.PENDING]
+    return [{"Put": {"TableName": table_name, "Item": {
+        "PK": f"{WHATSAPP_CODE_PARTITION_PREFIX}{number}", "SK": f"RECEIVER#{receiver_address}", "receiverEmail": receiver_address,
+        "contactSK": contact_row["SK"], "ttlEpochSeconds": int(expiry.timestamp()),
+    }}} for number in waiting_numbers]
+
+
+def list_receivers_waiting_on_number(whatsapp_number: str) -> list[str]:
+    """The receiver addresses with a live WACODE# row for this number (TTL deletion lags, so an expired row is skipped)."""
+    now_epoch_seconds = int(datetime.now(timezone.utc).timestamp())
+    response = graph.get_table().query(KeyConditionExpression=Key("PK").eq(f"{WHATSAPP_CODE_PARTITION_PREFIX}{whatsapp_number}"))
+    return [row["receiverEmail"] for row in response["Items"] if int(row["ttlEpochSeconds"]) > now_epoch_seconds]
 
 
 def find_pending_contact_by_whatsapp(receiver_address: str, sender_number: str) -> dict | None:

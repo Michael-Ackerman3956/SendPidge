@@ -6,7 +6,7 @@ from botocore.stub import ANY, Stubber
 from shared import cases
 from shared.enums import ActionOutcome
 from tests.test_case_inbound import reply, reported_case
-from tests.test_case_report import CASES_ADDRESS, MOCK_BANK, SENDER
+from tests.test_case_report import CASES_ADDRESS, MOCK_BANK, SENDER, grandma
 from tests.test_verdict import RECEIVER_USER_ID, aws  # noqa: F401
 
 
@@ -38,6 +38,6 @@ def test_a_replied_or_closed_case_gets_no_reminder(aws):
     with Stubber(ses_client):
         assert cases.send_follow_up(replied["PK"].removeprefix("CASE#"), ses_client, SENDER, CASES_ADDRESS).outcome is ActionOutcome.NOT_APPLIED
     closed = reported_case()
-    cases.close_case(closed["PK"].removeprefix("CASE#"), RECEIVER_USER_ID, RECEIVER_USER_ID)
+    cases.close_case(closed["PK"].removeprefix("CASE#"), RECEIVER_USER_ID, grandma())
     with Stubber(ses_client):
         assert cases.send_follow_up(closed["PK"].removeprefix("CASE#"), ses_client, SENDER, CASES_ADDRESS).outcome is ActionOutcome.NOT_APPLIED
