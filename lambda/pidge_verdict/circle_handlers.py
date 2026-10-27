@@ -152,11 +152,17 @@ def handle_verify_contact(connection_id: str, resident: ReceiverProfile, body: d
 def handle_whatsapp_text(inbound_text: whatsapp.InboundText) -> None:
     """Typed text on Pidge's WhatsApp number: it checks a number only when it comes from a number still waiting on a row and
     carries that row's live code. The residents to look under come from the WACODE# index for that number, tried in turn
-    until one row verifies; a listed address with no complete profile raises. Anything else is logged and ignored; the text
+    until one row verifies; a listed address with no complete profile (a stale row, its resident unenrolled) is logged,
+    counted as UnknownReceiver by require_receiver_profile and skipped. Anything else is logged and ignored; the text
     itself is never stored."""
     settings = read_settings()
     for receiver_address in circle.list_receivers_waiting_on_number(inbound_text.sender_number):
-        resident = profiles.require_receiver_profile(receiver_address)
+        try:
+            resident = profiles.require_receiver_profile(receiver_address)
+        except profiles.UnknownReceiverError:
+            logger.warning("stale WACODE# row for WhatsApp text %s: its resident has no complete profile; skipped",
+                           inbound_text.message_id)
+            continue
         contact_row = circle.find_pending_contact_by_whatsapp(resident.receiver_address, inbound_text.sender_number)
         if contact_row is None or not circle.verify_with_code(resident.receiver_address, contact_row, inbound_text.text,
                                                               VerifiedVia.WHATSAPP, datetime.now(timezone.utc), inbound_text.sender_number):
