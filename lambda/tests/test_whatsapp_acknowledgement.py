@@ -61,7 +61,7 @@ def test_the_reverse_button_takes_the_no_back_drops_the_list_row_and_is_acknowle
     handler, sent_messages = acknowledging_handler
     request_id = new_request()
     handler.handle(whatsapp_event(template_no_tap(request_id)), None)
-    graph.write_listed_address(LISTED_SENDER, "Reported after the real contact said they did not send it")
+    graph.write_listed_address(LISTED_SENDER, "Reported after the real contact said they did not send it", request_id)
     handler.handle(whatsapp_event(reverse_tap(request_id)), None)
     assert status_of(request_id) == "reversed_no"
     assert not listed_row_exists()

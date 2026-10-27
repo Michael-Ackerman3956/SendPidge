@@ -96,12 +96,12 @@ def test_lookup_turns_rows_and_near_matches_into_reasons(sender_name, sender_add
 
 
 def test_a_confirm_row_is_reported_sender_and_a_read_failure_marks(aws, monkeypatch):  # noqa: F811
-    graph.write_listed_address("Scammer@Lookalike.example", "Reported after the real contact said they did not send it")
+    graph.write_listed_address("Scammer@Lookalike.example", "Reported after the real contact said they did not send it", "req-test")
     stored = graph.get_table().get_item(Key={"PK": "LIST#address", "SK": "scammer@lookalike.example"})["Item"]
     assert parse_list_row(stored).source is ListSource.PIDGE_CONFIRMED and stored["tier"] == 0
     store = DynamoListStore()
     assert lookup_sender_reasons(store, "scammer@lookalike.example", "lookalike.example", "Someone", CONTACTS) == [ReasonCode.REPORTED_SENDER]
-    graph.delete_listed_address("scammer@lookalike.example")
+    assert graph.delete_listed_address("scammer@lookalike.example", "req-test")
     assert lookup_sender_reasons(store, "scammer@lookalike.example", "lookalike.example", "Someone", CONTACTS) == []
 
     def failing_get_item(**_):
