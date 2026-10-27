@@ -126,12 +126,13 @@ class RequestState(StrEnum):
 
 
 class VerdictAnswer(StrEnum):
-    """What a contact can answer. Phone channels carry only YES and NO; UNDO and REVERSE come from the PWA."""
+    """What a contact can answer. Phone taps carry YES and NO; UNDO comes from the PWA; REVERSE from the PWA or the WhatsApp
+    'I made a mistake' button."""
 
     YES = "yes"
     NO = "no"
     UNDO = "undo"        # take back a Yes while it is still confirmed_pending
-    REVERSE = "reverse"  # take back a No within the reverse window ("I made a mistake")
+    REVERSE = "reverse"  # take back a No within the reverse window ("I made a mistake", PWA or WhatsApp)
 
 
 PHONE_CHANNEL_ANSWERS = (VerdictAnswer.YES, VerdictAnswer.NO)

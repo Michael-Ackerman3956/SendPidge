@@ -216,6 +216,16 @@ def handle_sns_records(records: list) -> None:
             logger.info("%s answer on %s not recorded: %s", channel, request_id, result.outcome)
             continue
         announce_recorded_answer(request_id, result)
+        if channel is Channel.WHATSAPP:
+            acknowledge_on_whatsapp(request_id, result.status, sender.value)
+
+
+def acknowledge_on_whatsapp(request_id: str, status: RequestState, destination_number: str) -> None:
+    """Only after a tap on WhatsApp itself (it opens Meta's 24-h window); a failed send is logged, the answer already landed."""
+    try:
+        channels.acknowledge_on_whatsapp(request_id, status, destination_number, RECEIVER_NAME)
+    except Exception:
+        logger.exception("whatsapp acknowledgement for %s failed", request_id)
 
 
 def handle_emailed_answer_records(records: list) -> None:

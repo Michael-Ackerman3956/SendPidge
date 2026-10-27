@@ -52,7 +52,8 @@ class ActionResult:
 
 
 def parse_phone_answer(postback_text: str, separator: str) -> tuple[str, VerdictAnswer] | None:
-    """'<request id><separator><answer>' from an RCS chip or WhatsApp button; None for undo and reverse (PWA only).
+    """'<request id><separator><answer>' from an RCS chip or WhatsApp template button; None for undo and reverse (a WhatsApp
+    reverse arrives as a reply-button id instead, see whatsapp.parse_reverse_button_id).
 
     Raises ValueError on an unknown answer, which the channel parsers treat as "not a tap".
     """

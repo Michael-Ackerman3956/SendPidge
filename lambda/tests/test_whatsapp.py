@@ -90,12 +90,40 @@ def test_interactive_button_reply_parses_to_a_call_promise_with_plus_added():
     assert whatsapp.parse_inbound_reply(sns_message(inbound_message(button_reply_tap("call:req-1:tomorrow")))) is None
 
 
+def test_no_acknowledgement_carries_the_reverse_button_and_no_email_text():
+    message = whatsapp.build_no_acknowledgement_message("req-1", "+821012345678")
+    assert (message["to"], message["type"], message["interactive"]["type"]) == ("+821012345678", "interactive", "button")
+    assert message["interactive"]["body"]["text"] == "Noted. The email stays held."
+    [button] = message["interactive"]["action"]["buttons"]
+    assert button == {"type": "reply", "reply": {"id": "reverse:req-1", "title": "I made a mistake"}}
+    assert len(button["reply"]["title"]) <= 20
+
+
+def test_reverse_acknowledgement_is_plain_text_with_the_receiver_name():
+    message = whatsapp.build_reverse_acknowledgement_message("Grandma", "+821012345678")
+    assert (message["to"], message["type"]) == ("+821012345678", "text")
+    assert message["text"]["body"] == "Noted. You did send it, so the email goes through to Grandma."
+
+
+def test_reverse_button_tap_parses_to_a_reverse_answer():
+    reply = whatsapp.parse_inbound_reply(sns_message(inbound_message(button_reply_tap("reverse:req-1"))))
+    assert reply == whatsapp.WhatsAppReply("req-1", VerdictAnswer.REVERSE, "+821012345678", "wamid.CALL")
+
+
+def test_call_offer_taps_and_odd_reply_ids_are_not_answers():
+    for foreign_id in ("call:req-1:tomorrow", "reverse:", "reverse", "undo:req-1", "req-1:no", "reverse:req-1:extra"):
+        assert whatsapp.parse_inbound_reply(sns_message(inbound_message(button_reply_tap(foreign_id)))) is None
+    list_reply = {"from": "821012345678", "id": "wamid.LIST", "type": "interactive",
+                  "interactive": {"type": "list_reply", "list_reply": {"id": "reverse:req-1", "title": "x"}}}
+    assert whatsapp.parse_inbound_reply(sns_message(inbound_message(list_reply))) is None
+
+
 def test_template_taps_text_and_foreign_ids_are_not_call_promises():
     template_tap = {"from": "821012345678", "id": "wamid.ABC", "type": "button", "button": {"payload": "req-1:no", "text": "No"}}
     assert whatsapp.parse_call_promise_reply(sns_message(inbound_message(template_tap))) is None
     typed_text = {"from": "821012345678", "id": "wamid.T", "type": "text", "text": {"body": "today"}}
     assert whatsapp.parse_call_promise_reply(sns_message(inbound_message(typed_text))) is None
-    for foreign_id in ("bad:req:today", "call:req:soon", "call:req:today:extra", "call::today"):
+    for foreign_id in ("bad:req:today", "call:req:soon", "call:req:today:extra", "call::today", "reverse:req-1"):
         assert whatsapp.parse_call_promise_reply(sns_message(inbound_message(button_reply_tap(foreign_id)))) is None
     list_reply = {**button_reply_tap("call:req-1:today"), "interactive": {"type": "list_reply", "list_reply": {"id": "call:req-1:today"}}}
     assert whatsapp.parse_call_promise_reply(sns_message(inbound_message(list_reply))) is None

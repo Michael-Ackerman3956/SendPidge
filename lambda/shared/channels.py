@@ -121,6 +121,20 @@ def ask_on_whatsapp(request_row: dict, contact: graph.Contact, receiver_name: st
     return Channel.WHATSAPP
 
 
+def acknowledge_on_whatsapp(request_id: str, status: RequestState, destination_number: str, receiver_name: str) -> bool:
+    """The free-form reply inside the 24-h window the contact's tap opened: "Noted" with the reverse button after a No, plain
+    text after a reverse. False when the new state has no acknowledgement (a Yes)."""
+    if status is RequestState.DENIED:
+        message = whatsapp.build_no_acknowledgement_message(request_id, destination_number)
+    elif status is RequestState.REVERSED_NO:
+        message = whatsapp.build_reverse_acknowledgement_message(receiver_name, destination_number)
+    else:
+        return False
+    meta_message_id = send_whatsapp_message(message)
+    logger.info("whatsapp acknowledgement of %s on %s sent as %s", status, request_id, meta_message_id)
+    return True
+
+
 def get_ses_client():
     global _ses_client
     if _ses_client is None:

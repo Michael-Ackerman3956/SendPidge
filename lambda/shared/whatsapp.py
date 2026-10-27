@@ -1,5 +1,6 @@
-"""WhatsApp: the 'Was this you?' template, the 'call Grandma?' offer and reminder, and the parse of taps and failed
-statuses coming back over SNS. Pure functions."""
+"""WhatsApp: the 'Was this you?' template, the acknowledgement after a tap ("Noted" with the 'I made a mistake' button after
+a No, plain text after a reverse), the 'call Grandma?' offer and reminder, and the parse of taps and failed statuses coming
+back over SNS. Pure functions."""
 
 import json
 import logging
@@ -27,6 +28,11 @@ CALL_OFFER_BODY_TEMPLATES = {
     VerdictAnswer.YES: "Thanks, the email goes through. Call {receiver_name} today?",
 }
 CALL_REMINDER_TEMPLATE = "Reminder: you said you'd call {receiver_name} today."
+REVERSE_BUTTON_PREFIX = "reverse"
+REVERSE_BUTTON_ID_PART_COUNT = 2  # reverse:<requestId>
+REVERSE_BUTTON_TITLE = "I made a mistake"  # Meta caps titles at 20
+NO_ACKNOWLEDGEMENT_TEXT = "Noted. The email stays held."
+REVERSE_ACKNOWLEDGEMENT_TEMPLATE = "Noted. You did send it, so the email goes through to {receiver_name}."
 
 
 @dataclass(frozen=True)
@@ -82,25 +88,70 @@ def build_template_message(request_id: str, summary: str, destination_number: st
 
 
 def parse_inbound_reply(sns_message: dict) -> WhatsAppReply | None:
-    """A tap arrives inside the JSON string `whatsAppWebhookEntry` as a message of type `button`.
+    """A tap arrives inside the JSON string `whatsAppWebhookEntry`: on the template as a message of type `button` with the
+    payload '<requestId>:<yes|no>', on the No acknowledgement as `interactive` / `button_reply` with id 'reverse:<requestId>'.
 
-    Delivery statuses, typed text and anything odd → None. Only the first message of the first change is read.
+    Delivery statuses, typed text, call-offer taps and anything odd → None. Only the first message of the first change is read.
     """
     try:
         change_value = read_first_change_value(sns_message)
         if "messages" not in change_value:
             return None  # a sent / delivered / read status for one of our own messages
         message = change_value["messages"][0]
-        if WhatsAppInboundMessageType(message["type"]) is not WhatsAppInboundMessageType.BUTTON:
-            return None
-        parsed_answer = parse_phone_answer(message["button"]["payload"], PAYLOAD_SEPARATOR)
+        parsed_answer = parse_tap(message)
         if parsed_answer is None:
             return None
         request_id, answer = parsed_answer
         return WhatsAppReply(request_id, answer, f"+{message['from']}", message["id"])
-    except (KeyError, IndexError, TypeError, ValueError):
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
         logger.info("inbound WhatsApp message is not a button tap; ignored")
         return None
+
+
+def parse_tap(message: dict) -> tuple[str, VerdictAnswer] | None:
+    """(request id, answer) from a template quick reply or the reverse reply button; raises on any other message type."""
+    if WhatsAppInboundMessageType(message["type"]) is WhatsAppInboundMessageType.BUTTON:
+        return parse_phone_answer(message["button"]["payload"], PAYLOAD_SEPARATOR)
+    interactive = message["interactive"]
+    if WhatsAppInteractiveType(interactive["type"]) is not WhatsAppInteractiveType.BUTTON_REPLY:
+        return None
+    return parse_reverse_button_id(interactive["button_reply"]["id"])
+
+
+def reverse_button_id(request_id: str) -> str:
+    return PAYLOAD_SEPARATOR.join((REVERSE_BUTTON_PREFIX, request_id))
+
+
+def parse_reverse_button_id(button_id: str) -> tuple[str, VerdictAnswer] | None:
+    id_parts = button_id.split(PAYLOAD_SEPARATOR)
+    if len(id_parts) != REVERSE_BUTTON_ID_PART_COUNT or id_parts[0] != REVERSE_BUTTON_PREFIX or not id_parts[1]:
+        return None
+    return id_parts[1], VerdictAnswer.REVERSE
+
+
+def build_no_acknowledgement_message(request_id: str, destination_number: str) -> dict:
+    """Meta JSON for the reply after a No: fixed text plus the 'I made a mistake' reply button (inside the 24-h window the tap
+    opened). No email text ever goes in."""
+    return {
+        "messaging_product": "whatsapp",
+        "to": destination_number,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": NO_ACKNOWLEDGEMENT_TEXT},
+            "action": {"buttons": [{"type": "reply", "reply": {"id": reverse_button_id(request_id), "title": REVERSE_BUTTON_TITLE}}]},
+        },
+    }
+
+
+def build_reverse_acknowledgement_message(receiver_name: str, destination_number: str) -> dict:
+    """Meta JSON for the plain-text reply after a reverse; fixed text plus the receiver's name."""
+    return {
+        "messaging_product": "whatsapp",
+        "to": destination_number,
+        "type": "text",
+        "text": {"body": REVERSE_ACKNOWLEDGEMENT_TEMPLATE.format(receiver_name=receiver_name)},
+    }
 
 
 def call_button_id(request_id: str, promise: CallPromise) -> str:
