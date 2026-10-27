@@ -1,8 +1,10 @@
 """Makes the Reader's summary safe to put in front of a real person on any channel, and gates agent text (case notes,
-chat replies) before it is written to DynamoDB: agent text with a link, an address or a long number is refused, never
-stripped. Both run on a normalised copy (NFKC except Hangul compatibility jamo, every default-ignorable character dropped,
-enclosed and other whole-number symbols read as digits, ideographic full stops read as "."), so fullwidth, enclosed and
-invisibly split spans are caught. Bare domains end at an ASCII boundary and include internationalised TLDs."""
+chat replies) before it is written to DynamoDB: agent text with a link, an address, a messenger handle or a long number
+is refused, never stripped. Both run on a normalised copy (NFKC except Hangul compatibility jamo, combining marks after
+ASCII dropped, every default-ignorable character dropped, enclosed and other whole-number symbols read as digits,
+ideographic full stops read as ".", whitespace collapsed and a space before punctuation removed), so fullwidth, enclosed,
+underlined and invisibly or space-split spans are caught. Bare domains end at an ASCII boundary and include
+internationalised TLDs. A summary whose own output still holds a span is replaced by SUMMARY_FALLBACK_TEXT."""
 
 import datetime
 import logging
@@ -16,6 +18,8 @@ from shared.metrics import emit_count_metric
 logger = logging.getLogger(__name__)
 
 SUMMARY_MAX_LENGTH = 140
+SUMMARY_FALLBACK_TEXT = "An email asked for something. Pidge is checking it."  # no link, address or number
+SUMMARY_FALLBACK_METRIC_NAME = "SummaryFallback"
 AGENT_OUTPUT_REFUSED_METRIC_NAME = "AgentOutputRefused"
 UNSAFE_KIND_DIMENSION_NAME = "kind"
 FORMAT_CHARACTER_CATEGORY = "Cf"  # zero-width space and joiners, soft hyphen, direction marks
@@ -28,6 +32,8 @@ DEFAULT_IGNORABLE_NON_FORMAT_PATTERN = re.compile(
 NON_COMPATIBILITY_JAMO_RUN_PATTERN = re.compile(r"[^\u3131-\u318e]+")
 OTHER_NUMBER_CATEGORY = "No"  # enclosed and dingbat digits such as "❶" and "⓿"
 IDEOGRAPHIC_FULL_STOP = "\u3002"  # NFKC already folds the halfwidth "\uff61" into this one
+COMBINING_MARK_CATEGORIES = frozenset({"Mn", "Me"})  # underline, strike-through, accents, the keycap "\u20e3"
+MARK_ANCHOR_PUNCTUATION = frozenset("./:@-")  # with ASCII letters and digits: a mark after one of these is dropped
 
 # Each pattern stops before trailing punctuation so the sentence keeps its full stop.
 TRAILING_PUNCTUATION_LOOKAHEAD = r"(?=[.,;:!?)]*(?:\s|$))"
@@ -44,13 +50,12 @@ URL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 EMAIL_ADDRESS_PATTERN = re.compile(r"[^\s@]+@\S*?" + TRAILING_PUNCTUATION_LOOKAHEAD)
+MESSENGER_HANDLE_PATTERN = re.compile(r"(?<![\w.@])@[A-Za-z0-9_][A-Za-z0-9_.]{2,}")  # "@refund_desk"
 NUMBER_PATTERN = re.compile(r"[+(]?\d(?:[\s,.\-()/]*\d)*\)?")  # phone numbers, amounts, codes, any digit run
-# 6+ digits joined by whitespace, . ( ) + / _ * ~, a middle dot or bullet (\u00b7 \u2022 \u2219 \u22c5 \u30fb \u2027) or any
-# dash, or by a comma with a digit on both sides ("1,500,000"; "October 24, 2026" has a space after the comma). ":" never
-# joins ("at 10:30"). Dates and amounts are blanked first.
-LONG_NUMBER_PATTERN = re.compile(
-    r"(?<!\d)\d(?:(?:,|[\s.()+/_*~\u00b7\u2022\u2219\u22c5\u30fb\u2027\-\u2010-\u2015\u2212]*)\d){5,}"
-)
+# 6+ digits joined by any run of characters that are neither a word character nor ":" (underscore joins too), or by
+# one "x"/"X" between groups of 3+ digits ("010x1234x5678"). A letter breaks the run and ":" never joins ("at 10:30").
+# Dates and amounts are blanked first. Joiners never match a digit, so the run is linear.
+LONG_NUMBER_PATTERN = re.compile(r"(?<!\d)\d(?:(?:(?:[^\w:]|_)*|(?<=\d{3})[xX](?=\d{3}))\d){5,}")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 SPACE_BEFORE_PUNCTUATION_PATTERN = re.compile(r"\s+([,.;:!?])")
 
@@ -117,6 +122,34 @@ def normalize_for_matching(text: str) -> str:
     return digit_text.replace(IDEOGRAPHIC_FULL_STOP, ".")
 
 
+def is_mark_anchor(character: str) -> bool:
+    return character.isascii() and (character.isalnum() or character in MARK_ANCHOR_PUNCTUATION)
+
+
+def drop_marks_after_ascii(text: str) -> str:
+    """Drops every Mn or Me character that follows an ASCII letter, digit or one of ". / : @ -", directly or after other
+    dropped marks (an underlined or struck-through "evil.com" -> "evil.com"). Marks after any other character stay (Thai,
+    Devanagari)."""
+    kept_characters = []
+    is_after_anchor = False
+    for character in text:
+        if unicodedata.category(character) in COMBINING_MARK_CATEGORIES:
+            if is_after_anchor:
+                continue
+        else:
+            is_after_anchor = is_mark_anchor(character)
+        kept_characters.append(character)
+    return "".join(kept_characters)
+
+
+def normalize_for_gate(text: str) -> str:
+    """normalize_for_matching with combining marks after ASCII dropped (before NFKC, which would compose "c" and an acute
+    into one letter, and again after it), then whitespace collapsed and a space before punctuation removed ("evil .com"
+    -> "evil.com"). Only the gate and the summary use it; hosts keep normalize_for_matching, so a marked host stays IDN."""
+    unmarked_text = drop_marks_after_ascii(normalize_for_matching(drop_marks_after_ascii(text)))
+    return SPACE_BEFORE_PUNCTUATION_PATTERN.sub(r"\1", WHITESPACE_PATTERN.sub(" ", unmarked_text))
+
+
 def is_real_date(year: str, month: str, day: str) -> bool:
     try:
         datetime.date(int(year), int(month), int(day))
@@ -162,18 +195,25 @@ def blank_amounts(text: str) -> str:
 
 
 def strip_links_and_addresses(text: str) -> str:
-    return EMAIL_ADDRESS_PATTERN.sub(" ", URL_PATTERN.sub(" ", text))
+    """Replaces every link, email address and messenger handle with a space."""
+    return MESSENGER_HANDLE_PATTERN.sub(" ", EMAIL_ADDRESS_PATTERN.sub(" ", URL_PATTERN.sub(" ", text)))
 
 
 def sanitize_summary(summary: str) -> str:
-    """Strips links, addresses and every number from the normalised summary, then links and addresses again (a stripped
-    digit can free a link: "evil.com1"), then caps the length."""
-    text = strip_links_and_addresses(normalize_for_matching(summary))
+    """Strips links, addresses, handles and every number from the gate-normalised summary (whitespace is collapsed and
+    "evil .com" joined before any strip), then links and addresses again (a stripped digit can free a link: "evil.com1"),
+    collapses whitespace and caps the length. If the gate still finds a span in that output, logs the kinds, emits one
+    SummaryFallback count and returns SUMMARY_FALLBACK_TEXT."""
+    text = strip_links_and_addresses(normalize_for_gate(summary))
     text = NUMBER_PATTERN.sub(" ", text)
     text = strip_links_and_addresses(text)
-    text = WHITESPACE_PATTERN.sub(" ", text).strip()
-    text = SPACE_BEFORE_PUNCTUATION_PATTERN.sub(r"\1", text)
-    return text[:SUMMARY_MAX_LENGTH].rstrip()
+    capped_summary = WHITESPACE_PATTERN.sub(" ", text).strip()[:SUMMARY_MAX_LENGTH].rstrip()
+    unsafe_kinds = find_unsafe_spans(capped_summary)
+    if not unsafe_kinds:
+        return capped_summary
+    emit_count_metric(SUMMARY_FALLBACK_METRIC_NAME)
+    logger.warning("summary fell back: kinds=%s", [str(kind) for kind in unsafe_kinds])
+    return SUMMARY_FALLBACK_TEXT
 
 
 class AgentOutputRefused(Exception):
@@ -185,12 +225,13 @@ class AgentOutputRefused(Exception):
 
 
 def find_unsafe_spans(text: str) -> list[UnsafeTextKind]:
-    """Each kind found, once, in enum order, matched on the normalised text. Addresses are blanked before links (an
-    address holds a domain), links before numbers and dates and amounts before the long-number check, so one span is one
-    kind."""
+    """Each kind found, once, in enum order, matched on the gate-normalised text. Addresses are blanked before handles
+    and handles before links (both can hold a domain), links before numbers and dates and amounts before the long-number
+    check, so one span is one kind."""
     found_kinds: set[UnsafeTextKind] = set()
-    remaining_text = normalize_for_matching(text)
-    for kind, pattern in ((UnsafeTextKind.EMAIL_ADDRESS, EMAIL_ADDRESS_PATTERN), (UnsafeTextKind.LINK, URL_PATTERN)):
+    remaining_text = normalize_for_gate(text)
+    for kind, pattern in ((UnsafeTextKind.EMAIL_ADDRESS, EMAIL_ADDRESS_PATTERN),
+                          (UnsafeTextKind.MESSENGER_HANDLE, MESSENGER_HANDLE_PATTERN), (UnsafeTextKind.LINK, URL_PATTERN)):
         if pattern.search(remaining_text):
             found_kinds.add(kind)
             remaining_text = pattern.sub(" ", remaining_text)

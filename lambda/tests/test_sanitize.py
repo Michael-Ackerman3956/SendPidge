@@ -1,7 +1,10 @@
+import json
+
 import pytest
 
+from shared import sanitize
 from shared.enums import UnsafeTextKind
-from shared.sanitize import SUMMARY_MAX_LENGTH, find_unsafe_spans, sanitize_summary
+from shared.sanitize import SUMMARY_FALLBACK_TEXT, SUMMARY_MAX_LENGTH, find_unsafe_spans, sanitize_summary
 
 
 @pytest.mark.parametrize(
@@ -9,8 +12,8 @@ from shared.sanitize import SUMMARY_MAX_LENGTH, find_unsafe_spans, sanitize_summ
     [
         ("Jimin asks you to send money today.", "Jimin asks you to send money today."),
         ("Send 500,000 won to account 110-123-456789 now.", "Send won to account now."),
-        ("Call +82-10-1234-5678 or (555) 123-4567.", "Call or."),
-        ("Open https://jimin-help.top/pay and www.evil.example/x.", "Open and."),
+        ("Call +82-10-1234-5678 or (555) 123-4567.", "Call or ."),
+        ("Open https://jimin-help.top/pay and www.evil.example/x.", "Open and ."),
         ("Go to jimin-help.top today.", "Go to today."),
         ("Reply to help@jimin-help.top for details.", "Reply to for details."),
         ("Code 482913 must be sent back.", "Code must be sent back."),
@@ -146,3 +149,130 @@ def test_compatibility_jamo_survive_the_summary():
 )
 def test_amounts_and_short_dates_pass_the_gate(agent_text, expected_kinds):
     assert find_unsafe_spans(agent_text) == expected_kinds
+
+
+def add_mark_after_each_character(text: str, mark: str) -> str:
+    return "".join(character + mark for character in text)
+
+
+COMBINING_LOW_LINE = "̲"
+COMBINING_LONG_STROKE_OVERLAY = "̶"
+KEYCAP_SUFFIX = "️⃣"
+
+
+@pytest.mark.parametrize(
+    "raw_summary",
+    ["Pay at evil .com today", "Go to https ://evil .com /pay", "Go to www .evil .com", "Pay at kb-bank .co .kr please",
+     "Visit evil　.com", "Visit evil 。com", "Visit evil\xa0.com"],
+)
+def test_cleanup_never_joins_a_link_after_stripping(raw_summary):
+    summary = sanitize_summary(raw_summary)
+    assert "evil" not in summary and "kb-bank" not in summary
+    assert find_unsafe_spans(summary) == []
+
+
+@pytest.mark.parametrize(
+    ("agent_text", "expected_kinds"),
+    [
+        ("Visit " + add_mark_after_each_character("evil.com", COMBINING_LOW_LINE) + " now", [UnsafeTextKind.LINK]),
+        ("Visit " + add_mark_after_each_character("https://evil.com/pay", COMBINING_LONG_STROKE_OVERLAY) + " now",
+         [UnsafeTextKind.LINK]),
+        ("Call " + add_mark_after_each_character("01012345678", KEYCAP_SUFFIX) + " now", [UnsafeTextKind.LONG_NUMBER]),
+        ("Visit evil.ćom today", [UnsafeTextKind.LINK]),
+    ],
+)
+def test_combining_marks_never_hide_a_span(agent_text, expected_kinds):
+    assert find_unsafe_spans(agent_text) == expected_kinds
+
+
+@pytest.mark.parametrize("native_text", ["สวัสดีค่ะ", "नमस्ते"])
+def test_marks_after_non_ascii_letters_pass_the_summary_unchanged(native_text):
+    assert sanitize_summary(native_text) == native_text
+
+
+@pytest.mark.parametrize(
+    "agent_text",
+    ["010|1234|5678", "010;1234;5678", "010, 1234, 5678", "010、1234、5678", "010،1234،5678",
+     "010〜1234〜5678", "010⁃1234⁃5678", "010⠀1234⠀5678", "010x1234x5678"],
+)
+def test_any_short_separator_joins_a_phone_number(agent_text):
+    assert find_unsafe_spans(agent_text) == [UnsafeTextKind.LONG_NUMBER]
+
+
+def test_a_colon_still_never_joins_a_time():
+    assert find_unsafe_spans("Meeting at 10:30 or 11:45") == []
+
+
+def test_messenger_handles_are_refused_and_stripped():
+    assert find_unsafe_spans("Message @refund_desk on Telegram") == [UnsafeTextKind.MESSENGER_HANDLE]
+    assert sanitize_summary("Message @refund_desk on Telegram") == "Message on Telegram"
+    assert find_unsafe_spans("email me at a@b.co") == [UnsafeTextKind.EMAIL_ADDRESS]
+
+
+def test_summary_falls_back_when_its_own_output_is_unsafe(monkeypatch, capsys):
+    monkeypatch.setattr(sanitize, "strip_links_and_addresses", lambda text: text)
+    capsys.readouterr()
+    assert sanitize_summary("Pay at evil.com") == SUMMARY_FALLBACK_TEXT
+    [metric_line] = [line for line in capsys.readouterr().out.splitlines() if sanitize.SUMMARY_FALLBACK_METRIC_NAME in line]
+    assert json.loads(metric_line)[sanitize.SUMMARY_FALLBACK_METRIC_NAME] == 1
+    assert find_unsafe_spans(SUMMARY_FALLBACK_TEXT) == []
+
+
+def needs_a_ruling(agent_text: str, unfixed_class: str):
+    return pytest.param(agent_text, marks=pytest.mark.xfail(strict=True, reason=f"not in this fix round: {unfixed_class}"))
+
+
+REVIEWER_BYPASS_PROBES = [
+    "Call 010-1234-5678 now.",
+    "Call " + add_mark_after_each_character("01012345678", KEYCAP_SUFFIX) + " now.",
+    "Call " + add_mark_after_each_character("01012345678", "⃣") + " now.",
+    "Call " + add_mark_after_each_character("01012345678", COMBINING_LOW_LINE) + " now.",
+    "Call " + add_mark_after_each_character("01012345678", COMBINING_LONG_STROKE_OVERLAY) + " now.",
+    "Visit " + add_mark_after_each_character("evil.com", COMBINING_LOW_LINE) + " now.",
+    "Visit " + add_mark_after_each_character("https://evil.com/pay", COMBINING_LOW_LINE) + " now.",
+    "Visit evil.ćom today.",
+    "Call 010⠀1234⠀5678 now.",
+    "Call 010|1234|5678 now.",
+    "Call 010;1234;5678 now.",
+    "Call 010, 1234, 5678 now.",
+    needs_a_ruling("Visit evil[.]com now.", "defanged dot"),
+    "Visit evil .com now.",
+    needs_a_ruling("Visit evil. com now.", "space after the dot"),
+    "Message @refund_desk on Telegram.",
+    needs_a_ruling("〇九〇ー一二三四ー五六七八に電話", "kanji digits"),
+    needs_a_ruling("공일공 일이삼사 오육칠팔로 전화하세요", "Hangul digit words"),
+    needs_a_ruling("Write to jimin at gmail dot com.", "spelled-out address"),
+    needs_a_ruling("Visit evil.\ncom now.", "line break after the dot"),
+    "Visit ｅｖｉｌ．ｃｏｍ now.",
+    "Visit ev​il.c​om now.",
+    "Call \U0001d7ce\U0001d7cf\U0001d7ce\U0001d7cf\U0001d7d0\U0001d7d1\U0001d7d2 now.",
+    "Visit evil.c\U000e0041om",
+    "010ㅤ1234ㅤ5678",
+    "h‍ttps://evil",
+    "010͏1234͏5678",
+    "010\xa01234\xa05678",
+    "010、1234、5678",
+    "010，1234，5678",
+    "010،1234،5678",
+    "evil․com",
+    "010・1234・5678",
+    "010⁃1234⁃5678",
+    "010〜1234〜5678",
+    "010～1234～5678",
+    "010x1234x5678",
+    needs_a_ruling("Call O1O-l234-S678", "letters standing in for digits"),
+    "Pay at evil .com today",
+    "Go to https ://evil .com /pay now",
+    "Go to www .evil .com",
+    "Pay at kb-bank .co .kr please",
+    "Write to jimin @evil .com",
+    "Write jimin@ evil .com",
+    "Visit evil　.com",
+    "Visit evil 。com",
+    "Visit evil\xa0.com",
+]
+
+
+@pytest.mark.parametrize("agent_text", REVIEWER_BYPASS_PROBES)
+def test_every_reviewer_bypass_probe_is_refused(agent_text):
+    assert find_unsafe_spans(agent_text) != []

@@ -478,6 +478,7 @@ class UnsafeTextKind(StrEnum):
 
     LINK = "link"
     EMAIL_ADDRESS = "email_address"
+    MESSENGER_HANDLE = "messenger_handle"  # "@refund_desk" on Telegram, Instagram or X
     LONG_NUMBER = "long_number"  # 6+ digits: a phone, an account, a code; not a calendar date
 
 

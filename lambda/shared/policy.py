@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from shared.enums import LINK_REASON_CODES, EscalationDecision, Friction, GateFired, Intent, PolicyDecision, ReasonCode, WarnReason
 from shared.graph import Contact
 from shared.reader_agent import EmailVerdict
-from shared.sanitize import sanitize_summary
+from shared.sanitize import SUMMARY_FALLBACK_TEXT, sanitize_summary
 
 HOLD_CONFIDENCE_THRESHOLD = 0.6
 DOUBLE_TAP_INTENTS = (Intent.MONEY, Intent.CODE)
@@ -48,10 +48,14 @@ class EscalationAnswer:
 
 
 def stored_claimed_person(claimed_person: str | None) -> str | None:
-    """The Reader's claimed name as the tool agents read it: sanitised like the summary and capped; None when nothing is left."""
+    """The Reader's claimed name as the tool agents read it: sanitised like the summary and capped; None when nothing is left
+    or the name fell back (sanitize_summary already logged and counted it), so the fallback sentence never becomes a name."""
     if claimed_person is None:
         return None
-    return sanitize_summary(claimed_person)[:CLAIMED_PERSON_MAX_LENGTH].rstrip() or None
+    sanitized_name = sanitize_summary(claimed_person)
+    if sanitized_name == SUMMARY_FALLBACK_TEXT:
+        return None
+    return sanitized_name[:CLAIMED_PERSON_MAX_LENGTH].rstrip() or None
 
 
 def verdict_fields_for_request(reader_outcome: EmailVerdict | ReaderFailure, summary: str) -> dict:
