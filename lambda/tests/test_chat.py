@@ -145,7 +145,7 @@ def test_an_agent_reply_with_a_phone_number_is_refused_and_never_stored(chat_on,
     assert (reply_row["text"], reply_row["card"]) == (chat.OUTPUT_REFUSAL, {"kind": "refusal"})
     stored_rows = json.dumps(message_rows(RECEIVER_USER_ID), default=str)
     assert "1234-5678" not in stored_rows and chat.OUTPUT_REFUSAL in stored_rows
-    [metric_line] = [line for line in capsys.readouterr().out.splitlines() if "AgentOutputRefused" in line]
+    [metric_line] = [line for line in capsys.readouterr().out.splitlines() if "AgentOutputRefused" in line and '"kind"' in line]
     assert (json.loads(metric_line)["AgentOutputRefused"], json.loads(metric_line)["kind"]) == (1, UnsafeTextKind.LONG_NUMBER)
     assert "1234-5678" not in caplog.text
 

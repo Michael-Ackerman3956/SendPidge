@@ -97,7 +97,7 @@ def test_a_note_with_a_link_is_counted_and_stored_as_the_fixed_text(aws, capsys)
     assert (note_row["noteText"], note_row["recoveryPack"]) == (case_agent.CASE_NOTE_REFUSED_TEXT, None)
     assert [row["noteText"] for row in graph.list_case_notes(request_id)] == [case_agent.CASE_NOTE_REFUSED_TEXT]
     assert case_agent.has_note_for(scope)
-    [metric_line] = [line for line in capsys.readouterr().out.splitlines() if "AgentOutputRefused" in line]
+    [metric_line] = [line for line in capsys.readouterr().out.splitlines() if "AgentOutputRefused" in line and '"kind"' in line]
     assert json.loads(metric_line)["kind"] == UnsafeTextKind.LINK
 
 

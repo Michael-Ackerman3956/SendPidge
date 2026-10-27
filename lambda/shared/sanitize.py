@@ -1,10 +1,12 @@
-"""Makes the Reader's summary safe to put in front of a real person on any channel, and gates agent text (case notes,
-chat replies) before it is written to DynamoDB: agent text with a link, an address, a messenger handle or a long number
-is refused, never stripped. Both run on a normalised copy (NFKC except Hangul compatibility jamo, combining marks after
-ASCII dropped, every default-ignorable character dropped, enclosed and other whole-number symbols read as digits,
-ideographic full stops read as ".", whitespace collapsed and a space before punctuation removed), so fullwidth, enclosed,
-underlined and invisibly or space-split spans are caught. Bare domains end at an ASCII boundary and include
-internationalised TLDs. A summary whose own output still holds a span is replaced by SUMMARY_FALLBACK_TEXT."""
+"""An allow-list first: Pidge's own text may hold only characters a person needs to read it (ASCII letters and digits,
+Latin letters, Hangul syllables, space, newline and the punctuation in ALLOWED_PUNCTUATION_AND_SYMBOLS). Agent text bound
+for a person (case notes, chat replies) is refused, never stripped, before it is written to DynamoDB when it holds any
+other character, a link, an address, a messenger handle or a long number; the Reader's summary has all of those stripped
+instead. Both run on a normalised copy (NFKC except Hangul compatibility jamo, combining marks after ASCII dropped, every
+default-ignorable character dropped, enclosed and other whole-number symbols read as digits, ideographic full stops read
+as ".", whitespace collapsed and a space before punctuation removed), so fullwidth, enclosed, underlined and invisibly or
+space-split spans are caught. A bare domain's TLD is an internationalised TLD, an xn-- label or any letter run but
+Hangul. A summary whose own output still holds a span is replaced by SUMMARY_FALLBACK_TEXT."""
 
 import datetime
 import logging
@@ -35,27 +37,38 @@ IDEOGRAPHIC_FULL_STOP = "\u3002"  # NFKC already folds the halfwidth "\uff61" in
 COMBINING_MARK_CATEGORIES = frozenset({"Mn", "Me"})  # underline, strike-through, accents, the keycap "\u20e3"
 MARK_ANCHOR_PUNCTUATION = frozenset("./:@-")  # with ASCII letters and digits: a mark after one of these is dropped
 
+# The allow-list, checked on normalize_for_gate output (so "…" has already become "..." and fullwidth forms are ASCII).
+ALLOWED_PUNCTUATION_AND_SYMBOLS = frozenset(" \n.,!?'\"()-;:’‘“”–—…%&$€£₩¥")
+LATIN_LETTER_CODE_POINT_RANGES = (range(0x00C0, 0x0250), range(0x1E00, 0x1F00))  # letters only, so "×" and "÷" are out
+HANGUL_SYLLABLE_CODE_POINTS = range(0xAC00, 0xD7A4)  # syllables only: compatibility ("ㅡ") and conjoining jamo are out
+LETTER_CATEGORY_PREFIX = "L"
+
 # Each pattern stops before trailing punctuation so the sentence keeps its full stop.
 TRAILING_PUNCTUATION_LOOKAHEAD = r"(?=[.,;:!?)]*(?:\s|$))"
 INTERNATIONALISED_TOP_LEVEL_DOMAIN_ALTERNATION = "|".join(
     re.escape(domain) for domain in sorted(INTERNATIONALISED_TOP_LEVEL_DOMAINS, key=lambda domain: (-len(domain), domain))
 )
-# A bare domain's TLD is ASCII letters, an xn-- label or an internationalised TLD ("рф", "한국"), never any
-# Unicode word. It ends where the next character is not an ASCII letter or digit, so quotes, brackets, "'s", dashes,
-# "_" and non-ASCII letters after it ("evil.com에서") do not hide it; the path is optional.
+# A bare domain's TLD is an internationalised TLD ("рф", "한국"), an xn-- label or a run of letters in any script but
+# Hangul syllables ("evil.ćom", "evil.соm"); a Hangul run would make "확인했어요.감사합니다" a link. It ends where the
+# next character is not an ASCII letter or digit, so quotes, brackets, "'s", dashes, "_" and Hangul after it
+# ("evil.com에서") do not hide it; the path is optional.
 URL_PATTERN = re.compile(
     r"(?:https?://|www\.)\S*?" + TRAILING_PUNCTUATION_LOOKAHEAD
-    + r"|\b[\w-]+(?:\.[\w-]+)*\.(?:" + INTERNATIONALISED_TOP_LEVEL_DOMAIN_ALTERNATION + r"|xn--[a-z0-9-]+|[a-z]{2,})"
+    + r"|\b[\w-]+(?:\.[\w-]+)*\.(?:" + INTERNATIONALISED_TOP_LEVEL_DOMAIN_ALTERNATION
+    + r"|xn--[a-z0-9-]+|[^\W\d_가-힣]{2,})"
     + r"(?![A-Za-z0-9])(?:/\S*?" + TRAILING_PUNCTUATION_LOOKAHEAD + ")?",
     re.IGNORECASE,
 )
 EMAIL_ADDRESS_PATTERN = re.compile(r"[^\s@]+@\S*?" + TRAILING_PUNCTUATION_LOOKAHEAD)
 MESSENGER_HANDLE_PATTERN = re.compile(r"(?<![\w.@])@[A-Za-z0-9_][A-Za-z0-9_.]{2,}")  # "@refund_desk"
 NUMBER_PATTERN = re.compile(r"[+(]?\d(?:[\s,.\-()/]*\d)*\)?")  # phone numbers, amounts, codes, any digit run
-# 6+ digits joined by any run of characters that are neither a word character nor ":" (underscore joins too), or by
-# one "x"/"X" between groups of 3+ digits ("010x1234x5678"). A letter breaks the run and ":" never joins ("at 10:30").
-# Dates and amounts are blanked first. Joiners never match a digit, so the run is linear.
-LONG_NUMBER_PATTERN = re.compile(r"(?<!\d)\d(?:(?:(?:[^\w:]|_)*|(?<=\d{3})[xX](?=\d{3}))\d){5,}")
+# 6+ digits joined by any run of non-word characters (":" and "_" join too), or by one "x"/"X" between groups of 3+
+# digits ("010x1234x5678"). A letter breaks the run. Clock times, dates and amounts are blanked first. Joiners never
+# match a digit, so the run is linear.
+LONG_NUMBER_PATTERN = re.compile(r"(?<!\d)\d(?:(?:[\W_]*|(?<=\d{3})[xX](?=\d{3}))\d){5,}")
+# A real clock time ("10:30": hours 0-23, minutes 00-59) becomes a space before the long-number check, so ":" can
+# join every other digit group ("010:1234:5678").
+CLOCK_TIME_PATTERN = re.compile(r"(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d(?!\d)")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 SPACE_BEFORE_PUNCTUATION_PATTERN = re.compile(r"\s+([,.;:!?])")
 
@@ -128,8 +141,8 @@ def is_mark_anchor(character: str) -> bool:
 
 def drop_marks_after_ascii(text: str) -> str:
     """Drops every Mn or Me character that follows an ASCII letter, digit or one of ". / : @ -", directly or after other
-    dropped marks (an underlined or struck-through "evil.com" -> "evil.com"). Marks after any other character stay (Thai,
-    Devanagari)."""
+    dropped marks (an underlined or struck-through "evil.com" -> "evil.com"). Marks after any other character stay here
+    (Thai, Devanagari); the allow-list then refuses them."""
     kept_characters = []
     is_after_anchor = False
     for character in text:
@@ -148,6 +161,31 @@ def normalize_for_gate(text: str) -> str:
     -> "evil.com"). Only the gate and the summary use it; hosts keep normalize_for_matching, so a marked host stays IDN."""
     unmarked_text = drop_marks_after_ascii(normalize_for_matching(drop_marks_after_ascii(text)))
     return SPACE_BEFORE_PUNCTUATION_PATTERN.sub(r"\1", WHITESPACE_PATTERN.sub(" ", unmarked_text))
+
+
+def is_allowed_character(character: str) -> bool:
+    """True for ASCII letters and digits, ALLOWED_PUNCTUATION_AND_SYMBOLS, Hangul syllables and the letters of the two
+    Latin ranges; every other character is outside the allow-list."""
+    if (character.isascii() and character.isalnum()) or character in ALLOWED_PUNCTUATION_AND_SYMBOLS:
+        return True
+    code_point = ord(character)
+    if code_point in HANGUL_SYLLABLE_CODE_POINTS:
+        return True
+    is_in_latin_range = any(code_point in code_point_range for code_point_range in LATIN_LETTER_CODE_POINT_RANGES)
+    return is_in_latin_range and unicodedata.category(character).startswith(LETTER_CATEGORY_PREFIX)
+
+
+def has_disallowed_character(text: str) -> bool:
+    return not all(is_allowed_character(character) for character in text)
+
+
+def replace_disallowed_characters(text: str) -> str:
+    """Every character outside the allow-list becomes a space ("evil·com" -> "evil com")."""
+    return "".join(character if is_allowed_character(character) else " " for character in text)
+
+
+def blank_clock_times(text: str) -> str:
+    return CLOCK_TIME_PATTERN.sub(" ", text)
 
 
 def is_real_date(year: str, month: str, day: str) -> bool:
@@ -200,11 +238,13 @@ def strip_links_and_addresses(text: str) -> str:
 
 
 def sanitize_summary(summary: str) -> str:
-    """Strips links, addresses, handles and every number from the gate-normalised summary (whitespace is collapsed and
-    "evil .com" joined before any strip), then links and addresses again (a stripped digit can free a link: "evil.com1"),
-    collapses whitespace and caps the length. If the gate still finds a span in that output, logs the kinds, emits one
+    """Strips links, addresses and handles from the gate-normalised summary (whitespace is collapsed and "evil .com" joined
+    before any strip), replaces every character outside the allow-list with a space, strips every number, then links and
+    addresses again (a stripped digit can free a link: "evil.com1"), collapses whitespace and caps the length. If the gate
+    still finds a span in that output (a braille blank before ".com" leaves "evil .com"), logs the kinds, emits one
     SummaryFallback count and returns SUMMARY_FALLBACK_TEXT."""
     text = strip_links_and_addresses(normalize_for_gate(summary))
+    text = replace_disallowed_characters(text)
     text = NUMBER_PATTERN.sub(" ", text)
     text = strip_links_and_addresses(text)
     capped_summary = WHITESPACE_PATTERN.sub(" ", text).strip()[:SUMMARY_MAX_LENGTH].rstrip()
@@ -226,8 +266,9 @@ class AgentOutputRefused(Exception):
 
 def find_unsafe_spans(text: str) -> list[UnsafeTextKind]:
     """Each kind found, once, in enum order, matched on the gate-normalised text. Addresses are blanked before handles
-    and handles before links (both can hold a domain), links before numbers and dates and amounts before the long-number
-    check, so one span is one kind."""
+    and handles before links (both can hold a domain), so one span is one kind. On what is left (dates still in it), any
+    character outside the allow-list is DISALLOWED_CHARACTER ("a@b.co" is an address only, "@@refund_desk" is a
+    disallowed character); clock times, dates and amounts are then blanked before the long-number check."""
     found_kinds: set[UnsafeTextKind] = set()
     remaining_text = normalize_for_gate(text)
     for kind, pattern in ((UnsafeTextKind.EMAIL_ADDRESS, EMAIL_ADDRESS_PATTERN),
@@ -235,17 +276,21 @@ def find_unsafe_spans(text: str) -> list[UnsafeTextKind]:
         if pattern.search(remaining_text):
             found_kinds.add(kind)
             remaining_text = pattern.sub(" ", remaining_text)
-    if LONG_NUMBER_PATTERN.search(blank_amounts(blank_dates(remaining_text))):
+    if has_disallowed_character(remaining_text):
+        found_kinds.add(UnsafeTextKind.DISALLOWED_CHARACTER)
+    if LONG_NUMBER_PATTERN.search(blank_amounts(blank_dates(blank_clock_times(remaining_text)))):
         found_kinds.add(UnsafeTextKind.LONG_NUMBER)
     return [kind for kind in UnsafeTextKind if kind in found_kinds]
 
 
 def refuse_unsafe_agent_text(text: str) -> None:
-    """Returns when the text is clean. Otherwise emits one AgentOutputRefused count per kind found, logs the kinds (never
-    the text) and raises AgentOutputRefused; the caller stores its own fixed text in its place, never the refused text."""
+    """Returns when the text is clean. Otherwise emits one dimensionless AgentOutputRefused count for the refusal and one
+    per kind found, logs the kinds (never the text) and raises AgentOutputRefused; the caller stores its own fixed text
+    in its place, never the refused text."""
     unsafe_kinds = find_unsafe_spans(text)
     if not unsafe_kinds:
         return
+    emit_count_metric(AGENT_OUTPUT_REFUSED_METRIC_NAME)
     for kind in unsafe_kinds:
         emit_count_metric(AGENT_OUTPUT_REFUSED_METRIC_NAME, UNSAFE_KIND_DIMENSION_NAME, str(kind))
     logger.warning("agent text refused: kinds=%s", [str(kind) for kind in unsafe_kinds])

@@ -488,6 +488,7 @@ class UnsafeTextKind(StrEnum):
     EMAIL_ADDRESS = "email_address"
     MESSENGER_HANDLE = "messenger_handle"  # "@refund_desk" on Telegram, Instagram or X
     LONG_NUMBER = "long_number"  # 6+ digits: a phone, an account, a code; not a calendar date
+    DISALLOWED_CHARACTER = "disallowed_character"  # outside the allow-list: not Latin, Hangul or plain punctuation
 
 
 class AgentRunFailure(StrEnum):

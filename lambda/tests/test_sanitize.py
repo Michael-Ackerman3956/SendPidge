@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -46,9 +47,9 @@ def test_nothing_digit_like_survives():
         ("You have 2 held emails", []),
         ("PIN 4821", []),  # the accepted miss: no email body reaches these agents
         ("Call 010\u20131234\u20135678", [UnsafeTextKind.LONG_NUMBER]),
-        ("010\u20111234\u20115678", [UnsafeTextKind.LONG_NUMBER]),
-        ("010/1234/5678", [UnsafeTextKind.LONG_NUMBER]),
-        ("010_1234_5678", [UnsafeTextKind.LONG_NUMBER]),
+        ("010\u20111234\u20115678", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),  # NFKC: U+2010
+        ("010/1234/5678", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),
+        ("010_1234_5678", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),
         ("\uff10\uff11\uff10-\uff11\uff12\uff13\uff14-\uff15\uff16\uff17\uff18", [UnsafeTextKind.LONG_NUMBER]),
         ("phone 2026-10-24-5678", [UnsafeTextKind.LONG_NUMBER]),
         ("Call 1234-56-78", [UnsafeTextKind.LONG_NUMBER]),
@@ -56,10 +57,10 @@ def test_nothing_digit_like_survives():
         ("on October 24, 2026", []),
         ("on 24.10.2026", []),
         ("on 2026. 10. 24.", []),
-        ("on 10/24/2026", []),
+        ("on 10/24/2026", [UnsafeTextKind.DISALLOWED_CHARACTER]),  # "/" is outside the allow-list
         ("at 10:30", []),
         ('at "bank-help.example" now', [UnsafeTextKind.LINK]),
-        ("[bank-help.example]", [UnsafeTextKind.LINK]),
+        ("[bank-help.example]", [UnsafeTextKind.LINK, UnsafeTextKind.DISALLOWED_CHARACTER]),
         ("bank-help.example's page", [UnsafeTextKind.LINK]),
         ("bank-help\uff0eexample", [UnsafeTextKind.LINK]),
         ("bank\u200b-help.example", [UnsafeTextKind.LINK]),
@@ -79,11 +80,17 @@ def test_summary_strips_a_quoted_and_a_fullwidth_domain():
 
 
 @pytest.mark.parametrize(
-    "agent_text",
-    ["Pay at zelle-help.com에서 today", "zelle-help.com으로 송금하라고 했어요", "evil.com- now", "evil.com_ now", "evil.comへ now"],
+    ("agent_text", "expected_kinds"),
+    [
+        ("Pay at zelle-help.com에서 today", [UnsafeTextKind.LINK]),
+        ("zelle-help.com으로 송금하라고 했어요", [UnsafeTextKind.LINK]),
+        ("evil.com- now", [UnsafeTextKind.LINK]),
+        ("evil.com_ now", [UnsafeTextKind.LINK, UnsafeTextKind.DISALLOWED_CHARACTER]),  # "_" ends the TLD, then is refused
+        ("evil.comへ now", [UnsafeTextKind.LINK]),  # the TLD letter run takes "へ" with it
+    ],
 )
-def test_a_domain_glued_to_a_word_is_still_a_link(agent_text):
-    assert find_unsafe_spans(agent_text) == [UnsafeTextKind.LINK]
+def test_a_domain_glued_to_a_word_is_still_a_link(agent_text, expected_kinds):
+    assert find_unsafe_spans(agent_text) == expected_kinds
     summary = sanitize_summary(agent_text)
     assert "zelle-help.com" not in summary and "evil.com" not in summary
 
@@ -98,6 +105,7 @@ def test_stripping_a_number_never_leaves_a_link():
         ("Visit evil.рф now", [UnsafeTextKind.LINK]),
         ("Visit kb은행.한국 now", [UnsafeTextKind.LINK]),
         ("확인했어요.감사합니다", []),  # the over-refusal guard: a Korean word is not a TLD
+        ("Visit evil.\u0107om today", [UnsafeTextKind.LINK]),  # a precomposed accent: the TLD is any letter run
     ],
 )
 def test_internationalised_top_level_domains_are_links(agent_text, expected_kinds):
@@ -124,21 +132,25 @@ def test_full_width_full_stop_reads_as_a_dot(agent_text):
 
 
 @pytest.mark.parametrize(
-    "agent_text",
-    ["Call \u2776\u2777\u2778-\u2779\u277a\u277b-\u277c\u277d\u277e\u24ff", "Call 555\u2022123\u20224567"],
+    ("agent_text", "expected_kinds"),
+    [
+        ("Call \u2776\u2777\u2778-\u2779\u277a\u277b-\u277c\u277d\u277e\u24ff", [UnsafeTextKind.LONG_NUMBER]),
+        ("Call 555\u2022123\u20224567", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),
+    ],
 )
-def test_enclosed_and_bulleted_digits_are_numbers(agent_text):
-    assert find_unsafe_spans(agent_text) == [UnsafeTextKind.LONG_NUMBER]
+def test_enclosed_and_bulleted_digits_are_numbers(agent_text, expected_kinds):
+    assert find_unsafe_spans(agent_text) == expected_kinds
 
 
-def test_compatibility_jamo_survive_the_summary():
-    assert sanitize_summary("ㅋㅋ 확인했어요") == "ㅋㅋ 확인했어요"
+def test_compatibility_jamo_are_stripped_from_the_summary_and_refused():
+    assert find_unsafe_spans("ㅋㅋ 확인했어요") == [UnsafeTextKind.DISALLOWED_CHARACTER]
+    assert sanitize_summary("ㅋㅋ 확인했어요") == "확인했어요"
 
 
 @pytest.mark.parametrize(
     ("agent_text", "expected_kinds"),
     [
-        ("Sent on 10/24/26", []),
+        ("Sent on 10/24/26", [UnsafeTextKind.DISALLOWED_CHARACTER]),  # "/" is outside the allow-list
         ("Sent on 24.10.26", []),
         ("It asked for $2,500.00", []),
         ("500,000원을 보내라고 했어요", []),
@@ -186,27 +198,48 @@ def test_combining_marks_never_hide_a_span(agent_text, expected_kinds):
 
 
 @pytest.mark.parametrize("native_text", ["สวัสดีค่ะ", "नमस्ते"])
-def test_marks_after_non_ascii_letters_pass_the_summary_unchanged(native_text):
-    assert sanitize_summary(native_text) == native_text
+def test_scripts_outside_latin_and_hangul_are_stripped_and_refused(native_text):
+    assert sanitize_summary(native_text) == ""
+    assert find_unsafe_spans(native_text) == [UnsafeTextKind.DISALLOWED_CHARACTER]
 
 
 @pytest.mark.parametrize(
-    "agent_text",
-    ["010|1234|5678", "010;1234;5678", "010, 1234, 5678", "010、1234、5678", "010،1234،5678",
-     "010〜1234〜5678", "010⁃1234⁃5678", "010⠀1234⠀5678", "010x1234x5678"],
+    ("agent_text", "expected_kinds"),
+    [
+        ("010|1234|5678", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),
+        ("010;1234;5678", [UnsafeTextKind.LONG_NUMBER]),
+        ("010, 1234, 5678", [UnsafeTextKind.LONG_NUMBER]),
+        ("010、1234、5678", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),
+        ("010،1234،5678", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),
+        ("010〜1234〜5678", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),
+        ("010⁃1234⁃5678", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),
+        ("010⠀1234⠀5678", [UnsafeTextKind.LONG_NUMBER, UnsafeTextKind.DISALLOWED_CHARACTER]),
+        ("010x1234x5678", [UnsafeTextKind.LONG_NUMBER]),
+    ],
 )
-def test_any_short_separator_joins_a_phone_number(agent_text):
-    assert find_unsafe_spans(agent_text) == [UnsafeTextKind.LONG_NUMBER]
+def test_any_short_separator_joins_a_phone_number(agent_text, expected_kinds):
+    assert find_unsafe_spans(agent_text) == expected_kinds
 
 
-def test_a_colon_still_never_joins_a_time():
-    assert find_unsafe_spans("Meeting at 10:30 or 11:45") == []
+@pytest.mark.parametrize(
+    ("agent_text", "expected_kinds"),
+    [
+        ("Meeting at 10:30 or 11:45", []),
+        ("Pick-up at 9:05 on 2026-10-24", []),
+        ("Open 09:00-17:30", []),
+        ("Call 010:1234:5678 now", [UnsafeTextKind.LONG_NUMBER]),
+        ("Code 48:29:13 now", [UnsafeTextKind.LONG_NUMBER]),  # no hour 48, so nothing is a clock time
+    ],
+)
+def test_clock_times_pass_and_colon_joined_numbers_do_not(agent_text, expected_kinds):
+    assert find_unsafe_spans(agent_text) == expected_kinds
 
 
 def test_messenger_handles_are_refused_and_stripped():
     assert find_unsafe_spans("Message @refund_desk on Telegram") == [UnsafeTextKind.MESSENGER_HANDLE]
     assert sanitize_summary("Message @refund_desk on Telegram") == "Message on Telegram"
     assert find_unsafe_spans("email me at a@b.co") == [UnsafeTextKind.EMAIL_ADDRESS]
+    assert find_unsafe_spans("Message @@refund_desk on Telegram") == [UnsafeTextKind.DISALLOWED_CHARACTER]
 
 
 def test_summary_falls_back_when_its_own_output_is_unsafe(monkeypatch, capsys):
@@ -235,11 +268,11 @@ REVIEWER_BYPASS_PROBES = [
     "Call 010|1234|5678 now.",
     "Call 010;1234;5678 now.",
     "Call 010, 1234, 5678 now.",
-    needs_a_ruling("Visit evil[.]com now.", "defanged dot"),
+    "Visit evil[.]com now.",
     "Visit evil .com now.",
     needs_a_ruling("Visit evil. com now.", "space after the dot"),
     "Message @refund_desk on Telegram.",
-    needs_a_ruling("〇九〇ー一二三四ー五六七八に電話", "kanji digits"),
+    "〇九〇ー一二三四ー五六七八に電話",
     needs_a_ruling("공일공 일이삼사 오육칠팔로 전화하세요", "Hangul digit words"),
     needs_a_ruling("Write to jimin at gmail dot com.", "spelled-out address"),
     needs_a_ruling("Visit evil.\ncom now.", "line break after the dot"),
@@ -276,3 +309,63 @@ REVIEWER_BYPASS_PROBES = [
 @pytest.mark.parametrize("agent_text", REVIEWER_BYPASS_PROBES)
 def test_every_reviewer_bypass_probe_is_refused(agent_text):
     assert find_unsafe_spans(agent_text) != []
+
+
+DOMAIN_SHAPE_PATTERN = re.compile(r"\w\.[^\W\d_]{2,}")  # "evil.com"; "evil. com" and "evil.c om" are not domains
+
+
+def assert_summary_holds_no_contact(summary: str) -> None:
+    assert find_unsafe_spans(summary) == []
+    assert DOMAIN_SHAPE_PATTERN.search(summary) is None
+    assert "@" not in summary and not any(character.isdigit() for character in summary)
+
+
+ROUND_THREE_PROBES = [
+    "Call 010ㅡ1234ㅡ5678 now",  # Hangul letter eu between digit groups
+    "Call 010ー1234ー5678 now",  # katakana long vowel mark
+    "Call 010一1234一5678 now",  # CJK "one"
+    "Call 010:1234:5678 now",
+    "Go to evil⠀.com now",  # braille blank before the dot
+    "Go to evil.⠀com now",
+    "Go to evil\x9f.com now",  # a C1 control before the dot
+    "Go to evil.c\x9fom now",
+    "Go to evilा.com now",  # a Devanagari vowel sign before the dot
+    "Go to evil·com now",  # look-alike dots
+    "Go to evilꓸcom now",
+    "Go to evil・com now",
+    "Go to evil.соm now",  # Cyrillic letters in ".com"
+    "Add Telegram refund_desk now",
+    pytest.param("KakaoTalk ID: refunddesk77",
+                 marks=pytest.mark.xfail(strict=True, reason="founder ruling pending: a bare handle after a messenger name")),
+    "Go to 5.6.7.8/pay now",
+    "Account 12/10/25 12345",
+    "Telegram @ refund_desk",
+    "Call 010-1234-5678",
+    "Go to evil.com now",
+    "Go to evil. ́com",
+    "010：1234：5678",
+    "010∶1234∶5678",
+    "010˗1234˗5678",
+    "010ㅡ123456",
+    "Message @@refund_desk on Telegram",
+    "Pay at evil⠀.com today",
+    "Pay at evilꓸcom today",
+    "Pay at evil.соm today",
+]
+
+
+@pytest.mark.parametrize("agent_text", ROUND_THREE_PROBES)
+def test_every_round_three_probe_is_refused_and_stripped(agent_text):
+    assert find_unsafe_spans(agent_text) != []
+    assert_summary_holds_no_contact(sanitize_summary(agent_text))
+
+
+@pytest.mark.parametrize(
+    ("character", "is_allowed"),
+    [("é", True), ("ꓸ", False), ("·", False), ("ㅡ", False), ("가", True), ("с", False),
+     ("⠀", False), ("\x9f", False), ("—", True), ("’", True), ("/", False), ("@", False), ("×", False)],
+)
+def test_only_allowed_characters_reach_a_person(character, is_allowed):
+    text = f"Pidge {character} here"
+    assert find_unsafe_spans(text) == ([] if is_allowed else [UnsafeTextKind.DISALLOWED_CHARACTER])
+    assert (character in sanitize_summary(text)) == is_allowed

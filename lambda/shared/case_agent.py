@@ -196,9 +196,10 @@ def run_case_agent(agent: Agent, scope: CaseScope) -> CaseNote:
 def store_case_note(scope: CaseScope, note: CaseNote) -> dict:
     """Code writes the NOTE# row; the pack inside it is code's, never the model's, and only the payment note carries it.
 
-    The note passes the output gate first: on a link, an address or a long number the gate logs and counts the kinds,
-    and the row stores CASE_NOTE_REFUSED_TEXT instead of the model's text, which is never stored or logged. The pack is
-    still built and stored either way. On AgentCore, Memory has already saved the run's messages."""
+    The note passes the output gate first: on a link, an address, a messenger handle, a long number or a character outside
+    the allow-list (Latin, Hangul and plain punctuation) the gate logs and counts the kinds, and the row stores
+    CASE_NOTE_REFUSED_TEXT instead of the model's text, which is never stored or logged. The pack is still built and stored
+    either way. On AgentCore, Memory has already saved the run's messages."""
     try:
         refuse_unsafe_agent_text(note.note_text)
         note_text = note.note_text
