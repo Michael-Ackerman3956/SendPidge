@@ -1,4 +1,5 @@
-"""Grep gate: file size, empty except/catch, `?? <default>` fallbacks and (lambda/, agent/) defaults on loaded data.
+"""Grep gate: file size, empty except/catch, `?? <default>` fallbacks and, in lambda/ and agent/ (tests excluded), defaults
+on loaded data and agent calls that bypass shared/agent_run.py.
 
 Known hits live in baseline.json (keyed by path, rule and the matched text, not the line number, so a refactor
 does not churn it). A hit outside the baseline fails the gate; a baseline entry that no longer matches is reported.
@@ -24,6 +25,10 @@ PYTHON_EXCEPT = re.compile(r"^\s*except\b.*:\s*(pass\s*)?$")
 # `.get(key, <anything but None>)`, `or {}` and `or []`: a missing field read as a value nobody chose.
 LOADED_ROW_DEFAULT = re.compile(r"\.get\(\s*[^,()]+,\s*(?!None\s*\))[^\s)]|\bor\s+(\{\}|\[\])")
 LOADED_DATA_PATH_PREFIXES = ("lambda/", "agent/")
+# A module that defines a tool holds a tool-holding agent; it runs it through agent_run.run_agent_once, never directly.
+DIRECT_AGENT_CALL = re.compile(r"structured_output_model\s*=")
+# The runner, and the tool-less Reader and reviewer, whose loop ends after the forced structured-output retry.
+DIRECT_AGENT_CALL_ALLOWED_PATHS = frozenset({"lambda/shared/agent_run.py", "lambda/shared/reader_agent.py", "lambda/shared/escalation.py"})
 
 
 class GateRule(StrEnum):
@@ -32,6 +37,7 @@ class GateRule(StrEnum):
     EMPTY_CATCH = "empty_catch"
     NULLISH_DEFAULT = "nullish_default"
     LOADED_ROW_DEFAULT = "loaded_row_default"
+    AGENT_CALL_OUTSIDE_RUNNER = "agent_call_outside_runner"
 
 
 @dataclass(frozen=True)
@@ -76,6 +82,14 @@ def find_loaded_row_defaults(lines: list[str]) -> list[tuple[int, str]]:
             if LOADED_ROW_DEFAULT.search(line) and not line.lstrip().startswith("#")]
 
 
+def find_agent_calls_outside_runner(relative_path: str, lines: list[str]) -> list[tuple[int, str]]:
+    """Every `structured_output_model=` line outside the runner and the two tool-less agents."""
+    if relative_path in DIRECT_AGENT_CALL_ALLOWED_PATHS:
+        return []
+    return [(index + 1, line.strip()) for index, line in enumerate(lines)
+            if DIRECT_AGENT_CALL.search(line) and not line.lstrip().startswith("#")]
+
+
 def find_hits_in_file(path: Path) -> list[GateHit]:
     relative_path = path.relative_to(REPOSITORY_ROOT).as_posix()
     lines = path.read_text().splitlines()
@@ -87,6 +101,8 @@ def find_hits_in_file(path: Path) -> list[GateHit]:
         hits.extend(GateHit(relative_path, GateRule.EMPTY_EXCEPT, text, line) for line, text in find_empty_python_excepts(lines))
         if relative_path.startswith(LOADED_DATA_PATH_PREFIXES) and not is_test_file(relative_path):
             hits.extend(GateHit(relative_path, GateRule.LOADED_ROW_DEFAULT, text, line) for line, text in find_loaded_row_defaults(lines))
+            hits.extend(GateHit(relative_path, GateRule.AGENT_CALL_OUTSIDE_RUNNER, text, line)
+                        for line, text in find_agent_calls_outside_runner(relative_path, lines))
         return hits
     for index, line in enumerate(lines):
         if EMPTY_CATCH.search(line):

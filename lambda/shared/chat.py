@@ -1,7 +1,7 @@
 """Grandma's questions to Pidge: CHAT#<userId> rows, the hourly cap, the prompt-attack check and the reply.
 
 pidge-verdict accepts a question (cap, then the grandma row); pidge-dispatch answers it from the stream (guardrail,
-then the chat agent, then the pidge row). The user id always comes from the caller's connection row, never from text.
+then the chat agent, then the output gate, then the pidge row). The user id always comes from the caller's connection row, never from text.
 """
 
 import logging
@@ -15,6 +15,7 @@ from boto3.dynamodb.conditions import Key
 
 from shared import graph, hourly_counters
 from shared.metrics import emit_count_metric
+from shared.sanitize import AgentOutputRefused, refuse_unsafe_agent_text
 from shared.enums import ChatCardKind, ChatRole, ChatVia, GuardrailOutcome, PushMessageType
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ EMPTY_QUESTION_REFUSAL = "Please type a shorter question."
 RATE_LIMIT_REFUSAL = "You have asked a lot this hour. Please try again a little later."
 PROMPT_ATTACK_REFUSAL = "I can only help with your own emails and cases."
 UNAVAILABLE_REFUSAL = "I can't answer right now. Please try again in a few minutes."
+OUTPUT_REFUSAL = "I can't answer that one safely. Please ask it another way."
 
 _bedrock_runtime_client = None
 
@@ -158,7 +160,8 @@ def answer_question(
     check_question: Callable[[str], GuardrailOutcome],
     ask_agent: Callable[[str, str], str],
 ) -> dict | None:
-    """Guardrail first, then the agent; returns the stored pidge row, or None when this question was already handled.
+    """Guardrail first, then the agent, then the output gate; returns the stored pidge row, or None when this question was
+    already handled.
 
     A blocked question never reaches the agent; a guardrail or agent failure becomes a refusal reply, never a skip.
     """
@@ -180,6 +183,17 @@ def answer_question(
     except Exception:
         logger.exception("chat agent failed for %s %s; refusing", user_id, sort_key)
         return write_reply(user_id, question_row, UNAVAILABLE_REFUSAL, ChatCardKind.REFUSAL)
+    return write_gated_reply(user_id, question_row, reply_text)
+
+
+def write_gated_reply(user_id: str, question_row: dict, reply_text: str) -> dict:
+    """The agent's reply is stored only when the output gate passes it; a refused reply is replaced by OUTPUT_REFUSAL and
+    never written to DynamoDB or logged (the gate logs and counts the kinds only)."""
+    try:
+        refuse_unsafe_agent_text(reply_text)
+    except AgentOutputRefused:
+        logger.warning("chat reply for %s %s refused by the output gate", user_id, question_row["SK"])
+        return write_reply(user_id, question_row, OUTPUT_REFUSAL, ChatCardKind.REFUSAL)
     return write_reply(user_id, question_row, reply_text, None)
 
 

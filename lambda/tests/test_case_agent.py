@@ -1,9 +1,14 @@
 """The case agent's tools see metadata only, never the body; code writes the note and the pack; one note per trigger."""
 
+import json
 from decimal import Decimal
 
+import pytest
+
 from shared import case_agent, graph, verdict
-from shared.enums import ActionOutcome, CaseTrigger, Jurisdiction, PaymentRail, VerdictAnswer
+from shared.enums import ActionOutcome, CaseTrigger, Jurisdiction, PaymentRail, ReaderModelChoice, UnsafeTextKind, VerdictAnswer
+from shared.sanitize import AgentOutputRefused
+from tests.helpers.scripted_model import ScriptedModel, verdict_step
 from tests.test_refund_rules import seed_rules
 from tests.test_verdict import JIMIN, RECEIVER_ADDRESS, RECEIVER_USER_ID, aws, at, new_request  # noqa: F401
 
@@ -82,6 +87,21 @@ def test_code_stores_the_note_once_per_trigger_and_the_second_run_sees_the_first
     assert pack_note["recoveryPack"]["ruleKey"] == "RULE#US#card#any" and pack_note["noteFor"].startswith("case:")
 
 
+def test_a_note_with_a_link_raises_and_writes_no_row(aws, capsys):
+    request_id = denied_request_with_body()
+    scope = case_agent.CaseScope(RECEIVER_USER_ID, request_id, CaseTrigger.VERDICT)
+    agent = case_agent.build_case_agent(ReaderModelChoice.HAIKU_4_5, scope)
+    agent.model = ScriptedModel(case_agent.CaseNote, {case_agent.run_prompt(scope): [verdict_step(
+        {"note_text": "Jimin said no. Ask for your refund at bank-help.example/refund.", "cites_previous_case": False})]})
+    note = case_agent.run_case_agent(agent, scope)
+    with pytest.raises(AgentOutputRefused) as raised:
+        case_agent.store_case_note(scope, note)
+    assert raised.value.kinds == [UnsafeTextKind.LINK] and "bank-help" not in str(raised.value)
+    assert graph.list_case_notes(request_id) == [] and not case_agent.has_note_for(scope)
+    [metric_line] = [line for line in capsys.readouterr().out.splitlines() if "AgentOutputRefused" in line]
+    assert json.loads(metric_line)["kind"] == UnsafeTextKind.LINK
+
+
 def test_report_payment_needs_the_receiver_and_a_finished_request(aws):
     request_id = new_request()
     payment = verdict.PaymentReport(request_id, Jurisdiction.US, PaymentRail.CARD, "Chase", Decimal("500"), "USD", "2026-10-24T01:00:00Z", "")
@@ -123,3 +143,19 @@ def test_the_request_row_is_read_with_a_strongly_consistent_read(monkeypatch):
     monkeypatch.setattr(graph, "get_table", lambda: FakeTable())
     assert graph.get_request("req-1")["status"] == "reversed_no"
     assert captured_kwargs["ConsistentRead"] is True
+
+
+def test_the_model_never_sees_a_domain_contact_or_a_source_url(aws):
+    seed_rules()
+    request_id = denied_request_with_body()
+    case_row = report(request_id)
+    scope = case_agent.CaseScope(RECEIVER_USER_ID, request_id, CaseTrigger.CASE, case_row["PK"].removeprefix("CASE#"))
+    tools_by_name = {tool.tool_name: tool for tool in case_agent.build_case_tools(scope)}
+    rule_steps = tools_by_name["read_refund_rule"]("US", "card")["steps"]
+    pack_steps = tools_by_name["draft_recovery_pack"]()["steps"]
+    for step in rule_steps + pack_steps:
+        assert "sourceUrl" not in step and "ftc.gov" not in step.get("contact", "") and step["action"]
+    assert len(rule_steps) == len(pack_steps) == 3 and "contact" not in pack_steps[1]
+    assert pack_steps[0]["contact"] == "the number on the back of your card"
+    stored_pack = case_agent.recovery_pack_with_drafts(scope)
+    assert "https://reportfraud.ftc.gov/" in [step["sourceUrl"] for step in stored_pack["steps"]]

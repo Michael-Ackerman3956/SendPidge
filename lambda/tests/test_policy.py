@@ -6,7 +6,7 @@ from shared.auth import authentication_reasons
 from shared.enums import EscalationDecision, Friction, GateFired, Intent, PolicyDecision, ReasonCode, WarnReason
 from shared.graph import Contact
 from shared.policy import (
-    UNREADABLE_SUMMARY, EscalationAnswer, EscalationFailure, PolicyOutcome, ReaderFailure,
+    CLAIMED_PERSON_MAX_LENGTH, UNREADABLE_SUMMARY, EscalationAnswer, EscalationFailure, PolicyOutcome, ReaderFailure,
     apply_escalation, decide, needs_escalation, verdict_fields_for_request,
 )
 from tests.policy_golden import (
@@ -121,6 +121,19 @@ def test_link_reasons_alone_warn_never_hold():
     assert outcome.contact is None and outcome.gate is None
 
 
+def test_camouflage_reasons_alone_warn_never_hold():
+    camouflage_reasons = [
+        ReasonCode.WHOLE_BODY_LINK, ReasonCode.SCRIPT_HREF_LINK, ReasonCode.CSS_HIDDEN_LINK, ReasonCode.IMAGE_MAP_LINK,
+        ReasonCode.HTML_ATTACHMENT_LINK, ReasonCode.LINKS_TRUNCATED, ReasonCode.IDN_LINK_DOMAIN, ReasonCode.IMAGE_ONLY_BODY,
+    ]
+    for reason in camouflage_reasons:
+        outcome = decide(make_verdict(Intent.NONE, 0.0, claimed_person=None), None, None, "hello@gardenweekly.example", [reason])
+        assert (outcome.decision, outcome.warn_reason, outcome.reasons) == (PolicyDecision.WARN, WarnReason.LINK_REASONS, (reason,)), reason
+        assert (outcome.gate, outcome.friction, outcome.contact) == (None, None, None), reason
+    every_reason = decide(make_verdict(Intent.NONE, 0.0, claimed_person=None), None, None, "a@b.example", camouflage_reasons)
+    assert (every_reason.decision, every_reason.warn_reason) == (PolicyDecision.WARN, WarnReason.LINK_REASONS)
+
+
 def test_link_only_reasons_pick_warn_reason_link_reasons():
     links_only = decide(make_verdict(Intent.NONE, 0.0, claimed_person=None), None, None, "a@b.example", [ReasonCode.HIDDEN_LINK, ReasonCode.KNOWN_SHORTENER])
     mixed = decide(make_verdict(Intent.NONE, 0.0, claimed_person=None), None, None, "a@b.example", [ReasonCode.AUTH_FAILED, ReasonCode.HIDDEN_LINK])
@@ -128,3 +141,11 @@ def test_link_only_reasons_pick_warn_reason_link_reasons():
     assert links_only.warn_reason is WarnReason.LINK_REASONS
     assert mixed.warn_reason is WarnReason.LISTED_SENDER
     assert (held.decision, held.reasons) == (PolicyDecision.HOLD, (ReasonCode.LINK_TEXT_HREF_MISMATCH,))
+
+
+def test_claimed_person_is_sanitised_and_capped_when_stored():
+    raw_claim = "Jimin call 010-1234-5678 at bank-help.example " + "x" * 200
+    stored = verdict_fields_for_request(make_verdict(Intent.MONEY, 0.9, claimed_person=raw_claim), "summary")["claimed_person"]
+    assert not any(character.isdigit() for character in stored) and "bank-help" not in stored
+    assert stored.startswith("Jimin call") and len(stored) <= CLAIMED_PERSON_MAX_LENGTH == 60
+    assert verdict_fields_for_request(make_verdict(Intent.MONEY, 0.9, claimed_person=None), "summary")["claimed_person"] is None

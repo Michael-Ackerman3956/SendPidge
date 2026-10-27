@@ -1,13 +1,17 @@
 """Grandma's questions: the cap fails closed, rows live under the caller only, the guardrail runs before the agent and a
 blocked or failed check never reaches it, and the chat tools read only the caller's rows."""
 
+import importlib
 import json
 
 import pytest
 from botocore.exceptions import ClientError
 
 from shared import chat, chat_agent, graph, verdict
-from shared.enums import ChatCardKind, ChatVia, GuardrailOutcome, PolicyDecision, PushMessageType, VerdictAnswer
+from shared.enums import (
+    ChatCardKind, ChatVia, GuardrailOutcome, PolicyDecision, PushMessageType, UnsafeTextKind, VerdictAnswer,
+)
+from tests.helpers.scripted_model import ScriptedModel, tool_call_step, verdict_step
 from tests.test_verdict import JIMIN, RECEIVER_USER_ID, aws, at, new_request  # noqa: F401
 from tests.test_verify_contact import seed_circle_contact, send_action, verdict_handler  # noqa: F401
 
@@ -124,6 +128,25 @@ def test_a_failed_agent_run_is_a_refusal_reply(chat_on):
 
     reply_row = chat.answer_question(RECEIVER_USER_ID, question_row["SK"], lambda _: GuardrailOutcome.PASSED, failing_agent)
     assert reply_row["text"] == chat.UNAVAILABLE_REFUSAL
+
+
+def test_an_agent_reply_with_a_phone_number_is_refused_and_never_stored(chat_on, capsys, caplog, monkeypatch):
+    question = "Who should I call about that email?"
+    question_row = ask(question)
+    scripted_model = ScriptedModel(chat_agent.ChatReply, {question: [
+        tool_call_step("list_my_held_emails", {}), verdict_step({"reply_text": "Call Jimin at 010-1234-5678 today."})]})
+    monkeypatch.setattr(chat_agent, "build_bedrock_model", lambda _model_choice: scripted_model)
+    for name, value in {"RECEIVER_USER_ID": RECEIVER_USER_ID, "CASE_AGENT_RUNTIME": "lambda", "CASE_AGENT_MODEL": "haiku-4.5"}.items():
+        monkeypatch.setenv(name, value)
+    dispatch = importlib.import_module("pidge_dispatch.handler")  # its ask_chat_agent builds the production chat agent
+    reply_row = chat.answer_question(RECEIVER_USER_ID, question_row["SK"], lambda _: GuardrailOutcome.PASSED, dispatch.ask_chat_agent)
+    assert (scripted_model.raised_errors, len(scripted_model.recorded_calls)) == ([], 2)
+    assert (reply_row["text"], reply_row["card"]) == (chat.OUTPUT_REFUSAL, {"kind": "refusal"})
+    stored_rows = json.dumps(message_rows(RECEIVER_USER_ID), default=str)
+    assert "1234-5678" not in stored_rows and chat.OUTPUT_REFUSAL in stored_rows
+    [metric_line] = [line for line in capsys.readouterr().out.splitlines() if "AgentOutputRefused" in line]
+    assert (json.loads(metric_line)["AgentOutputRefused"], json.loads(metric_line)["kind"]) == (1, UnsafeTextKind.LONG_NUMBER)
+    assert "1234-5678" not in caplog.text
 
 
 def test_only_new_question_rows_wake_the_dispatcher():

@@ -1,5 +1,6 @@
-"""A Strands `Model` double that answers from a script, so tests run the real Agent loop (structured-output tool,
-forced retry, validation) without Bedrock. A prompt with no script raises; there is never a default verdict."""
+"""A Strands `Model` double that answers from a script, so tests run the real Agent loop (tool turns, structured-output
+tool, forced retry, validation, turn limit) without Bedrock. A prompt with no script raises; there is never a default
+answer."""
 
 import json
 from collections.abc import AsyncGenerator
@@ -22,6 +23,7 @@ class UnscriptedPromptError(Exception):
 class ScriptedStepKind(Enum):
     VERDICT_TOOL = "verdict_tool"  # call the structured-output tool with the scripted fields
     TEXT_REPLY = "text_reply"      # answer in plain text and call no tool
+    TOOL_CALL = "tool_call"        # call one of the agent's own tools by name; the loop runs it and calls the model again
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,8 @@ class ScriptedStep:
     kind: ScriptedStepKind
     verdict_fields: dict | None = None
     reply_text: str | None = None
+    tool_name: str | None = None
+    tool_input: dict | None = None
 
 
 def verdict_step(verdict_fields: dict) -> ScriptedStep:
@@ -39,6 +43,10 @@ def text_reply_step(reply_text: str) -> ScriptedStep:
     return ScriptedStep(ScriptedStepKind.TEXT_REPLY, reply_text=reply_text)
 
 
+def tool_call_step(tool_name: str, tool_input: dict) -> ScriptedStep:
+    return ScriptedStep(ScriptedStepKind.TOOL_CALL, tool_name=tool_name, tool_input=tool_input)
+
+
 @dataclass(frozen=True)
 class RecordedModelCall:
     prompt_text: str
@@ -46,7 +54,7 @@ class RecordedModelCall:
     offered_tool_names: tuple[str, ...]
     is_forced_retry: bool  # Strands set tool_choice: the model already answered once without the tool
     step: ScriptedStep
-    user_text_count: int  # user text blocks the model saw: 1 for one email read alone, 2 on its forced retry
+    user_text_count: int  # user text blocks the model saw (tool results are not text): 1 for one prompt alone, 2 on its forced retry
 
 
 def list_user_texts(messages: Messages) -> list[str]:
@@ -58,7 +66,8 @@ def list_user_texts(messages: Messages) -> list[str]:
 
 
 def latest_prompt_text(messages: Messages, is_forced_retry: bool) -> str:
-    """The newest user text, skipping Strands' own retry instruction when the retry is forced; "" when there is none."""
+    """The newest user text, skipping Strands' own retry instruction when the retry is forced; "" when there is none.
+    In a tool loop the newest user message holds tool results, not text, so the run's prompt is still the match."""
     user_texts = list_user_texts(messages)
     prompt_position = -2 if is_forced_retry else -1
     if len(user_texts) < -prompt_position:
@@ -69,8 +78,8 @@ def latest_prompt_text(messages: Messages, is_forced_retry: bool) -> str:
 class ScriptedModel(Model):
     """`scripts` maps a prompt fragment (e.g. an email subject) to the ordered steps that prompt's calls consume.
 
-    Production turns any model exception into a ReaderFailure or EscalationFailure, so every raise is also kept in
-    raised_errors; a test asserts it is empty."""
+    Production turns any model exception into a ReaderFailure, an EscalationFailure, a chat refusal or a missing note,
+    so every raise is also kept in raised_errors; a test asserts it is empty."""
 
     _supports_structured_output = True  # as BedrockModel: the forced retry takes the production branch
 
@@ -126,10 +135,14 @@ class ScriptedModel(Model):
             yield {"contentBlockStop": {}}
             yield {"messageStop": {"stopReason": "end_turn"}}
             return
-        if self.structured_output_tool_name not in offered_tool_names:
-            self.refuse(f"{self.structured_output_tool_name} was not offered; tools were {offered_tool_names}")
+        if step.kind is ScriptedStepKind.TOOL_CALL:
+            called_tool_name, called_tool_input = step.tool_name, step.tool_input
+        else:
+            called_tool_name, called_tool_input = self.structured_output_tool_name, step.verdict_fields
+        if called_tool_name not in offered_tool_names:
+            self.refuse(f"{called_tool_name} was not offered; tools were {offered_tool_names}")
         tool_use_id = f"scripted-{len(self.recorded_calls)}"
-        yield {"contentBlockStart": {"start": {"toolUse": {"toolUseId": tool_use_id, "name": self.structured_output_tool_name}}}}
-        yield {"contentBlockDelta": {"delta": {"toolUse": {"input": json.dumps(step.verdict_fields)}}}}
+        yield {"contentBlockStart": {"start": {"toolUse": {"toolUseId": tool_use_id, "name": called_tool_name}}}}
+        yield {"contentBlockDelta": {"delta": {"toolUse": {"input": json.dumps(called_tool_input)}}}}
         yield {"contentBlockStop": {}}
         yield {"messageStop": {"stopReason": "tool_use"}}

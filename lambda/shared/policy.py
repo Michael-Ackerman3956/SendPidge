@@ -6,10 +6,12 @@ from dataclasses import dataclass, replace
 from shared.enums import LINK_REASON_CODES, EscalationDecision, Friction, GateFired, Intent, PolicyDecision, ReasonCode, WarnReason
 from shared.graph import Contact
 from shared.reader_agent import EmailVerdict
+from shared.sanitize import sanitize_summary
 
 HOLD_CONFIDENCE_THRESHOLD = 0.6
 DOUBLE_TAP_INTENTS = (Intent.MONEY, Intent.CODE)
 UNREADABLE_SUMMARY = "a message Pidge could not read"
+CLAIMED_PERSON_MAX_LENGTH = 60
 
 
 @dataclass(frozen=True)
@@ -45,11 +47,20 @@ class EscalationAnswer:
     contact_by_claim: Contact | None  # graph lookup of the reviewer's claimed_person, same rule as the Reader's
 
 
+def stored_claimed_person(claimed_person: str | None) -> str | None:
+    """The Reader's claimed name as the tool agents read it: sanitised like the summary and capped; None when nothing is left."""
+    if claimed_person is None:
+        return None
+    return sanitize_summary(claimed_person)[:CLAIMED_PERSON_MAX_LENGTH].rstrip() or None
+
+
 def verdict_fields_for_request(reader_outcome: EmailVerdict | ReaderFailure, summary: str) -> dict:
-    """What the REQUEST# row stores as `verdict`; a failed Reader leaves a neutral verdict with the unreadable summary."""
+    """What the REQUEST# row stores as `verdict`; a failed Reader leaves a neutral verdict with the unreadable summary.
+    claimed_person is stored sanitised and capped; contact matching already ran on the raw value."""
     if isinstance(reader_outcome, ReaderFailure):
         return {"claimed_person": None, "intent": str(Intent.NONE), "confidence": 0.0, "summary": UNREADABLE_SUMMARY}
-    return {**reader_outcome.model_dump(mode="json"), "summary": summary}
+    return {**reader_outcome.model_dump(mode="json"), "claimed_person": stored_claimed_person(reader_outcome.claimed_person),
+            "summary": summary}
 
 
 def is_impersonator_of(contact_by_name: Contact | None, sender_address: str) -> bool:
