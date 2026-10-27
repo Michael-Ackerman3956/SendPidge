@@ -7,7 +7,9 @@ import {
   buildCelebrationElement, buildDetailBannerElement, buildRowMarkElement, buildRowStatusChipElement, deriveEmailDisplayState,
   hasReleaseTimePassed, showDeniedVerdictOverlay,
 } from "./verdict-view.js";
-import { buildMockFamilyEmails, isValidRequestStateUpdate, normalizeCallPromise, normalizeEmailPayloadOrReportError } from "./receiver-payloads.js";
+import {
+  buildMockFamilyEmails, isValidRequestStateUpdate, normalizeCallPromise, normalizeEmailPayloadOrReportError, normalizeRepliedVia,
+} from "./receiver-payloads.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
 import { buildLinkReasonLineElements, buildLinkStripElement } from "./link-strip.js";
@@ -300,7 +302,7 @@ export function handleReceiverRequestStatePush(requestUpdate) {
   const wasConfirmed = getEmailDisplayState(email) === EMAIL_DISPLAY_STATE.CONFIRMED;
   const updatedEmail = { ...email, quarantined: requestUpdate.quarantined, request: {
     ...email.request, status: requestUpdate.status, resolvedAt: requestUpdate.resolvedAt ?? null, releaseAt: requestUpdate.releaseAt ?? null,
-    callPromise: normalizeCallPromise(requestUpdate.callPromise),
+    callPromise: normalizeCallPromise(requestUpdate.callPromise), repliedVia: normalizeRepliedVia(requestUpdate.repliedVia),
   } };
   emailsById.set(updatedEmail.emailId, updatedEmail);
   if (requestUpdate.status !== REQUEST_STATUS.DENIED || requestUpdate.quarantined) {

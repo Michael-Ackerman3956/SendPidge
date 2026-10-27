@@ -54,6 +54,7 @@ def process_email_object(bucket_name: str, object_key: str) -> None:
     if not graph.claim_email(object_key, email_row):
         logger.info("duplicate event for %s; already processed", object_key)
         return
+    push_email_reading(email_row)
     reasons = authentication_reasons(parsed_email.pidge_auth_header_values)
     reasons.extend(link_checks.link_reasons(link_assessments, parsed_email.links_unreadable))
     reasons.extend(lists.sender_reasons_or_lookup_failure(
@@ -173,6 +174,15 @@ def build_email_row(object_key: str, parsed_email: ParsedEmail, link_assessments
         graph.USER_INDEX_PARTITION_KEY: graph.user_index_partition(RECEIVER_USER_ID, graph.EMAIL_ROW_KIND),
         graph.USER_INDEX_SORT_KEY: received_at,
     }
+
+
+def push_email_reading(email_row: dict) -> None:
+    """"Pidge is reading…" on Grandma's screen while the Reader runs; a failed push is logged and never delays the verdict."""
+    try:
+        delivered_count = channels.push_to_user(RECEIVER_USER_ID, payloads.email_reading_message(email_row))
+        logger.info("pushed reading state to %d receiver connection(s)", delivered_count)
+    except Exception:
+        logger.exception("reading push for %s failed; the verdict push follows", email_row["s3Key"])
 
 
 def push_email_state(

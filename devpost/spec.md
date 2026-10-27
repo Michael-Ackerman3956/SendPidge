@@ -490,7 +490,7 @@ SendPidge/
 - **One channel fails to send** → the hold is already on Grandma's screen and the other channels carry it; `channelsSent` shows which ones went out. All three failing → WARN "Pidge couldn't reach Jimin", never a release.
 - **Call-nudge offer fails, or the contact's nudge cap is hit** → `callNudge.status` = `offer_failed` / `capped`, logged with metric `WhatsAppSendFailed`; the verdict push never waits for it. Reminder cannot be scheduled → `reminder_failed`; Grandma's in-app line still shows.
 - **SES receipt fails** (sandbox, unverified address) → logged error; the verdict push to Grandma does not depend on it.
-- **WebSocket drops** → poll DynamoDB every 3 s during an active hold only; auto-reconnect.
+- **WebSocket drops** → the PWA reconnects (1 s, growing to 10 s) and re-syncs on reconnect; no polling (built 2026-10-24, doc corrected 2026-10-27).
 - **Bedrock slow (> 5 s)** → "Pidge is reading…" before the hold overlay.
 - **pidge-reader crashes or times out** → the async invocation retries twice, then the event lands in the SQS dead-letter queue and a CloudWatch alarm fires. A duplicate delivery exits on the `EMAIL#` conditional put, so Jimin is never asked twice.
 

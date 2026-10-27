@@ -191,13 +191,13 @@ export function showHoldOverlay({ overlayHostElement, email, onReleasedByUser })
 function describeWarnReason(email) {
   switch (email.warnReason) {
     case WARN_REASON.UNREADABLE:
-      return "Pidge couldn't check this one.";
+      return "Pidge couldn't check this one. Read it slowly.";
     case WARN_REASON.UNKNOWN_NAME:
-      return "This email asks for something and the sender isn't in your family list.";
+      return "This asks for something, and the sender is not in your circle.";
     case WARN_REASON.LOW_CONFIDENCE:
-      return "This email might be asking for something. Be careful.";
+      return "This might be asking for something. Be careful.";
     case WARN_REASON.LISTED_SENDER:
-      return "This sender has warning signs.";
+      return "This sender is on a warning list.";
     case WARN_REASON.UNREACHABLE:
       return describeUnreachableWarning(email);
     case WARN_REASON.ESCALATION_CLEARED:

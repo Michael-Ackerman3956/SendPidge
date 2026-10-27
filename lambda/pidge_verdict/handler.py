@@ -32,6 +32,7 @@ RECEIPT_SENDER = os.environ["RECEIPT_SENDER"]
 RCS_TOPIC_ARN = os.environ["RCS_TOPIC_ARN"]
 WHATSAPP_TOPIC_ARN = os.environ["WHATSAPP_TOPIC_ARN"]
 RELEASE_SCHEDULER_ENABLED = os.environ.get("RELEASE_SCHEDULER_ENABLED") == "true"
+RCS_ENABLED = os.environ.get("RCS_ENABLED") == "true"  # the circle shows RCS as a reach only when the stack sends on it
 RELEASE_FUNCTION_ARN = os.environ.get("RELEASE_FUNCTION_ARN", "")
 MOCK_BANK_MAILBOX = os.environ.get("MOCK_BANK_MAILBOX", "")  # the SIMULATED bank; empty → Send to my bank is refused
 CASES_ADDRESS = os.environ.get("CASES_ADDRESS", "")  # Reply-To on the report; Mail Manager stores replies under cases/
@@ -115,7 +116,8 @@ def handle_sync(connection_id: str, user_id: str) -> None:
         emails = []
         for email_row in graph.list_recent_rows(user_id, graph.EMAIL_ROW_KIND, SYNC_EMAIL_LIMIT):
             if "state" not in email_row:
-                continue  # the Reader is still on it; its push will follow
+                emails.append(payloads.reading_email_for_receiver(email_row))  # the Reader is still on it
+                continue
             request_row = graph.get_request(email_row["requestId"]) if email_row.get("requestId") else None
             contact_name = contact_name_for(request_row) if request_row else None
             status = verdict.effective_status(request_row, now) if request_row else None
@@ -124,7 +126,7 @@ def handle_sync(connection_id: str, user_id: str) -> None:
         case_rows = graph.list_recent_rows(user_id, graph.CASE_ROW_KIND, SYNC_CASE_LIMIT)
         case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(graph.case_id_of(case_row))) for case_row in case_rows]
         chat_messages = [chat.chat_message_for_sync(message_row) for message_row in chat.list_recent_messages(user_id, SYNC_CHAT_LIMIT)]
-        circle = [payloads.circle_entry_for_receiver(contact_row) for contact_row in graph.list_contact_rows(RECEIVER_ADDRESS)]
+        circle = [payloads.circle_entry_for_receiver(contact_row, RCS_ENABLED) for contact_row in graph.list_contact_rows(RECEIVER_ADDRESS)]
         message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "receiverName": RECEIVER_NAME, "emails": emails,
                    "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages, "circle": circle}
     else:

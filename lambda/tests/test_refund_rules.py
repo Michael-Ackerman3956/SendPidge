@@ -48,9 +48,11 @@ def test_a_broken_envelope_raises_instead_of_becoming_a_pack():
 
 def test_the_pack_carries_only_case_and_rule_facts(aws):
     seed_rules()
-    case_row = {"PK": "CASE#case-1", "paymentRail": "card", "jurisdiction": "US", "bank": "Chase", "amount": 500}
+    case_row = {"PK": "CASE#case-1", "paymentRail": "card", "jurisdiction": "US", "bank": "Chase", "amount": 500, "currency": "USD",
+                "paidAt": "2026-10-20T09:00:00Z"}
     pack = refund_rules.build_recovery_pack(case_row, refund_rules.find_live_rule(Jurisdiction.US, PaymentRail.CARD))
     assert (pack["caseId"], pack["ruleKey"], pack["ruleGap"], len(pack["steps"])) == ("case-1", "RULE#US#card#any", False, 3)
     assert "bank" not in pack and "amount" not in pack
+    assert set(pack["drafts"]) == {"callScript", "disputeLetter", "policeReport"}
     gap_pack = refund_rules.build_recovery_pack({**case_row, "jurisdiction": "KR"}, None)
     assert (gap_pack["ruleGap"], gap_pack["steps"]) == (True, [])

@@ -212,7 +212,7 @@ def test_sync_carries_the_flag_the_last_twenty_messages_oldest_first_and_the_cir
          "card": {"kind": "refusal"}},
     ]
     assert sync_message["circle"] == [{"contactUserId": "jimin", "contactName": "Jimin", "verifiedVia": "seed", "verifiedAt": None,
-                                       "reach": {"inapp": True, "rcs": False, "whatsapp": True}}]
+                                       "reach": {"inapp": True, "rcs": False, "whatsapp": True, "email": True}}]
     circle_json = json.dumps(sync_message["circle"])
     assert "+82" not in circle_json and "@" not in circle_json  # no phone number, no known or receipt address on the wire
     monkeypatch.delenv("CHAT_ENABLED")

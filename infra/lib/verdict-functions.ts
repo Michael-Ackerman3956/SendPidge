@@ -198,6 +198,7 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
       RCS_TOPIC_ARN: dependencies.topics.rcsInboundTopic.topicArn,
       WHATSAPP_TOPIC_ARN: dependencies.topics.whatsappInboundTopic.topicArn,
       RELEASE_SCHEDULER_ENABLED: flagEnvironmentValue(settings.releaseSchedulerEnabled),
+      RCS_ENABLED: flagEnvironmentValue(settings.rcsEnabled),
       RELEASE_FUNCTION_ARN: dependencies.releaseFunction.functionArn,
       SCHEDULE_GROUP_NAME: shared.scheduleGroup.scheduleGroupName,
       SCHEDULER_ROLE_ARN: shared.schedulerRole.roleArn,

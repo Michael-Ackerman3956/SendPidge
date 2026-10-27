@@ -135,7 +135,7 @@ button:disabled { cursor: default; }
 .detail-body { font-size: 15px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; color: #d6d6d6; }
 .detail-body.is-muted { color: var(--text-tertiary); }
 
-.warn-banner, .threat-banner, .released-banner, .verified-banner {
+.warn-banner, .threat-banner, .released-banner, .verified-banner, .reading-banner {
   display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-radius: 12px; font-size: 14px; font-weight: 600; line-height: 1.35;
 }
 .warn-banner { background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: var(--orange); }
@@ -448,3 +448,16 @@ button:disabled { cursor: default; }
   .checking-pulse, .confetti-piece, .hold-overlay, .pidge-chat-bubble, .celebration, .celebration-card,
   .verified-banner.is-celebrating .verified-pidge, .verified-banner.is-celebrating .verified-tick { animation: none; }
 }
+
+/* Reading beat, answer channel, pack drafts and the chat draft card (2026-10-27 prototype gaps). */
+.reading-banner { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-secondary); }
+.answer-channel-line { font-size: 13px; color: var(--text-secondary); margin: 6px 0 0; }
+.pidge-pack-drafts { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pidge-pack-drafts-title { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+.pidge-pack-draft { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface-2); }
+.pidge-pack-draft summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.pidge-pack-draft-text, .pidge-chat-draft-text { white-space: pre-wrap; font: inherit; font-size: 13px; line-height: 1.45; margin: 8px 0; overflow-wrap: anywhere; }
+.pidge-pack-copy-button { border: 1px solid rgba(58, 166, 142, 0.3); border-radius: 8px; padding: 5px 10px; background: rgba(58, 166, 142, 0.08); color: var(--teal); font-size: 12px; font-weight: 600; }
+.pidge-pack-mailed, .pidge-chat-draft-footnote { font-size: 12px; color: var(--text-tertiary); }
+.pidge-chat-draft { margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
+.pidge-chat-draft-to { font-size: 12px; font-weight: 700; color: var(--text-secondary); }

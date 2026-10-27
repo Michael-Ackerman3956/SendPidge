@@ -12,7 +12,7 @@ import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.config import Config
 
-from shared import case_agent, channels, chat, chat_agent, chat_email, graph, payloads
+from shared import case_agent, channels, chat, chat_agent, chat_email, graph, payloads, recovery_drafts
 from shared.enums import (
     FINAL_REQUEST_STATES, AgentInvocationKind, CaseAgentRuntime, CaseState, CaseTrigger, ChatVia, GuardrailOutcome,
     ReaderModelChoice,
@@ -93,8 +93,26 @@ def write_and_push_note(scope: case_agent.CaseScope) -> None:
     else:
         note = invoke_case_agent_on_agentcore(scope)
     note_row = case_agent.store_case_note(scope, note)
+    if note_row.get("recoveryPack"):
+        note_row = mail_recovery_pack(note_row)
     delivered_count = channels.push_to_user(scope.receiver_user_id, payloads.case_note_message(note_row))
     logger.info("case note for %s (%s) stored; pushed to %d connection(s)", scope.request_id, scope.trigger, delivered_count)
+
+
+def mail_recovery_pack(note_row: dict) -> dict:
+    """The pack goes to her own mailbox (the only SES recipient this role may use); a refused send is logged, the note
+    still reaches the app, and the row stays unstamped so the screen does not claim a copy was sent."""
+    if not RECEIVER_MAILBOX:
+        logger.warning("RECEIVER_MAILBOX is not set; recovery pack for %s not mailed", note_row["PK"])
+        return note_row
+    try:
+        recovery_drafts.send_pack_email(get_ses_client(), RECEIPT_SENDER, RECEIVER_MAILBOX, note_row["recoveryPack"])
+    except Exception:
+        logger.exception("recovery pack email for %s failed", note_row["PK"])
+        return note_row
+    mailed_at = graph.now_timestamp()
+    graph.record_pack_mailed(note_row, mailed_at)
+    return {**note_row, "packMailedAt": mailed_at}
 
 
 def agentcore_session_id(scope: case_agent.CaseScope) -> str:

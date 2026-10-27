@@ -69,6 +69,14 @@ export const JURISDICTION = Object.freeze({
   GB: "GB",
 });
 
+// Where an ask goes out and where an answer comes back (request.repliedVia). Mirrors Channel in enums.py.
+export const CHANNEL = Object.freeze({
+  RCS: "rcs",
+  WHATSAPP: "whatsapp",
+  INAPP: "inapp",
+  EMAIL: "email",
+});
+
 export const USER_ROLE = Object.freeze({
   RECEIVER: "receiver",
   CONTACT: "contact",
@@ -160,7 +168,9 @@ export const CONNECTION_STATUS = Object.freeze({
 });
 
 // PWA-only: how one inbox row and its detail look, derived from state, request.status, quarantined and local release.
+// READING is an email_state whose state is null: the Reader is still on it and the body is withheld.
 export const EMAIL_DISPLAY_STATE = Object.freeze({
+  READING: "reading",
   QUARANTINED: "quarantined",
   DENIED: "denied",
   RELEASING: "releasing",

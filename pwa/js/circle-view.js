@@ -1,10 +1,10 @@
 // Grandma's Circle tab (RECEIVER): the people Pidge can ask, from sync_state.circle. Names come from the server: textContent only.
 // No number or address is on the wire; the reach chips say which channels the server has for each person.
-import { VERIFIED_VIA } from "./constants.js";
+import { CHANNEL, VERIFIED_VIA } from "./constants.js";
 import { createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 
 const KNOWN_VERIFIED_VIA = new Set(Object.values(VERIFIED_VIA));
-const REACH_CHIP_LABELS = Object.freeze({ inapp: "App", rcs: "RCS", whatsapp: "WA" });
+const REACH_CHIP_LABELS = Object.freeze({ [CHANNEL.INAPP]: "App", [CHANNEL.RCS]: "RCS", [CHANNEL.WHATSAPP]: "WA", [CHANNEL.EMAIL]: "Email" });
 
 const circleEntriesByUserId = new Map();
 

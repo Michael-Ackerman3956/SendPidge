@@ -26,8 +26,29 @@ def request_for_receiver(request_row: dict, contact_name: str, status: RequestSt
         "intent": request_row["verdict"]["intent"],
         "summary": request_row["verdict"]["summary"],
         "status": status,
+        "repliedVia": request_row.get("repliedVia"),  # the channel the answer came on; None until answered
         **request_timing(request_row),
     }
+
+
+def reading_email_for_receiver(email_row: dict) -> dict:
+    """The row while the Reader is still on it: state None, no body, no links, so nothing from the email is shown before the
+    verdict. The email_state push after the policy run replaces it (same emailId)."""
+    return {
+        "emailId": email_row["s3Key"],
+        **{field: email_row[field] for field in EMAIL_FIELDS_FOR_PWA},
+        "textBody": "",
+        "state": None,
+        "warnReason": None,
+        "reasons": [],
+        "links": [],
+        "quarantined": False,
+        "request": None,
+    }
+
+
+def email_reading_message(email_row: dict) -> dict:
+    return {"type": PushMessageType.EMAIL_STATE, "email": reading_email_for_receiver(email_row)}
 
 
 def email_for_receiver(email_row: dict, request_row: dict | None, contact_name: str | None, status: RequestState | None) -> dict:
@@ -75,6 +96,7 @@ def request_state_message(request_row: dict, status: RequestState, contact_name:
             "status": status,
             "contactName": contact_name,
             "quarantined": quarantined,
+            "repliedVia": request_row.get("repliedVia"),
             **request_timing(request_row),
         },
     }
@@ -87,6 +109,7 @@ def note_for_receiver(note_row: dict) -> dict:
         "writtenAt": note_row["writtenAt"],
         "noteText": note_row["noteText"],
         "recoveryPack": note_row.get("recoveryPack"),
+        "packMailedAt": note_row.get("packMailedAt"),  # set once the pack reached her own mailbox
     }
 
 
@@ -124,8 +147,9 @@ def verified_via_of(contact_row: dict) -> VerifiedVia:
     return VerifiedVia(contact_row["verifiedVia"])
 
 
-def circle_entry_for_receiver(contact_row: dict) -> dict:
-    """One member of the receiver's circle: who, how verified, which channels reach them. Never a number or an address."""
+def circle_entry_for_receiver(contact_row: dict, is_rcs_enabled: bool) -> dict:
+    """One member of the receiver's circle: who, how verified, which channels reach them. Never a number or an address.
+    RCS lights only when the stack sends on it; a seeded number with the flag off is not a reach."""
     return {
         "contactUserId": contact_row["contactPwaUserId"],
         "contactName": contact_row["contactName"],
@@ -133,7 +157,8 @@ def circle_entry_for_receiver(contact_row: dict) -> dict:
         "verifiedAt": contact_row.get("verifiedAt"),
         "reach": {
             str(Channel.INAPP): True,
-            str(Channel.RCS): "contactRcs" in contact_row,
+            str(Channel.RCS): is_rcs_enabled and "contactRcs" in contact_row,
             str(Channel.WHATSAPP): "contactWhatsApp" in contact_row,
+            str(Channel.EMAIL): "contactEmail" in contact_row,
         },
     }

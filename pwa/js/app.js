@@ -13,7 +13,9 @@ import {
   hideContactView, showContactView,
 } from "./contact-view.js";
 import { applyChatSyncState, handlePidgeReplyPush, hidePidgeView, showPidgeView, startPidgeChat } from "./pidge-chat.js";
-import { applyPidgeSyncState, handleCaseNotePush, handleCaseStatePush, handlePidgeActionRejected, hideCasesView, showCasesView } from "./cases-view.js";
+import {
+  applyPidgeSyncState, handleCaseNotePush, handleCaseStatePush, handlePidgeActionRejected, hideCasesView, openReportPaymentForm, showCasesView,
+} from "./cases-view.js";
 import { applyCircleSyncState, hideCircleView, showCircleView, startCircleView } from "./circle-view.js";
 import { ONBOARDING_START, handleCircleSyncDuringOnboarding, handleOnboardingActionRejected, hideOnboarding, startOnboarding } from "./onboarding.js";
 import { startReadingPane } from "./reading-pane.js";
@@ -238,7 +240,7 @@ function startApp() {
   setUnseenHoldListener((hasUnseenPendingHold) => { hasUnseenHold = hasUnseenPendingHold; renderInboxTabDot(); });
   startCircleView(() => openOnboarding(ONBOARDING_START.PICK_CIRCLE));
   startReadingPane(() => { if (activeUserRole === USER_ROLE.RECEIVER && activeReceiverTab === RECEIVER_TAB.INBOX) applyReadingPaneLayout(); });
-  startPidgeChat();
+  startPidgeChat({ onReportPaymentRequested: () => { showReceiverTab(RECEIVER_TAB.CASES); openReportPaymentForm(); } });
   const accessToken = resolveAccessToken();
   if (!accessToken) {
     pageElements.tokenError.hidden = false;

@@ -2,14 +2,25 @@
 // reload keeps it), the composer with dictation, and live pidge_reply bubbles. Text from the server goes in through textContent.
 import { DICTATION_ENABLED } from "./config.js";
 import { CHAT_CARD_KIND, CHAT_ROLE, CLIENT_ACTION } from "./constants.js";
-import { createElementWithText } from "./dom-helpers.js";
+import { buildCopyButton, createElementWithText } from "./dom-helpers.js";
+import { listCircleEntries } from "./circle-view.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, showActionStatusMessage } from "./action-status.js";
 
 const QUESTION_MAX_CHARACTERS = 1000;
 const GREETING_TEXT = "Ask me about an email I held, or what to do next.";
-const SUGGESTION_CHIPS = Object.freeze(["Was that Jimin?", "What did it say?", "I already paid", "Write back to Jimin"]);
+// PWA-only: a chip either asks Pidge (a question on the wire) or acts in the app (no model involved).
+const SUGGESTION_CHIP_KIND = Object.freeze({ QUESTION: "question", REPORT_PAYMENT: "report_payment", DRAFT_REPLY: "draft_reply" });
+const SUGGESTION_CHIPS = Object.freeze([
+  { kind: SUGGESTION_CHIP_KIND.QUESTION, label: "Was that Jimin?" },
+  { kind: SUGGESTION_CHIP_KIND.QUESTION, label: "What did it say?" },
+  { kind: SUGGESTION_CHIP_KIND.REPORT_PAYMENT, label: "I already paid" },
+  { kind: SUGGESTION_CHIP_KIND.DRAFT_REPLY, label: "Write back to Jimin" },
+]);
+const DRAFT_REPLY_TEMPLATE = (contactName) => `${contactName}, someone wrote to me using your name and asked for money. Pidge checked with you and held it. Call me when you can.`;
+const DRAFT_REPLY_FOOTNOTE = "Send it from your own mail app. Pidge sends nothing itself.";
 const KNOWN_CHAT_ROLES = new Set(Object.values(CHAT_ROLE));
+let onReportPaymentRequested = () => {};
 
 const pageElements = {
   topbarTitle: document.getElementById("topbar-title"),
@@ -27,15 +38,42 @@ function buildBubbleElement({ role, text, isRefusal, chips }) {
   bubble.append(createElementWithText("span", "", text));
   if (chips !== undefined) {
     const chipRow = createElementWithText("div", "pidge-chat-chips");
-    chips.forEach((chipText) => {
-      const chip = createElementWithText("button", "pidge-chat-chip", chipText);
+    chips.forEach((suggestionChip) => {
+      const chip = createElementWithText("button", "pidge-chat-chip", suggestionChip.label);
       chip.type = "button";
-      chip.addEventListener("click", () => askPidge(chipText));
+      chip.addEventListener("click", () => handleUserTappedSuggestionChip(suggestionChip));
       chipRow.append(chip);
     });
     bubble.append(chipRow);
   }
   return bubble;
+}
+
+function handleUserTappedSuggestionChip(suggestionChip) {
+  switch (suggestionChip.kind) {
+    case SUGGESTION_CHIP_KIND.REPORT_PAYMENT:
+      onReportPaymentRequested();
+      break;
+    case SUGGESTION_CHIP_KIND.DRAFT_REPLY:
+      appendDraftReplyBubble();
+      break;
+    default:
+      askPidge(suggestionChip.label);
+  }
+}
+
+// A fixed note to the first person in her circle, written by code; she copies it into her own mail app.
+function appendDraftReplyBubble() {
+  const [firstContact] = listCircleEntries();
+  const contactName = firstContact === undefined ? "Jimin" : firstContact.contactName;
+  const bubble = buildBubbleElement({ role: CHAT_ROLE.PIDGE, text: `Here is a note to ${contactName}. You send it.`, isRefusal: false });
+  const draftCard = createElementWithText("div", "pidge-chat-draft");
+  const draftText = DRAFT_REPLY_TEMPLATE(contactName);
+  draftCard.append(createElementWithText("p", "pidge-chat-draft-to", `To ${contactName}`), createElementWithText("p", "pidge-chat-draft-text", draftText));
+  draftCard.append(buildCopyButton(draftText), createElementWithText("p", "pidge-chat-draft-footnote", DRAFT_REPLY_FOOTNOTE));
+  bubble.append(draftCard);
+  pageElements.chatThread.append(bubble);
+  bubble.scrollIntoView({ block: "nearest" });
 }
 
 function appendBubble(bubbleFields) {
@@ -95,7 +133,8 @@ export function hidePidgeView() {
   pageElements.pidgeScreen.hidden = true;
 }
 
-export function startPidgeChat() {
+export function startPidgeChat({ onReportPaymentRequested: reportPaymentHandler }) {
+  onReportPaymentRequested = reportPaymentHandler;
   pageElements.chatInput.maxLength = QUESTION_MAX_CHARACTERS;
   pageElements.chatForm.addEventListener("submit", handleUserSubmittedQuestion);
   pageElements.micButton.hidden = !(DICTATION_ENABLED && speechRecognitionClass() !== null);

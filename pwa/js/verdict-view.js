@@ -1,11 +1,17 @@
 // Grandma's verdict visuals: one display state per email, the row mark and status chip, the detail banner, the celebration
 // card and the red denied-verdict overlay. contactName and every email field are attacker-influenced: textContent only.
-import { CALL_PROMISE, EMAIL_DISPLAY_STATE, POLICY_DECISION, REQUEST_STATUS } from "./constants.js";
+import { CALL_PROMISE, CHANNEL, EMAIL_DISPLAY_STATE, POLICY_DECISION, REQUEST_STATUS } from "./constants.js";
 import { buildPidgeIconElement, buildTickIcon, createElementWithText, formatRemainingTimeAsMinutesSeconds, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { buildWarnBannerElement, replaceActiveOverlay } from "./pidge-overlay.js";
 
 const CONFETTI_PIECE_COUNT = 18;
 const CONFETTI_COLORS = Object.freeze(["#4ade80", "#3AA68E", "#F59E0B", "#ffffff"]);
+const ANSWER_CHANNEL_LABELS = Object.freeze({
+  [CHANNEL.INAPP]: "in the app",
+  [CHANNEL.WHATSAPP]: "on WhatsApp",
+  [CHANNEL.RCS]: "by RCS",
+  [CHANNEL.EMAIL]: "by email",
+});
 
 // A confirmed_pending whose releaseAt has passed reads as confirmed (the server releases it on its next read too).
 export function hasReleaseTimePassed(request) {
@@ -13,10 +19,11 @@ export function hasReleaseTimePassed(request) {
   return releaseAtMilliseconds !== null && releaseAtMilliseconds <= Date.now();
 }
 
-// Priority: quarantined > denied > confirmed / releasing / reversed > released by you > awaiting verdict > flagged > plain.
+// Priority: reading > quarantined > denied > confirmed / releasing / reversed > released by you > awaiting verdict > flagged > plain.
 // DENIED outranks a local release so Jimin's No still reaches Grandma after she cancelled the hold.
 export function deriveEmailDisplayState(email, isReleasedByUser) {
   const request = email.request;
+  if (email.state === null) return EMAIL_DISPLAY_STATE.READING;
   if (email.quarantined) return EMAIL_DISPLAY_STATE.QUARANTINED;
   if (request !== null && request.status === REQUEST_STATUS.DENIED) return EMAIL_DISPLAY_STATE.DENIED;
   if (request !== null && request.status === REQUEST_STATUS.CONFIRMED) return EMAIL_DISPLAY_STATE.CONFIRMED;
@@ -45,15 +52,15 @@ function buildVerifiedTickMarkElement() {
   return tickMark;
 }
 
-// The small mark on the row's avatar, or null for a plain row.
+// The small mark on the row's avatar, or null for a plain row. The ! turns red only when Grandma confirms (quarantined).
 export function buildRowMarkElement(emailDisplayState) {
   switch (emailDisplayState) {
     case EMAIL_DISPLAY_STATE.QUARANTINED:
-    case EMAIL_DISPLAY_STATE.DENIED:
       return buildFlagMarkElement(true);
     case EMAIL_DISPLAY_STATE.CONFIRMED:
     case EMAIL_DISPLAY_STATE.REVERSED:
       return buildVerifiedTickMarkElement();
+    case EMAIL_DISPLAY_STATE.DENIED:
     case EMAIL_DISPLAY_STATE.RELEASING:
     case EMAIL_DISPLAY_STATE.AWAITING_VERDICT:
     case EMAIL_DISPLAY_STATE.FLAGGED:
@@ -71,6 +78,8 @@ function buildStatusChipElement(chipClassName, chipText) {
 export function buildRowStatusChipElement(email, emailDisplayState) {
   const contactName = email.request === null ? "" : email.request.contactName;
   switch (emailDisplayState) {
+    case EMAIL_DISPLAY_STATE.READING:
+      return buildStatusChipElement("is-hold", "Pidge is reading…");
     case EMAIL_DISPLAY_STATE.QUARANTINED:
       return buildStatusChipElement("is-threat", "Reported");
     case EMAIL_DISPLAY_STATE.DENIED:
@@ -100,6 +109,12 @@ function buildVerifiedBannerElement(bannerText, shouldCelebrate) {
   return bannerElement;
 }
 
+// "Jimin answered on WhatsApp.", or null until the request is answered.
+function buildAnswerChannelLineElement(request) {
+  if (request === null || request.repliedVia === null || request.repliedVia === undefined) return null;
+  return createElementWithText("p", "answer-channel-line", `${request.contactName} answered ${ANSWER_CHANNEL_LABELS[request.repliedVia]}.`);
+}
+
 // "{contactName} will call you today." / "… tomorrow.", or null when the contact made no call promise.
 function buildCallPromiseLineElement(request) {
   if (request === null || request.callPromise === null || request.callPromise === undefined) return null;
@@ -107,19 +122,25 @@ function buildCallPromiseLineElement(request) {
   return createElementWithText("p", "call-promise-line", `${request.contactName} will call you ${dayText}.`);
 }
 
-// The verdict banner followed by the call promise line, wrapped only when there is a promise.
+// The verdict banner followed by the answer-channel and call-promise lines, wrapped only when there is one to show.
 function withCallPromiseLine(bannerElement, request) {
-  const callPromiseLine = buildCallPromiseLineElement(request);
-  if (callPromiseLine === null) return bannerElement;
+  const followingLines = [buildAnswerChannelLineElement(request), buildCallPromiseLineElement(request)].filter((line) => line !== null);
+  if (followingLines.length === 0) return bannerElement;
   const bannerGroup = createElementWithText("div", "verdict-banner-group");
-  bannerGroup.append(bannerElement, callPromiseLine);
+  bannerGroup.append(bannerElement, ...followingLines);
   return bannerGroup;
 }
 
 // The banner at the top of the detail, or null when the state has none.
 export function buildDetailBannerElement(email, emailDisplayState, shouldCelebrate) {
+  if (emailDisplayState === EMAIL_DISPLAY_STATE.READING) {
+    const readingBanner = createElementWithText("p", "reading-banner", "Pidge is reading this one…");
+    readingBanner.setAttribute("role", "status");
+    return readingBanner;
+  }
   if (emailDisplayState === EMAIL_DISPLAY_STATE.QUARANTINED) {
-    const quarantineBanner = createElementWithText("p", "threat-banner", "Reported and quarantined.");
+    const quarantineBanner = createElementWithText("p", "threat-banner",
+      email.request === null ? "Reported and quarantined." : `Reported and quarantined. ${email.request.contactName} did not send this.`);
     quarantineBanner.setAttribute("role", "status");
     return withCallPromiseLine(quarantineBanner, email.request);
   }
@@ -210,8 +231,8 @@ export function showDeniedVerdictOverlay({ overlayHostElement, email, isReportin
   pidgeFace.append(buildPidgeIconElement("hold-overlay-pidge", "Pidge"), createElementWithText("span", "hold-overlay-face-badge", "✕"));
   overlayElement.append(createElementWithText("span", "sheet-grab"), pidgeFace, messageElement,
     createElementWithText("p", "hold-overlay-status", "Do not send money or share anything from this email."));
-  const callPromiseLine = buildCallPromiseLineElement(email.request);
-  if (callPromiseLine !== null) overlayElement.append(callPromiseLine);
+  [buildAnswerChannelLineElement(email.request), buildCallPromiseLineElement(email.request)]
+    .filter((line) => line !== null).forEach((line) => overlayElement.append(line));
   overlayElement.append(confirmButton);
   replaceActiveOverlay(() => overlayElement.remove());
   overlayHostElement.append(overlayElement);

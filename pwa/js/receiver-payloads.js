@@ -1,11 +1,12 @@
 // Grandma's incoming data: the five static mock rows (email, SMS, app notice) and validation of every EMAIL / request_state payload.
 // Mock rows carry rowKind; a live row is always ROW_KIND.EMAIL (other channels come in at slice 15).
-import { CALL_PROMISE, POLICY_DECISION, REQUEST_STATUS, ROW_KIND } from "./constants.js";
+import { CALL_PROMISE, CHANNEL, POLICY_DECISION, REQUEST_STATUS, ROW_KIND } from "./constants.js";
 
 const MILLISECONDS_PER_HOUR = 3600000;
 const KNOWN_POLICY_DECISIONS = new Set(Object.values(POLICY_DECISION));
 const KNOWN_REQUEST_STATUSES = new Set(Object.values(REQUEST_STATUS));
 const KNOWN_CALL_PROMISES = new Set(Object.values(CALL_PROMISE));
+const KNOWN_CHANNELS = new Set(Object.values(CHANNEL));
 
 export function buildMockFamilyEmails() {
   const now = Date.now();
@@ -42,7 +43,8 @@ function isValidQuarantinedField(quarantined) {
 function isValidEmailPayload(email) {
   const hasRequiredFields = email !== null && typeof email === "object" && typeof email.emailId === "string"
     && typeof email.senderName === "string" && typeof email.subject === "string" && typeof email.textBody === "string";
-  if (!hasRequiredFields || !KNOWN_POLICY_DECISIONS.has(email.state)
+  const isKnownState = email !== null && typeof email === "object" && (email.state === null || KNOWN_POLICY_DECISIONS.has(email.state));
+  if (!hasRequiredFields || !isKnownState
     || !isValidEmailRequest(email.request) || !isValidQuarantinedField(email.quarantined)) {
     console.error("SendPidge: email push has a missing field, unknown state or unknown request status", email);
     return false;
@@ -80,9 +82,17 @@ export function normalizeCallPromise(value) {
   return null;
 }
 
+// The channel the answer came on, or null (unanswered, absent on rows written before 2026-10-27, or unknown after logging).
+export function normalizeRepliedVia(repliedVia) {
+  if (repliedVia === null || repliedVia === undefined) return null;
+  if (KNOWN_CHANNELS.has(repliedVia)) return repliedVia;
+  console.error("SendPidge: request carries an unknown repliedVia", repliedVia);
+  return null;
+}
+
 function normalizeEmailRequest(request) {
   if (request === null || request === undefined) return null;
-  return { ...request, callPromise: normalizeCallPromise(request.callPromise) };
+  return { ...request, callPromise: normalizeCallPromise(request.callPromise), repliedVia: normalizeRepliedVia(request.repliedVia) };
 }
 
 // Returns the email with request, quarantined and links made explicit, or null (after logging) when the payload is invalid.

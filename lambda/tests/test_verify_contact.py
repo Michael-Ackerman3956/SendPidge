@@ -76,7 +76,7 @@ def test_the_right_code_marks_the_contact_verified_in_place_and_re_sends_the_cir
     assert (sync_message["type"], sync_message["role"], sync_message["receiverName"]) == ("sync_state", "receiver", "Grandma")
     assert sync_message["circle"] == [{"contactUserId": "jimin", "contactName": "Jimin", "verifiedVia": "mock",
                                        "verifiedAt": verified_row["verifiedAt"],
-                                       "reach": {"inapp": True, "rcs": False, "whatsapp": True}}]
+                                       "reach": {"inapp": True, "rcs": False, "whatsapp": True, "email": True}}]
 
 
 def test_a_wrong_code_writes_nothing_and_is_not_applied(verdict_handler, mock_on):
@@ -126,8 +126,8 @@ def test_a_seeded_row_without_verified_via_reads_as_seed_and_warns(caplog):
     from shared import payloads
     row = {"PK": "RECEIVER#grandma@example.com", "SK": "CONTACT#jimin", "contactName": "Jimin", "contactPwaUserId": "jimin"}
     with caplog.at_level("WARNING"):
-        entry = payloads.circle_entry_for_receiver(row)
+        entry = payloads.circle_entry_for_receiver(row, False)
     assert entry["verifiedVia"] == "seed"
     assert "no verifiedVia" in caplog.text
     with pytest.raises(ValueError):
-        payloads.circle_entry_for_receiver({**row, "verifiedVia": "carrier_pigeon"})
+        payloads.circle_entry_for_receiver({**row, "verifiedVia": "carrier_pigeon"}, False)

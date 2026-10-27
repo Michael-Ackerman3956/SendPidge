@@ -139,7 +139,7 @@ function buildAnsweredCardChildren(request, contactCardState) {
     children.push(resultLine);
   } else if (contactCardState === CONTACT_CARD_STATE.REVERSED) {
     const resultLine = createElementWithText("p", "contact-card-result is-yes");
-    resultLine.append(buildTickIcon("tick-icon"), createElementWithText("span", "", "You changed your answer. The email was opened."));
+    resultLine.append(buildTickIcon("tick-icon"), createElementWithText("span", "", "You changed your answer. The hold was lifted."));
     children.push(resultLine);
   } else {
     const resultLine = createElementWithText("p", "contact-card-result is-no");

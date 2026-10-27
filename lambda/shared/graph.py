@@ -401,6 +401,15 @@ def write_case_note(request_id: str, receiver_user_id: str, note_text: str, reco
     return note_row
 
 
+def record_pack_mailed(note_row: dict, mailed_at: str) -> None:
+    """Stamps packMailedAt on the NOTE# row after SES accepted the pack for the receiver's own mailbox."""
+    get_table().update_item(
+        Key={"PK": note_row["PK"], "SK": note_row["SK"]},
+        UpdateExpression="SET packMailedAt = :mailedAt",
+        ExpressionAttributeValues={":mailedAt": mailed_at},
+    )
+
+
 def list_case_notes(request_id: str) -> list[dict]:
     """The notes written for one request, oldest first."""
     response = get_table().query(

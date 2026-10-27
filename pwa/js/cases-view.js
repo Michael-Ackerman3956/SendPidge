@@ -1,7 +1,7 @@
 // Grandma's Cases tab (RECEIVER): Open · Closed · Notes sub-tabs over the case cards, "I already paid" and the case agent's notes.
 // noteText and every pack field come from the server: rendered only through textContent / createElement.
 import { CASES_TAB, CASE_STATUS, CLIENT_ACTION, JURISDICTION, PAYMENT_RAIL, REQUEST_STATUS } from "./constants.js";
-import { buildPidgeIconElement, createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
+import { buildCopyButton, buildPidgeIconElement, createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { listReceiverRequests } from "./receiver-view.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
@@ -15,6 +15,8 @@ const PAYMENT_RAIL_LABELS = Object.freeze({
 });
 const DEFAULT_CURRENCY = "USD";
 const SUBTAB_LABELS = Object.freeze({ [CASES_TAB.OPEN]: "Open", [CASES_TAB.CLOSED]: "Closed", [CASES_TAB.NOTES]: "Notes" });
+
+const DRAFT_LABELS = Object.freeze({ callScript: "Call script", disputeLetter: "Dispute letter", policeReport: "Police report" });
 
 const notesById = new Map();
 const casesById = new Map();
@@ -53,6 +55,28 @@ function describeDeadline(step) {
   return "";
 }
 
+// One collapsible draft; the text is the server's, rendered through textContent, and Copy puts it on the clipboard for her mail app.
+function buildDraftElement(labelText, draftText) {
+  const draftElement = createElementWithText("details", "pidge-pack-draft");
+  draftElement.append(createElementWithText("summary", "", labelText), createElementWithText("pre", "pidge-pack-draft-text", draftText));
+  draftElement.append(buildCopyButton(draftText));
+  return draftElement;
+}
+
+// "Drafts for you to send" with the call script, dispute letter and police report, or null when the pack carries none.
+function buildDraftsElement(pack, packMailedAt) {
+  const drafts = pack.drafts;
+  if (drafts === null || typeof drafts !== "object") return null;
+  const draftsElement = createElementWithText("div", "pidge-pack-drafts");
+  draftsElement.append(createElementWithText("p", "pidge-pack-drafts-title", "Drafts for you to send"));
+  Object.entries(DRAFT_LABELS).forEach(([draftKey, labelText]) => {
+    if (typeof drafts[draftKey] === "string") draftsElement.append(buildDraftElement(labelText, drafts[draftKey]));
+  });
+  const mailedText = packMailedAt ? "A copy was sent to your own inbox. Pidge sends nothing to anyone else." : "Pidge sends nothing to anyone else.";
+  draftsElement.append(createElementWithText("p", "pidge-pack-mailed", mailedText));
+  return draftsElement;
+}
+
 function buildPackElement(pack) {
   if (pack.ruleGap) return createElementWithText("p", "pidge-pack-gap", "Pidge has no steps for this country and payment yet.");
   const stepsList = createElementWithText("ol", "pidge-pack-steps");
@@ -71,7 +95,11 @@ function buildNoteElement(note) {
   const header = createElementWithText("div", "pidge-note-header");
   header.append(buildPidgeIconElement("pidge-note-pidge", ""), createElementWithText("span", "pidge-note-time", formatNoteTime(note.writtenAt)));
   noteElement.append(header, createElementWithText("p", "pidge-note-text", note.noteText));
-  if (note.recoveryPack) noteElement.append(buildPackElement(note.recoveryPack));
+  if (note.recoveryPack) {
+    noteElement.append(buildPackElement(note.recoveryPack));
+    const draftsElement = buildDraftsElement(note.recoveryPack, note.packMailedAt);
+    if (draftsElement !== null) noteElement.append(draftsElement);
+  }
   return noteElement;
 }
 
@@ -283,6 +311,13 @@ function renderNotes() {
     .map(buildNoteElement);
   pageElements.noteList.replaceChildren(...noteElements);
   renderEmptyMessage();
+}
+
+// The chat's "I already paid" chip lands here: the Open sub-tab with the report form open (nothing to report shows the empty message).
+export function openReportPaymentForm() {
+  activeCasesTab = CASES_TAB.OPEN;
+  isReportFormOpen = true;
+  renderCasesScreen();
 }
 
 export function applyPidgeSyncState(notes, cases) {
