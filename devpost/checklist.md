@@ -193,7 +193,7 @@ Build mode: fast for the stretch slices (switched 2026-10-27, founder; learn for
   Not asked for, not planned: removing a person from the circle.
   Commit: `Edit a contact from the Circle tab`
 
-- [ ] **11. (stretch) The rules keeper proposes a refund rule from a mocked page and stops at the budget**
+- [x] **11. (stretch) The rules keeper proposes a refund rule from a mocked page and stops at the budget** (done 2026-10-28: `test_rules_keeper.py` + full suite 533 passed, gate clean; the keeper lives in `lambda/shared/rules_keeper.py`; CDK for RulesDispatch deferred, so nothing is deployed; learner check pending.)
   Becomes usable: Run 4 stub: a `ruleGap` case or `scripts/run_rules_keeper.py` opens one keeper session that proposes `RULE#…#v2` with `status=proposed` from a mocked page; `scripts/approve_rule.py` makes it live; `BUDGET#` debits stop it at the limit.
   Why now: Only after slices 1–10 play end to end; it is the diagram's Run 4 made real with mock data, not production rules.
   Spec ref: `spec.md > Agent Layer (Strands Agents SDK) > Run 4 · the rules keeper`, `spec.md > Data Model` (`RULE#`, `BUDGET#`)
@@ -202,7 +202,7 @@ Build mode: fast for the stretch slices (switched 2026-10-27, founder; learn for
   Learner check: Run the keeper once against the mocked page and read the proposed row; approve it and see the pack change.
   Commit: `Add rules keeper stub with budget ledger`
 
-- [ ] **12. (stretch) The threat-intel engine answers check() from two mock feeds**
+- [x] **12. (stretch) The threat-intel engine answers check() from two mock feeds** (done 2026-10-28: `test_lists.py`, `test_sources.py`, `test_list_dispatch.py` + full suite 533 passed, gate clean; CDK for ListDispatch deferred; the peer's seed files (`lists.public.json`, `sources.json`, `feeds/`, per-country rules) stay uncommitted for the founder; learner check pending.)
   Becomes usable: Run 5 stub: `lists.check(indicators) → {reasons, attributions, coverage, cacheUntil}`; two hand-mapped `SOURCE#` rows sync from mock feed files into `LIST#` rows with `generation` and `expiresAt`; a stale source reads unavailable; the list keeper proposes a `SOURCE#` from a mocked sample behind a flag. The link lookups land here or later, never before slice 9a's parse-only reasons: `LINK_LISTED` (`LIST#url` rows, Google Web Risk), `NEW_DOMAIN` (RDAP), and the Mail Manager virus-scan add-on stamping a header — each a reason, each `LOOKUP_FAILED` on error, none a hold.
   Why now: Last, and only if time allows; it is the engine MailPidge will call later, proven on mock feeds.
   Spec ref: `spec.md > Agent Layer (Strands Agents SDK) > Run 5 · the threat-intelligence engine`, `spec.md > Data Model` (`LIST#`, `SOURCE#`)
@@ -280,7 +280,7 @@ Build mode: fast for the stretch slices (switched 2026-10-27, founder; learn for
   Verify (mechanical): `test_grep_gate.py::test_loaded_row_default_rule_finds_two_hits_in_a_three_line_snippet`, `test_grep_gate.py::test_grep_gate_has_no_hits_outside_the_baseline`; the gate prints 0 new, 0 stale.
   Learner check: add `row.get("visibility", "alerts_only")` to any lambda file, run the gate, read the FAIL line, remove it.
   Commit: `Add the loaded-row default rule to the grep gate`
-- [ ] **S1. Multi-receiver inbound: mail for any enrolled resident lands in that resident's inbox**
+- [x] **S1. Multi-receiver inbound: mail for any enrolled resident lands in that resident's inbox** (done 2026-10-28: deployed `d7d0130`; live, a Gmail send to grandma@ reached the Reader through Mail Manager's InvokeLambda, held, asked Jimin on WhatsApp, his No reached her screen; full suite 533 passed. Learner check (bounce for a non-enrolled address) pending.)
   Becomes usable: two residents in one deployment each receive their own mail; an unknown recipient bounces.
   Why now: today one deployment serves one receiver (`spec.md > Stretch > Precondition`); nothing org-shaped works without this.
   PRD ref: `prd.md > Stretch: Org boundary`
