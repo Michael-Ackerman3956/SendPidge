@@ -217,7 +217,7 @@ function renderEmailDetail(email, shouldCelebrate = false) {
   const threadElement = buildOpenRowThreadElement(email);
   if (threadElement !== null) detailChildren.push(threadElement);
   pageElements.detailContent.replaceChildren(...detailChildren);
-  renderReaderBar({ emailIds: listSortedEmailIds(), openEmailId: email.emailId, onBack: showInboxScreen, onOpen: openEmailDetail });
+  renderReaderBar({ emailIds: listSortedEmailIds(), openEmailId: email.emailId, onOpen: openEmailDetail });
   if (shouldCelebrate) showCelebration(email);
   if (emailDisplayState === EMAIL_DISPLAY_STATE.AWAITING_VERDICT) {
     showHoldOverlay({ overlayHostElement: pageElements.detailScreen, email, onReleasedByUser: handleUserReleasedHeldEmail });

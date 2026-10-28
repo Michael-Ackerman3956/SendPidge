@@ -18,7 +18,6 @@ const LAYOUT_ICON_PATHS = Object.freeze({
   [READING_PANE_LAYOUT.HORIZONTAL_SPLIT]: [PANE_FRAME_PATH, "M3 11h18"],
 });
 const CARET_PATH = "M7 10l5 5 5-5z";
-const ARROW_LEFT_PATH = "M19 12H5M12 19l-7-7 7-7";
 const CHEVRON_LEFT_PATH = "M15 5 8 12l7 7";
 const CHEVRON_RIGHT_PATH = "M9 5l7 7-7 7";
 
@@ -112,8 +111,8 @@ export function renderPaneTools(rowCount) {
   pageElements.paneTools.replaceChildren(createElementWithText("span", "pane-count", `1–${rowCount} of ${rowCount}`), menuWrap);
 }
 
-// Gmail's reader bar above an open email in No split on a wide screen: back, "n of N", older and newer.
-export function renderReaderBar({ emailIds, openEmailId, onBack, onOpen }) {
+// Gmail's reader bar above an open email in No split on a wide screen: "n of N", older and newer (back is the top bar's).
+export function renderReaderBar({ emailIds, openEmailId, onOpen }) {
   const isShown = wideScreenQuery.matches && activeLayout === READING_PANE_LAYOUT.NO_SPLIT;
   pageElements.readerBar.hidden = !isShown;
   if (!isShown) {
@@ -126,7 +125,6 @@ export function renderReaderBar({ emailIds, openEmailId, onBack, onOpen }) {
   const olderButton = buildIconButton("", [CHEVRON_RIGHT_PATH], "Older", () => onOpen(emailIds[openIndex + 1]));
   olderButton.disabled = openIndex < 0 || openIndex >= emailIds.length - 1;
   pageElements.readerBar.replaceChildren(
-    buildIconButton("", [ARROW_LEFT_PATH], "Back to Inbox", onBack),
     createElementWithText("span", "pane-grow"),
     createElementWithText("span", "pane-count", `${openIndex + 1} of ${emailIds.length}`),
     newerButton, olderButton,
