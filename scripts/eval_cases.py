@@ -1,7 +1,7 @@
 """The agent eval's fixed cases, its calibration set, and the synthetic families each case runs on.
 
 RULE# rows use put_item as scripts/seed_rows.py does, and the held email's EMAIL# fields are a dict that mirrors
-pidge_reader's build_email_row; every other row goes through the production writers (residents, circle, graph, verdict,
+pipeline's build_email_row; every other row goes through the production writers (residents, circle, graph, inbox_rows, verdict,
 cases, case_agent.store_case_note, and pidge_retry's mark_timeout). Rows land in whatever table TABLE_NAME names;
 eval_agents.py opens a moto table first, so nothing here reaches the live table. Nothing is sent: the one send on this
 path (cases.send_report) goes to a stubbed client.
@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "lambda"))
 
-from shared import case_agent, cases, circle, graph, profiles, refund_rules, residents, verdict  # noqa: E402
+from shared import case_agent, cases, circle, graph, inbox_rows, profiles, refund_rules, residents, verdict  # noqa: E402
 from shared.enums import (  # noqa: E402
     ActionOutcome, CaseTrigger, Channel, Friction, Jurisdiction, PaymentRail, PolicyDecision, ReasonCode, Relationship,
     RequestState, VerdictAnswer, VerifiedVia,
@@ -254,11 +254,11 @@ def hold_email_and_ask(receiver_user_id: str, receiver_address: str, contact: gr
         graph.USER_INDEX_PARTITION_KEY: graph.user_index_partition(receiver_user_id, graph.EMAIL_ROW_KIND),
         graph.USER_INDEX_SORT_KEY: received_at,
     }
-    if not graph.claim_email(email_id, email_fields):
-        raise RuntimeError("eval seeding: claim_email refused a fresh email id")
+    if not inbox_rows.claim_row(Channel.EMAIL, email_id, email_fields):
+        raise RuntimeError("eval seeding: claim_row refused a fresh email id")
     request_id = graph.request_id_of(graph.create_request(email_id, receiver_address, contact, VERDICT_FIELDS,
-                                                          Friction.DOUBLE_TAP, None))
-    graph.record_email_outcome(email_id, PolicyDecision.HOLD, None, (ReasonCode.UNKNOWN_ADDRESS,), request_id)
+                                                          Friction.DOUBLE_TAP, None, Channel.EMAIL))
+    inbox_rows.record_outcome(Channel.EMAIL, email_id, PolicyDecision.HOLD, None, (ReasonCode.UNKNOWN_ADDRESS,), request_id)
     return request_id
 
 

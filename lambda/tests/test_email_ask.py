@@ -8,7 +8,7 @@ import pytest
 
 import time
 
-from shared import ask_link, channels, email_ask, graph, reach_points, verdict
+from shared import ask_link, channels, email_ask, graph, inbox_rows, reach_points, verdict
 from shared.enums import ActionOutcome, Channel, EmailedAnswerOutcome, RequestState, VerdictAnswer, VerifiedVia
 from tests.test_channels import REQUEST_ROW, sender_returning
 from tests.test_verdict import BUCKET_NAME, CONTACT_EMAIL, aws, new_request, status_of  # noqa: F401
@@ -136,4 +136,4 @@ def test_the_cross_channel_rule_refuses_a_yes_only_on_the_inbound_channel(aws): 
     assert status_of(request_id) == str(RequestState.PENDING)
     in_app = verdict.SenderIdentity(Channel.INAPP, "jimin")
     assert verdict.record_answer(request_id, VerdictAnswer.YES, in_app, "inapp:a", now).outcome is ActionOutcome.RECORDED
-    assert verdict.inbound_channel_of({"PK": "REQUEST#req-old"}) is Channel.EMAIL
+    assert inbox_rows.inbound_channel_of({"PK": "REQUEST#req-old"}) is Channel.EMAIL

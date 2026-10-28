@@ -8,7 +8,8 @@ import boto3
 import pytest
 from boto3.dynamodb.conditions import Attr
 
-from shared import graph
+from shared import graph, inbox_rows
+from shared.enums import Channel
 from shared.profiles import UNKNOWN_RECEIVER_METRIC_NAME
 from shared.reader_agent import EmailVerdict
 from tests.helpers.profiles import seed_resident
@@ -43,15 +44,16 @@ def rows_with_partition_prefix(prefix: str) -> list[dict]:
 
 @pytest.fixture
 def reader_with_bucket(aws, monkeypatch):  # noqa: F811
-    """pidge_reader.handler on moto's table and bucket; every push recorded with the user it went to."""
+    """pidge_reader.handler and its shared.pipeline on moto's table and bucket; every push recorded with the user it went to."""
     for name, value in {"EMAIL_BUCKET": BUCKET_NAME, "READER_MODEL": "haiku-4.5", "ESCALATION_MODEL": "opus-4.5",
                         "ESCALATION_ENABLED": "false", "RETRY_SCHEDULER_ENABLED": "false"}.items():
         monkeypatch.setenv(name, value)
     handler = importlib.import_module("pidge_reader.handler")
+    importlib.reload(handler.pipeline)
     importlib.reload(handler)
     boto3.client("s3").create_bucket(Bucket=BUCKET_NAME)
     pushes: list[tuple[str, dict]] = []
-    monkeypatch.setattr(handler.channels, "push_to_user", lambda user_id, message: pushes.append((user_id, message)) or 1)
+    monkeypatch.setattr(handler.pipeline.channels, "push_to_user", lambda user_id, message: pushes.append((user_id, message)) or 1)
     return handler, pushes
 
 
@@ -60,7 +62,7 @@ def test_unknown_receiver_dropped_never_defaulted(reader_with_bucket, monkeypatc
     seed_resident(GRANDMA_ADDRESS, "grandma", "Grandma")
     store_inbox_email("msg-unknown-0001")  # addressed To Grandma: the header must not rescue it
     scripted_reader_model = ScriptedModel(EmailVerdict, {})
-    handler.reader.model = scripted_reader_model
+    handler.pipeline.reader.model = scripted_reader_model
     fetched_keys = []
     production_get_object = handler.s3_client.get_object
     def record_fetch(Bucket, Key):
@@ -81,9 +83,9 @@ def test_to_header_ignored_when_envelope_recipient_differs(reader_with_bucket):
     seed_resident(GRANDMA_ADDRESS, "grandma", "Grandma")
     seed_resident(BOB_ADDRESS, "bob", "Bob")
     store_inbox_email("msg-bob-0001")  # To Grandma, delivered to Bob
-    handler.reader.model = ScriptedModel(EmailVerdict, {THANK_YOU_SUBJECT: [verdict_step(FAMILY_HELLO_NO_ASK)]})
+    handler.pipeline.reader.model = ScriptedModel(EmailVerdict, {THANK_YOU_SUBJECT: [verdict_step(FAMILY_HELLO_NO_ASK)]})
     handler.handle(inbound_event("msg-bob-0001", ["Bob@Example.com"]), None)
-    email_row = graph.get_email("inbox/msg-bob-0001")
+    email_row = inbox_rows.get_row(Channel.EMAIL, "inbox/msg-bob-0001")
     assert (email_row["receiverEmail"], email_row[graph.USER_INDEX_PARTITION_KEY], email_row["s3Key"]) == (
         BOB_ADDRESS, "bob#EMAIL", "inbox/msg-bob-0001")
     assert [user_id for user_id, _message in pushes] == ["bob", "bob"]  # reading, then the verdict

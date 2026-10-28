@@ -17,7 +17,8 @@ import boto3
 
 from pidge_verdict import circle_handlers, org_admin_handlers, org_preference_handlers
 from shared import (
-    cases, channels, chat, email_ask, graph, org_preferences, orgs, payloads, profiles, push_subscriptions, rcs, schedules, verdict, whatsapp,
+    cases, channels, chat, email_ask, graph, inbox_rows, org_preferences, orgs, payloads, profiles, push_subscriptions, rcs, schedules,
+    verdict, whatsapp,
 )
 from shared.enums import (
     ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, EmailedAnswerOutcome, PushMessageType, RequestState,
@@ -172,7 +173,7 @@ def contact_cards_for(user_id: str) -> list:
         if card_org_id is not None and not orgs.is_residents_own_org(resident, card_org_id):
             logger.info("request %s skipped in %s's sync: its resident's home is another org", graph.request_id_of(request_row), user_id)
             continue
-        email_row = graph.get_email(request_row["emailId"])
+        email_row = inbox_rows.require_held_row(request_row)
         cards.append(payloads.card_for_contact(request_row, email_row, resident.resident_name, verdict.effective_status(request_row, now)))
     return cards
 

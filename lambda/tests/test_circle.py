@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from boto3.dynamodb.conditions import Key
 
-from shared import circle, graph, orgs, verdict
+from shared import circle, graph, inbox_rows, orgs, verdict
 from shared.enums import ActionOutcome, Channel, Friction, VerdictAnswer, VerifiedVia
 from shared.orgs import OrgProfile
 from tests.helpers.profiles import TEST_ORG_ID, TEST_TIMEZONE
@@ -304,8 +304,9 @@ def checked_two_number_request(circle_handler) -> tuple[str, dict]:
     for number, wamid in ((MINSOO_NUMBER, "wamid.A"), (MINSOO_SECOND_NUMBER, "wamid.B")):
         handler.handle(whatsapp_text_event(number.removeprefix("+"), contact_added["code"], wamid), None)
     checked_row = graph.get_contact_row(RECEIVER_ADDRESS, row["SK"])
-    graph.claim_email(EMAIL_ID, {"s3Key": EMAIL_ID, "senderAddress": "scammer@lookalike.example", "quarantined": False})
-    request_row = graph.create_request(EMAIL_ID, RECEIVER_ADDRESS, graph.contact_from_row(checked_row), VERDICT_FIELDS, Friction.SINGLE_TAP, None)
+    inbox_rows.claim_row(Channel.EMAIL, EMAIL_ID, {"s3Key": EMAIL_ID, "senderAddress": "scammer@lookalike.example", "quarantined": False})
+    request_row = graph.create_request(EMAIL_ID, RECEIVER_ADDRESS, graph.contact_from_row(checked_row), VERDICT_FIELDS, Friction.SINGLE_TAP, None,
+                                       Channel.EMAIL)
     return graph.request_id_of(request_row), checked_row
 
 

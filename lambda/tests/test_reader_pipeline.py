@@ -7,7 +7,7 @@ from pathlib import Path
 
 from boto3.dynamodb.conditions import Attr
 
-from shared import graph
+from shared import graph, inbox_rows
 from shared.enums import Channel, EscalationDecision, Friction, GateFired, Intent, PolicyDecision, ReasonCode, WarnReason
 from shared.escalation import EscalationVerdict
 from shared.reader_agent import EmailVerdict
@@ -65,27 +65,29 @@ class LoadedReaderHandler:
 
 
 def load_reader_handler(monkeypatch, is_escalation_enabled: bool) -> LoadedReaderHandler:
-    """pidge_reader.handler re-imported under the test environment; pushes and asks recorded, the table is moto's."""
+    """pidge_reader.handler and its shared.pipeline re-imported under the test environment; pushes and asks recorded, the table
+    is moto's."""
     environment = {"EMAIL_BUCKET": "bucket", "READER_MODEL": "haiku-4.5", "ESCALATION_MODEL": "opus-4.5", "ASKS_PER_CONTACT_PER_HOUR": "3",
                    "ESCALATION_ENABLED": "true" if is_escalation_enabled else "false", "RETRY_SCHEDULER_ENABLED": "false"}
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
     handler = importlib.import_module("pidge_reader.handler")
+    importlib.reload(handler.pipeline)
     importlib.reload(handler)
     loaded = LoadedReaderHandler(handler, [], [])
     def record_push(user_id, message):
         loaded.pushed_emails.append(message["email"])
         return 1
-    monkeypatch.setattr(handler.channels, "push_to_user", record_push)
+    monkeypatch.setattr(handler.pipeline.channels, "push_to_user", record_push)
     async def asked_in_app(*_):
         return [Channel.INAPP]
-    monkeypatch.setattr(handler.channels, "ask_on_every_channel", asked_in_app)
-    production_decide = handler.decide
+    monkeypatch.setattr(handler.pipeline.channels, "ask_on_every_channel", asked_in_app)
+    production_decide = handler.pipeline.decide
     def decide_and_record_gate(*arguments):
         outcome = production_decide(*arguments)
         loaded.decided_gates.append(outcome.gate)
         return outcome
-    monkeypatch.setattr(handler, "decide", decide_and_record_gate)
+    monkeypatch.setattr(handler.pipeline, "decide", decide_and_record_gate)
     return loaded
 
 
@@ -109,7 +111,7 @@ def reader_scripts_for(goldens: tuple[SampleGolden, ...]) -> dict[str, list[Scri
 
 
 def assert_sample_reached_its_golden(loaded: LoadedReaderHandler, object_key: str, golden: SampleGolden) -> None:
-    email_row = graph.get_email(object_key)
+    email_row = inbox_rows.get_row(Channel.EMAIL, object_key)
     assert email_row["state"] == str(golden.decision), golden.sample_file_name
     assert email_row["warnReason"] == (str(golden.warn_reason) if golden.warn_reason else None), golden.sample_file_name
     assert email_row["reasons"] == [str(reason) for reason in golden.reasons], golden.sample_file_name
@@ -127,8 +129,8 @@ def assert_sample_reached_its_golden(loaded: LoadedReaderHandler, object_key: st
         assert email_row["requestId"] is None and pushed_state["request"] is None, golden.sample_file_name
         return
     request_row = graph.get_request(email_row["requestId"])
-    assert (request_row["emailId"], request_row["friction"], request_row["claimedPerson"]) == (
-        object_key, str(golden.friction), golden.reader_verdict_fields["claimed_person"]), golden.sample_file_name
+    assert (request_row["emailId"], request_row["inboundChannel"], request_row["friction"], request_row["claimedPerson"]) == (
+        object_key, str(Channel.EMAIL), str(golden.friction), golden.reader_verdict_fields["claimed_person"]), golden.sample_file_name
     assert request_row["verdict"]["intent"] == str(golden.reader_verdict_fields["intent"]), golden.sample_file_name
     assert (pushed_state["request"]["requestId"], pushed_state["request"]["contactName"]) == (
         email_row["requestId"], "Jimin"), golden.sample_file_name
@@ -138,7 +140,7 @@ def test_each_sample_reaches_its_golden_rows_through_the_real_loop(aws, monkeypa
     seed_grandma_and_jimin_for_the_reader()
     loaded = load_reader_handler(monkeypatch, is_escalation_enabled=False)
     scripted_reader_model = ScriptedModel(EmailVerdict, reader_scripts_for(FIVE_SAMPLE_GOLDENS))
-    loaded.handler.reader.model = scripted_reader_model
+    loaded.handler.pipeline.reader.model = scripted_reader_model
     for golden in FIVE_SAMPLE_GOLDENS:
         object_key = run_sample(loaded, monkeypatch, golden.sample_file_name)
         assert scripted_reader_model.raised_errors == [], golden.sample_file_name
@@ -158,12 +160,12 @@ def test_text_instead_of_the_verdict_tool_twice_is_warn_unreadable_never_pass(aw
     scripted_reader_model = ScriptedModel(EmailVerdict, {
         FAMILY_HELLO.subject_fragment: [text_reply_step(NOT_A_VERDICT_REPLY), text_reply_step(NOT_A_VERDICT_REPLY)],
     })
-    loaded.handler.reader.model = scripted_reader_model
+    loaded.handler.pipeline.reader.model = scripted_reader_model
     object_key = run_sample(loaded, monkeypatch, FAMILY_HELLO.sample_file_name)  # would PASS with a verdict
     assert [call.is_forced_retry for call in scripted_reader_model.recorded_calls] == [False, True]  # Strands forced one retry
     assert scripted_reader_model.recorded_calls[1].offered_tool_names == (scripted_reader_model.structured_output_tool_name,)
     assert scripted_reader_model.raised_errors == []
-    email_row = graph.get_email(object_key)
+    email_row = inbox_rows.get_row(Channel.EMAIL, object_key)
     assert (email_row["state"], email_row["warnReason"], email_row["requestId"]) == (
         str(PolicyDecision.WARN), str(WarnReason.UNREADABLE), None)
     assert (loaded.pushed_emails[-1]["state"], loaded.pushed_emails[-1]["warnReason"]) == (PolicyDecision.WARN, WarnReason.UNREADABLE)
@@ -173,7 +175,7 @@ def test_text_instead_of_the_verdict_tool_twice_is_warn_unreadable_never_pass(aw
 def test_reader_and_reviewer_have_no_tools(aws, monkeypatch):  # noqa: F811
     seed_grandma_and_jimin_for_the_reader()
     loaded = load_reader_handler(monkeypatch, is_escalation_enabled=True)
-    reader, reviewer = loaded.handler.reader, loaded.handler.escalation_reader
+    reader, reviewer = loaded.handler.pipeline.reader, loaded.handler.pipeline.escalation_reader
     assert (reader.tool_names, reviewer.tool_names) == ([], [])
     scripted_reader_model = ScriptedModel(EmailVerdict, reader_scripts_for((CLAIMED_JIMIN,)))
     scripted_reviewer_model = ScriptedModel(EscalationVerdict, {CLAIMED_JIMIN.subject_fragment: [verdict_step(REVIEWER_SAYS_WARN_FOR_JIMIN)]})
@@ -187,15 +189,15 @@ def test_reader_and_reviewer_have_no_tools(aws, monkeypatch):  # noqa: F811
 def test_escalation_warn_on_claimed_jimin_clears_to_warn_but_never_gate_1(aws, monkeypatch):  # noqa: F811
     seed_grandma_and_jimin_for_the_reader()
     loaded = load_reader_handler(monkeypatch, is_escalation_enabled=True)
-    loaded.handler.reader.model = ScriptedModel(EmailVerdict, reader_scripts_for((CLAIMED_JIMIN, FAKE_JIMIN)))
+    loaded.handler.pipeline.reader.model = ScriptedModel(EmailVerdict, reader_scripts_for((CLAIMED_JIMIN, FAKE_JIMIN)))
     scripted_reviewer_model = ScriptedModel(EscalationVerdict, {
         CLAIMED_JIMIN.subject_fragment: [verdict_step(REVIEWER_SAYS_WARN_FOR_JIMIN)],
         FAKE_JIMIN.subject_fragment: [verdict_step(REVIEWER_SAYS_WARN_FOR_JIMIN)],
     })
-    loaded.handler.escalation_reader.model = scripted_reviewer_model
+    loaded.handler.pipeline.escalation_reader.model = scripted_reviewer_model
 
     cleared_key = run_sample(loaded, monkeypatch, CLAIMED_JIMIN.sample_file_name)
-    cleared_row = graph.get_email(cleared_key)
+    cleared_row = inbox_rows.get_row(Channel.EMAIL, cleared_key)
     assert (cleared_row["state"], cleared_row["warnReason"], cleared_row["reasons"], cleared_row["requestId"]) == (
         str(PolicyDecision.WARN), str(WarnReason.ESCALATION_CLEARED), [str(ReasonCode.ESCALATION_CLEARED)], None)
     assert (cleared_row["escalation"]["decision"], cleared_row["escalation"]["failed"]) == (str(EscalationDecision.WARN), False)
@@ -204,7 +206,7 @@ def test_escalation_warn_on_claimed_jimin_clears_to_warn_but_never_gate_1(aws, m
     assert request_rows() == []
 
     held_key = run_sample(loaded, monkeypatch, FAKE_JIMIN.sample_file_name)  # same reviewer answer on a gate-1 hold
-    held_row = graph.get_email(held_key)
+    held_row = inbox_rows.get_row(Channel.EMAIL, held_key)
     assert (held_row["state"], held_row["reasons"]) == (str(PolicyDecision.HOLD), [str(ReasonCode.UNKNOWN_ADDRESS)])
     assert loaded.decided_gates == [GateFired.GATE_2, GateFired.GATE_1]
     request_row = graph.get_request(held_row["requestId"])

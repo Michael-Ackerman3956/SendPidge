@@ -10,9 +10,11 @@ from types import SimpleNamespace
 import pytest
 from botocore.exceptions import ClientError
 
-from shared import graph, hourly_counters, lists
+from shared import graph, hourly_counters, inbox_rows, lists
 from shared.email_parse import EmailLink, link_kind_of_href, parse_eml
-from shared.enums import Friction, HiddenBy, IndicatorKind, LinkSource, ListSource, PolicyDecision, ReasonCode, RequestState, WarnReason
+from shared.enums import (
+    Channel, Friction, HiddenBy, IndicatorKind, LinkSource, ListSource, PolicyDecision, ReasonCode, RequestState, WarnReason,
+)
 from shared.links import assess_links, link_reasons, list_indicators_of, mark_listed_links
 from shared.list_enums import ScamListCoverageState
 from shared.lists import (
@@ -162,16 +164,17 @@ def test_seed_store_and_dynamo_store_read_the_same_row(aws):  # noqa: F811
 
 @pytest.fixture
 def reader_handler(aws, monkeypatch):  # noqa: F811
-    """pidge_reader.handler with the Reader never called and every push recorded; the table is moto's."""
+    """pidge_reader.handler and its shared.pipeline with the Reader never called and every push recorded; the table is moto's."""
     import importlib
 
     for name, value in {"EMAIL_BUCKET": "bucket", "READER_MODEL": "haiku-4.5", "ESCALATION_MODEL": "opus-4.5",
                         "ASKS_PER_CONTACT_PER_HOUR": "3"}.items():
         monkeypatch.setenv(name, value)
     handler = importlib.import_module("pidge_reader.handler")
+    importlib.reload(handler.pipeline)
     importlib.reload(handler)
     pushed = []
-    monkeypatch.setattr(handler.channels, "push_to_user", lambda user_id, message: pushed.append(message["email"]) or 1)
+    monkeypatch.setattr(handler.pipeline.channels, "push_to_user", lambda user_id, message: pushed.append(message["email"]) or 1)
     return handler, pushed
 
 
@@ -192,16 +195,17 @@ def test_a_capped_ask_is_stored_as_the_same_warn_the_receiver_saw(reader_handler
     contact = seed_contact()
     email_row = {"s3Key": EMAIL_ID, "senderName": "Jimin", "senderAddress": "x@y.example", "subject": "Hi", "receivedAt": "2026-10-25T00:00:00Z",
                  "textBody": "Send money", "quarantined": False}
-    graph.claim_email(EMAIL_ID, email_row)
+    inbox_rows.claim_row(Channel.EMAIL, EMAIL_ID, email_row)
     for _ in range(3):
         assert hourly_counters.take_ask_slot(contact.contact_key, resident_address, 3)
     asked = []
-    monkeypatch.setattr(handler.channels, "ask_on_every_channel", lambda *_: asked.append(True))
+    monkeypatch.setattr(handler.pipeline.channels, "ask_on_every_channel", lambda *_: asked.append(True))
     verdict = EmailVerdict(**VERDICT_FIELDS)
-    handler.hold_and_ask(require_receiver_profile(resident_address), EMAIL_ID, email_row, verdict, held_outcome(contact), None)
+    handler.pipeline.hold_and_ask(require_receiver_profile(resident_address), Channel.EMAIL, EMAIL_ID, email_row, verdict,
+                                  held_outcome(contact), None)
 
     assert asked == []
-    stored = graph.get_email(EMAIL_ID)
+    stored = inbox_rows.get_row(Channel.EMAIL, EMAIL_ID)
     assert (stored["state"], stored["warnReason"]) == (str(PolicyDecision.WARN), str(WarnReason.ASK_CAPPED))
     request_row = graph.get_request(stored["requestId"])
     assert (request_row["status"], request_row["askCapped"]) == (str(RequestState.PENDING), True)

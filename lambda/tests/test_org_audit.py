@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 
 from pidge_org import handler as org_actions_handler
 from shared import graph
-from shared.enums import Friction
+from shared.enums import Channel, Friction
 from shared.org_audit import AUDIT_RETENTION_SECONDS, audit_partition
 from tests.helpers.stream_records import read_stored_row, stream_record_for_row
 from tests.test_org import (
@@ -72,7 +72,7 @@ def test_office_answer_writes_audit_row(verdict_handler_without_profiles, monkey
     seed_circle_contact(GRANDMA_ADDRESS, "jimin")
     jimin = next(contact for contact in graph.list_contacts(GRANDMA_ADDRESS) if contact.contact_key == "CONTACT#jimin")
     family_request_id = graph.request_id_of(
-        graph.create_request("inbox/family-1.eml", GRANDMA_ADDRESS, jimin, OFFICE_VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+        graph.create_request("inbox/family-1.eml", GRANDMA_ADDRESS, jimin, OFFICE_VERDICT_FIELDS, Friction.SINGLE_TAP, None, Channel.EMAIL))
     for user_id in ("max", "grandma"):  # Maple's admin and the resident: refused by is_expected_sender, nothing audited
         send_action(handler, user_id, {"action": "answer", "answer": "no", "requestId": first_id})
     send_action(handler, "jimin", {"action": "answer", "answer": "no", "requestId": family_request_id})

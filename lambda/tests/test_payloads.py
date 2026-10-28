@@ -3,7 +3,7 @@ Reader is still on, the circle's reach chips follow the stack's flags, and the s
 
 import json
 
-from shared import graph, lists, payloads, sources
+from shared import graph, inbox_rows, lists, payloads, sources
 from shared.enums import Channel, RequestState, VerdictAnswer
 from shared.reader_agent import EmailVerdict
 from tests.helpers.scripted_model import ScriptedModel
@@ -38,9 +38,10 @@ def test_the_answer_carries_the_channel_it_came_on(aws):
 
 def test_sync_lists_a_row_the_reader_is_still_on_without_its_body(verdict_handler):
     handler, pushed_messages = verdict_handler
-    graph.claim_email("inbox/new.eml", {**EMAIL_ROW, "receiverEmail": "grandma@example.com", "quarantined": False,
-                                        graph.USER_INDEX_PARTITION_KEY: graph.user_index_partition(RECEIVER_USER_ID, graph.EMAIL_ROW_KIND),
-                                        graph.USER_INDEX_SORT_KEY: EMAIL_ROW["receivedAt"]})
+    inbox_rows.claim_row(Channel.EMAIL, "inbox/new.eml", {
+        **EMAIL_ROW, "receiverEmail": "grandma@example.com", "quarantined": False,
+        graph.USER_INDEX_PARTITION_KEY: graph.user_index_partition(RECEIVER_USER_ID, graph.EMAIL_ROW_KIND),
+        graph.USER_INDEX_SORT_KEY: EMAIL_ROW["receivedAt"]})
     send_action(handler, RECEIVER_USER_ID, {"action": "sync"})
     [sync_message] = pushed_messages
     [reading_row] = [email for email in sync_message["emails"] if email["emailId"] == "inbox/new.eml"]
@@ -80,10 +81,10 @@ def put_amf_listed_domain(domain: str, now: str) -> str:
 def test_scam_list_coverage_reaches_the_email_state(aws, monkeypatch):  # noqa: F811
     seed_grandma_and_jimin_for_the_reader()
     loaded = load_reader_handler(monkeypatch, is_escalation_enabled=False)
-    loaded.handler.reader.model = ScriptedModel(EmailVerdict, reader_scripts_for((FAMILY_HELLO, NEWSLETTER_LINK)))
+    loaded.handler.pipeline.reader.model = ScriptedModel(EmailVerdict, reader_scripts_for((FAMILY_HELLO, NEWSLETTER_LINK)))
 
     put_amf_source(None)  # never synced: stale, so even a linkless email reads unavailable through its sender domain
-    hello_row = graph.get_email(run_sample(loaded, monkeypatch, FAMILY_HELLO.sample_file_name))
+    hello_row = inbox_rows.get_row(Channel.EMAIL, run_sample(loaded, monkeypatch, FAMILY_HELLO.sample_file_name))
     assert (hello_row["scamListCoverage"], hello_row["state"], hello_row["reasons"]) == ("unavailable", "pass", [])
     assert [email["scamListCoverage"] for email in loaded.pushed_emails] == [None, "unavailable"]  # reading, then the verdict
     assert loaded.pushed_emails[-1]["state"] == "pass"
@@ -91,7 +92,7 @@ def test_scam_list_coverage_reaches_the_email_state(aws, monkeypatch):  # noqa: 
     now = graph.now_timestamp()
     put_amf_source(now)
     attribution = put_amf_listed_domain("zelle-pay-help.example", now)
-    newsletter_row = graph.get_email(run_sample(loaded, monkeypatch, NEWSLETTER_LINK.sample_file_name))
+    newsletter_row = inbox_rows.get_row(Channel.EMAIL, run_sample(loaded, monkeypatch, NEWSLETTER_LINK.sample_file_name))
     assert (newsletter_row["scamListCoverage"], newsletter_row["state"], newsletter_row["warnReason"]) == ("complete", "warn", "link_reasons")
     assert newsletter_row["reasons"] == ["link_text_href_mismatch", "link_listed"]
     assert (newsletter_row["links"][0]["reasons"], newsletter_row["links"][0]["listedBy"]) == (

@@ -7,7 +7,7 @@ import pytest
 from botocore.stub import Stubber
 from moto import mock_aws
 
-from shared import graph, lists, payloads, verdict
+from shared import graph, inbox_rows, lists, payloads, verdict
 from shared.enums import ActionOutcome, Channel, Friction, ListSource, RequestState, VerdictAnswer
 
 RECEIVER_ADDRESS = "grandma@example.com"
@@ -58,8 +58,9 @@ def seed_contact(contact_email: str | None = CONTACT_EMAIL) -> graph.Contact:
 
 
 def new_request() -> str:
-    graph.claim_email(EMAIL_ID, {"s3Key": EMAIL_ID, "senderAddress": "Scammer@Lookalike.example", "quarantined": False})
-    return graph.request_id_of(graph.create_request(EMAIL_ID, RECEIVER_ADDRESS, seed_contact(), VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+    inbox_rows.claim_row(Channel.EMAIL, EMAIL_ID, {"s3Key": EMAIL_ID, "senderAddress": "Scammer@Lookalike.example", "quarantined": False})
+    return graph.request_id_of(graph.create_request(EMAIL_ID, RECEIVER_ADDRESS, seed_contact(), VERDICT_FIELDS, Friction.SINGLE_TAP, None,
+                                                    Channel.EMAIL))
 
 
 BOB_ADDRESS = "bob@example.com"
@@ -69,11 +70,12 @@ BOB_EMAIL_ID = "inbox/bob.eml"
 
 def new_request_to_bob_from_the_same_sender() -> str:
     """The same scammer writing to a second resident, Bob, who also has Jimin as a contact."""
-    graph.claim_email(BOB_EMAIL_ID, {"s3Key": BOB_EMAIL_ID, "senderAddress": "Scammer@Lookalike.example", "quarantined": False})
+    inbox_rows.claim_row(Channel.EMAIL, BOB_EMAIL_ID, {"s3Key": BOB_EMAIL_ID, "senderAddress": "Scammer@Lookalike.example", "quarantined": False})
     graph.get_table().put_item(Item={"PK": f"RECEIVER#{BOB_ADDRESS}", "SK": "CONTACT#jimin", "contactName": "Jimin",
                                      "contactPwaUserId": "jimin"})
     bobs_contact = graph.Contact("CONTACT#jimin", "Jimin", "jimin")
-    return graph.request_id_of(graph.create_request(BOB_EMAIL_ID, BOB_ADDRESS, bobs_contact, VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+    return graph.request_id_of(graph.create_request(BOB_EMAIL_ID, BOB_ADDRESS, bobs_contact, VERDICT_FIELDS, Friction.SINGLE_TAP, None,
+                                                    Channel.EMAIL))
 
 
 def confirm_as_grandma(request_id: str, s3_client) -> None:
@@ -327,7 +329,7 @@ def test_confirm_after_no_quarantines_and_lists_the_full_address(aws):
                                         s3_client, BUCKET_NAME)
     assert result.outcome is ActionOutcome.RECORDED
     assert s3_client.get_object_tagging(Bucket=BUCKET_NAME, Key=EMAIL_ID)["TagSet"] == [verdict.QUARANTINE_TAG]
-    assert graph.get_email(EMAIL_ID)["quarantined"] is True
+    assert inbox_rows.get_row(Channel.EMAIL, EMAIL_ID)["quarantined"] is True
     listed = graph.get_table().get_item(Key={"PK": "LIST#address", "SK": "scammer@lookalike.example"})["Item"]
     assert (listed["source"], listed["tier"]) == ("pidge-confirmed", 0)
     assert "Item" not in graph.get_table().get_item(Key={"PK": "LIST#domain", "SK": "lookalike.example"})
@@ -339,7 +341,7 @@ def test_confirm_before_any_no_is_not_applied(aws):
     result = verdict.confirm_quarantine(request_id, RECEIVER_USER_ID, RECEIVER_USER_ID, RECEIVER_ADDRESS,
                                         s3_client, BUCKET_NAME)
     assert result.outcome is ActionOutcome.NOT_APPLIED
-    assert graph.get_email(EMAIL_ID)["quarantined"] is False
+    assert inbox_rows.get_row(Channel.EMAIL, EMAIL_ID)["quarantined"] is False
 
 
 def test_confirm_by_the_contact_is_not_allowed(aws):
@@ -349,7 +351,7 @@ def test_confirm_by_the_contact_is_not_allowed(aws):
     result = verdict.confirm_quarantine(request_id, "jimin", RECEIVER_USER_ID, RECEIVER_ADDRESS,
                                         s3_client, BUCKET_NAME)
     assert result.outcome is ActionOutcome.NOT_ALLOWED
-    assert graph.get_email(EMAIL_ID)["quarantined"] is False
+    assert inbox_rows.get_row(Channel.EMAIL, EMAIL_ID)["quarantined"] is False
 
 
 def test_a_request_row_written_before_slice_8_still_makes_a_one_tap_card():

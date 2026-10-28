@@ -4,7 +4,8 @@ import json
 import logging
 from dataclasses import dataclass
 
-from shared.enums import RcsInboundMessageType, VerdictAnswer
+from shared.channel_enums import RcsInboundMessageType
+from shared.enums import VerdictAnswer
 from shared.verdict import parse_phone_answer
 
 logger = logging.getLogger(__name__)

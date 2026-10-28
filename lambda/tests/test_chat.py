@@ -7,9 +7,9 @@ import json
 import pytest
 from botocore.exceptions import ClientError
 
-from shared import chat, chat_agent, graph, verdict
+from shared import chat, chat_agent, graph, inbox_rows, verdict
 from shared.agent_enums import UnsafeTextKind
-from shared.enums import ChatCardKind, ChatVia, GuardrailOutcome, PolicyDecision, PushMessageType, VerdictAnswer
+from shared.enums import Channel, ChatCardKind, ChatVia, GuardrailOutcome, PolicyDecision, PushMessageType, VerdictAnswer
 from tests.helpers.profiles import seed_contact_roles
 from tests.helpers.scripted_model import ScriptedModel, tool_call_step, verdict_step
 from tests.test_verdict import JIMIN, RECEIVER_ADDRESS, RECEIVER_USER_ID, aws, at, new_request  # noqa: F401
@@ -178,11 +178,11 @@ def test_check_prompt_attack_reads_the_guardrail_action(monkeypatch):
 
 
 def held_email_for(user_id: str, email_id: str) -> None:
-    graph.claim_email(email_id, {"s3Key": email_id, "senderAddress": f"scammer@{user_id}.example", "quarantined": False,
-                                 "textBody": "Send 500,000 won to Kakao 3333-01-1234567", "subject": "URGENT http://evil.example",
-                                 graph.USER_INDEX_PARTITION_KEY: graph.user_index_partition(user_id, graph.EMAIL_ROW_KIND),
-                                 graph.USER_INDEX_SORT_KEY: at(0)})
-    graph.record_email_outcome(email_id, PolicyDecision.HOLD, None, (), None)
+    inbox_rows.claim_row(Channel.EMAIL, email_id, {
+        "s3Key": email_id, "senderAddress": f"scammer@{user_id}.example", "quarantined": False,
+        "textBody": "Send 500,000 won to Kakao 3333-01-1234567", "subject": "URGENT http://evil.example",
+        graph.USER_INDEX_PARTITION_KEY: graph.user_index_partition(user_id, graph.EMAIL_ROW_KIND), graph.USER_INDEX_SORT_KEY: at(0)})
+    inbox_rows.record_outcome(Channel.EMAIL, email_id, PolicyDecision.HOLD, None, (), None)
 
 
 def test_chat_tools_take_no_ids_and_read_only_the_callers_rows(aws):  # noqa: F811
@@ -204,7 +204,7 @@ def test_a_held_email_with_a_request_carries_the_answer_and_the_sanitised_summar
         Key={"PK": "EMAIL#inbox/fake.eml", "SK": "META"}, UpdateExpression="SET #index = :partition, #sort = :sort",
         ExpressionAttributeNames={"#index": graph.USER_INDEX_PARTITION_KEY, "#sort": graph.USER_INDEX_SORT_KEY},
         ExpressionAttributeValues={":partition": graph.user_index_partition(RECEIVER_USER_ID, graph.EMAIL_ROW_KIND), ":sort": at(0)})
-    graph.record_email_outcome("inbox/fake.eml", PolicyDecision.HOLD, None, (), request_id)
+    inbox_rows.record_outcome(Channel.EMAIL, "inbox/fake.eml", PolicyDecision.HOLD, None, (), request_id)
     verdict.record_answer(request_id, VerdictAnswer.NO, JIMIN, "m1", at(0))
     [held_email] = chat_agent.held_emails_for(RECEIVER_USER_ID)
     assert (held_email["askedContact"], held_email["contactAnswer"], held_email["summary"]) == ("Jimin", "denied", "Asks for money.")

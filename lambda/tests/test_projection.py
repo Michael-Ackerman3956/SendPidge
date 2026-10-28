@@ -11,8 +11,10 @@ import pytest
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared import channels, circle, graph, org_preferences, org_view, orgs, profiles, verdict
-from shared.enums import ActionOutcome, Friction, Jurisdiction, PaymentRail, PolicyDecision, VerdictAnswer, VerifiedVia, WarnReason
+from shared import channels, circle, graph, inbox_rows, org_preferences, org_view, orgs, profiles, verdict
+from shared.enums import (
+    ActionOutcome, Channel, Friction, Jurisdiction, PaymentRail, PolicyDecision, VerdictAnswer, VerifiedVia, WarnReason,
+)
 from shared.org_enums import MemberSafetyState, OrgEvent, OrgVisibility
 from shared.org_events import passes_visibility
 from tests.helpers.profiles import seed_resident
@@ -85,12 +87,13 @@ def email_key(email_id: str) -> dict:
 
 
 def hold_message(email_id: str, receiver_address: str = GRANDMA_ADDRESS) -> tuple[str, dict]:
-    """A message held and asked of Jimin (graph.claim_email, graph.create_request: the Reader's writers); (request id, the
+    """A message held and asked of Jimin (inbox_rows.claim_row, graph.create_request: the Reader's writers); (request id, the
     request's INSERT record)."""
-    graph.claim_email(email_id, {"s3Key": email_id, "senderAddress": "scammer@lookalike.example", "receiverEmail": receiver_address,
-                                 "quarantined": False})
+    inbox_rows.claim_row(Channel.EMAIL, email_id, {"s3Key": email_id, "senderAddress": "scammer@lookalike.example",
+                                                   "receiverEmail": receiver_address, "quarantined": False})
     jimin = graph.Contact("CONTACT#jimin", "Jimin", "jimin")
-    request_id = graph.request_id_of(graph.create_request(email_id, receiver_address, jimin, VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+    request_id = graph.request_id_of(graph.create_request(email_id, receiver_address, jimin, VERDICT_FIELDS, Friction.SINGLE_TAP, None,
+                                                          Channel.EMAIL))
     return request_id, stream_record_for_row(request_key(request_id), None)
 
 
@@ -403,10 +406,10 @@ def test_no_then_reverse_then_no_reads_not_me(projection):
 def test_pass_email_with_null_fields_is_skipped(projection):
     handler, _recorder = projection
     choose_visibility(OrgVisibility.ALERTS_ONLY)
-    graph.claim_email("inbox/pass-1.eml", {"s3Key": "inbox/pass-1.eml", "receiverEmail": GRANDMA_ADDRESS, "quarantined": False})
+    inbox_rows.claim_row(Channel.EMAIL, "inbox/pass-1.eml", {"s3Key": "inbox/pass-1.eml", "receiverEmail": GRANDMA_ADDRESS, "quarantined": False})
     claim_record = stream_record_for_row(email_key("inbox/pass-1.eml"), None)  # no state yet
     claimed_row = read_stored_row(email_key("inbox/pass-1.eml"))
-    graph.record_email_outcome("inbox/pass-1.eml", PolicyDecision.PASS, None, (), None)
+    inbox_rows.record_outcome(Channel.EMAIL, "inbox/pass-1.eml", PolicyDecision.PASS, None, (), None)
     pass_record = stream_record_for_row(email_key("inbox/pass-1.eml"), claimed_row)
     assert pass_record["dynamodb"]["NewImage"]["warnReason"] == {"NULL": True}  # present, as NULL
     assert project(handler, claim_record, pass_record) == NO_FAILURES and org_log_rows() == []
@@ -414,10 +417,11 @@ def test_pass_email_with_null_fields_is_skipped(projection):
     request_id, held_record = hold_message("inbox/held-1.eml")
     hold_at, warn_at, quarantine_at = (datetime.now(timezone.utc) + timedelta(seconds=seconds) for seconds in (5, 10, 15))
     email_records = []
-    for write, written_at in ((lambda: graph.record_email_outcome("inbox/held-1.eml", PolicyDecision.HOLD, None, (), request_id), hold_at),
-                              (lambda: graph.record_email_outcome("inbox/held-1.eml", PolicyDecision.WARN, WarnReason.UNREACHABLE, (),
-                                                                  request_id), warn_at),
-                              (lambda: graph.mark_email_quarantined("inbox/held-1.eml"), quarantine_at)):
+    for write, written_at in ((lambda: inbox_rows.record_outcome(Channel.EMAIL, "inbox/held-1.eml", PolicyDecision.HOLD, None, (),
+                                                                 request_id), hold_at),
+                              (lambda: inbox_rows.record_outcome(Channel.EMAIL, "inbox/held-1.eml", PolicyDecision.WARN,
+                                                                 WarnReason.UNREACHABLE, (), request_id), warn_at),
+                              (lambda: inbox_rows.mark_quarantined(Channel.EMAIL, "inbox/held-1.eml"), quarantine_at)):
         old_row = read_stored_row(email_key("inbox/held-1.eml"))
         write()
         email_records.append(stream_record_for_row(email_key("inbox/held-1.eml"), old_row, written_at))

@@ -6,7 +6,7 @@ Three modes (`SwarmMode`):
   live     drop each case under inbox/ in the email bucket and invoke the Reader (CDK output ReaderFunctionName) with
            the event Mail Manager sends it, envelope recipient --receiver-address (an enrolled resident), one at a time,
            then read the EMAIL#/REQUEST# rows. A live run proves detection on every case; the ask cap
-           (lambda/pidge_reader/handler.py hold_and_ask) means a hold fans out on channels at most three times per UTC
+           (lambda/shared/pipeline.py hold_and_ask) means a hold fans out on channels at most three times per UTC
            clock hour, so the swarm's hold count restarts when the hour changes.
 
 The live run estimates its worst-case spend (every case read on Haiku and escalated on Opus) and refuses before the first

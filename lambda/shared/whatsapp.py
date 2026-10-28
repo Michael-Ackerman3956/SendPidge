@@ -6,13 +6,8 @@ import json
 import logging
 from dataclasses import dataclass
 
-from shared.enums import (
-    CallPromise,
-    VerdictAnswer,
-    WhatsAppInboundMessageType,
-    WhatsAppInteractiveType,
-    WhatsAppMessageStatus,
-)
+from shared.channel_enums import WhatsAppInboundMessageType, WhatsAppInteractiveType, WhatsAppMessageStatus
+from shared.enums import CallPromise, VerdictAnswer
 from shared.verdict import parse_phone_answer
 
 logger = logging.getLogger(__name__)

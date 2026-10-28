@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from shared import graph, orgs, profiles, reach_points, refund_rules
+from shared import graph, inbox_rows, orgs, profiles, reach_points, refund_rules
 from shared.enums import (
     FINAL_REQUEST_STATES, PHONE_CHANNEL_ANSWERS, ActionOutcome, Channel, Jurisdiction, PaymentRail, RequestState, VerdictAnswer,
 )
@@ -144,11 +144,6 @@ def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool
     return any(hmac.compare_digest(address, sender.value) for address in askable_addresses)
 
 
-def inbound_channel_of(request_row: dict) -> Channel:
-    """Rows written before 2026-10-26 carry no inboundChannel; email was the only inbound channel then."""
-    return Channel(request_row.get("inboundChannel", Channel.EMAIL))
-
-
 def record_answer(
     request_id: str, answer: VerdictAnswer, sender: SenderIdentity, inbound_message_id: str, now: str
 ) -> ActionResult:
@@ -160,14 +155,14 @@ def record_answer(
     if not is_expected_sender(contact_row, sender):
         logger.warning("answer on %s from an unexpected %s sender", request_id, sender.channel)
         return ActionResult(ActionOutcome.WRONG_SENDER, request_row)
-    if answer is VerdictAnswer.YES and sender.channel is inbound_channel_of(request_row):
+    if answer is VerdictAnswer.YES and sender.channel is inbox_rows.inbound_channel_of(request_row):
         logger.warning("a Yes on %s by %s, the channel the message came in on, is refused", request_id, sender.channel)
         return ActionResult(ActionOutcome.WRONG_CHANNEL, request_row, contact_row)
     if not graph.write_answer(request_id, build_answer_update(answer, sender, inbound_message_id, now)):
         logger.info("answer %s on %s not applied (duplicate, late, or wrong state)", answer, request_id)
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row, contact_row)
     if answer is VerdictAnswer.REVERSE:
-        email_row = graph.get_email(request_row["emailId"])
+        email_row = inbox_rows.require_held_row(request_row)
         if not graph.delete_listed_address(email_row["senderAddress"], request_id):  # only the row this request's Confirm wrote
             logger.info("reverse on %s left LIST#address as it was: no Confirm row from this request", request_id)
     return ActionResult(ActionOutcome.RECORDED, graph.get_request(request_id), contact_row, status=STATUS_FOR_ANSWER[answer])
@@ -234,9 +229,9 @@ def confirm_quarantine(
         return ActionResult(ActionOutcome.NOT_ALLOWED, request_row)
     if request_row["status"] != RequestState.DENIED:
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row)
-    email_row = graph.get_email(request_row["emailId"])
+    email_row = inbox_rows.require_held_row(request_row)
     s3_client.put_object_tagging(Bucket=bucket_name, Key=email_row["s3Key"], Tagging={"TagSet": [QUARANTINE_TAG]})
-    if not graph.mark_email_quarantined(request_row["emailId"]):
+    if not inbox_rows.mark_quarantined(inbox_rows.inbound_channel_of(request_row), request_row["emailId"]):
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row, email_row=email_row)
     graph.write_listed_address(email_row["senderAddress"], "Reported after the real contact said they did not send it", request_id)
     return ActionResult(ActionOutcome.RECORDED, request_row, email_row=email_row, status=RequestState.DENIED)

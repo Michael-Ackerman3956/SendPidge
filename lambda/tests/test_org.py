@@ -11,7 +11,7 @@ from dataclasses import replace
 import boto3
 
 from pidge_org import handler as org_actions_handler
-from shared import channels, graph, hourly_counters, orgs, verdict
+from shared import channels, graph, hourly_counters, inbox_rows, orgs, verdict
 from shared.enums import ActionOutcome, Channel, Friction, Intent, PolicyDecision, ReasonCode, RequestState, VerdictAnswer
 from shared.org_ids import org_contact_sort_key_for, org_user_id_for
 from shared.reader_agent import EmailVerdict
@@ -59,9 +59,10 @@ def add_office_to_circle(receiver_address: str, org_id: str) -> graph.Contact:
 
 def new_office_request(email_id: str, office: graph.Contact) -> str:
     """A pending request to Grandma held for her home's office; returns its id."""
-    graph.claim_email(email_id, {"s3Key": email_id, "senderAddress": "billing@sunrise-help.example", "subject": "Invoice",
-                                 "quarantined": False})
-    return graph.request_id_of(graph.create_request(email_id, GRANDMA_ADDRESS, office, OFFICE_VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+    inbox_rows.claim_row(Channel.EMAIL, email_id, {"s3Key": email_id, "senderAddress": "billing@sunrise-help.example", "subject": "Invoice",
+                                                   "quarantined": False})
+    return graph.request_id_of(graph.create_request(email_id, GRANDMA_ADDRESS, office, OFFICE_VERDICT_FIELDS, Friction.SINGLE_TAP, None,
+                                                    Channel.EMAIL))
 
 
 def store_email_to_grandma(message_id: str, from_header: str, subject: str) -> None:
@@ -76,7 +77,7 @@ def read_email_to_grandma(handler, message_id: str, from_header: str, subject: s
     """Runs pidge-reader on one email to Grandma and returns its EMAIL# row."""
     store_email_to_grandma(message_id, from_header, subject)
     handler.handle(inbound_event(message_id, [GRANDMA_ADDRESS]), None)
-    return graph.get_email(f"inbox/{message_id}")
+    return inbox_rows.get_row(Channel.EMAIL, f"inbox/{message_id}")
 
 
 def record_user_pushes(handler, monkeypatch) -> list[tuple[str, dict]]:
@@ -158,9 +159,9 @@ def test_org_name_variant_held_by_gate_1(reader_with_bucket):  # noqa: F811
                  "Message-ID: <msg-billing-0001@sunrise-help.example>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
                  "Your statement is ready.\r\n").encode()
     boto3.client("s3").put_object(Bucket=BUCKET_NAME, Key="inbox/msg-billing-0001", Body=raw_email)
-    handler.reader.model = ScriptedModel(EmailVerdict, {STATEMENT_SUBJECT: [verdict_step(STATEMENT_NO_ASK)]})
+    handler.pipeline.reader.model = ScriptedModel(EmailVerdict, {STATEMENT_SUBJECT: [verdict_step(STATEMENT_NO_ASK)]})
     handler.handle(inbound_event("msg-billing-0001", [GRANDMA_ADDRESS]), None)
-    email_row = graph.get_email("inbox/msg-billing-0001")
+    email_row = inbox_rows.get_row(Channel.EMAIL, "inbox/msg-billing-0001")
     assert email_row["state"] == str(PolicyDecision.HOLD)
     assert str(ReasonCode.UNKNOWN_ADDRESS) in email_row["reasons"]  # only gate 1 adds it: the variant matched the office
     assert str(ReasonCode.LOOKALIKE_SENDER_NAME) not in email_row["reasons"]
@@ -255,7 +256,7 @@ def test_address_removed_from_profile_is_no_longer_known(reader_with_bucket):  #
     office_only_seed = seed_test_org(SUNRISE_ORG_ID, ["ann"], [GRANDMA_ADDRESS])
     orgs.write_org_seed(orgs.validate_org_seed(replace(office_only_seed, verified_addresses=(SUNRISE_OFFICE_ADDRESS, SUNRISE_BILLING_ADDRESS))))
     add_office_to_circle(GRANDMA_ADDRESS, SUNRISE_ORG_ID)
-    handler.reader.model = ScriptedModel(EmailVerdict, {STATEMENT_SUBJECT: [verdict_step(STATEMENT_NO_ASK)] * 2})
+    handler.pipeline.reader.model = ScriptedModel(EmailVerdict, {STATEMENT_SUBJECT: [verdict_step(STATEMENT_NO_ASK)] * 2})
     from_billing = f"Sunrise Commons <{SUNRISE_BILLING_ADDRESS}>"
     known_row = read_email_to_grandma(handler, "msg-billing-0002", from_billing, STATEMENT_SUBJECT)
     assert known_row["state"] != str(PolicyDecision.HOLD) and str(ReasonCode.UNKNOWN_ADDRESS) not in known_row["reasons"]
@@ -277,7 +278,7 @@ def test_former_home_office_neither_asked_nor_answers(reader_with_bucket):  # no
     answered_id, open_id = (new_office_request(f"inbox/office-{number}.eml", office) for number in (1, 2))
     ann = verdict.SenderIdentity(Channel.INAPP, "ann")
     assert verdict.record_answer(answered_id, VerdictAnswer.NO, ann, "inapp:m1", graph.now_timestamp()).outcome is ActionOutcome.RECORDED
-    handler.reader.model = ScriptedModel(EmailVerdict, {INVOICE_SUBJECT: [verdict_step(OFFICE_VERDICT_FIELDS)] * 2})
+    handler.pipeline.reader.model = ScriptedModel(EmailVerdict, {INVOICE_SUBJECT: [verdict_step(OFFICE_VERDICT_FIELDS)] * 2})
     from_office = f"Sunrise Commons <{SUNRISE_OFFICE_ADDRESS}>"
     held_row = read_email_to_grandma(handler, "msg-office-0001", from_office, INVOICE_SUBJECT)
     assert graph.get_request(held_row["requestId"])["contactSK"] == OFFICE_SORT_KEY and office_ask_count(pushes) == 1

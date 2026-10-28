@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from strands import Agent, tool
 
-from shared import graph, recovery_drafts, refund_rules
+from shared import graph, inbox_rows, recovery_drafts, refund_rules
 from shared.agent_run import run_agent_once
 from shared.enums import CaseTrigger, Jurisdiction, PaymentRail, ReaderModelChoice, RequestState
 from shared.reader_agent import build_bedrock_model
@@ -66,7 +66,7 @@ def case_metadata(scope: CaseScope) -> dict:
     request_row = graph.get_request(scope.request_id)
     if request_row is None:
         return {"error": "no such request in this family"}
-    email_row = graph.get_email(request_row["emailId"]) or {}
+    email_row = inbox_rows.require_held_row(request_row)
     contact_row = graph.get_contact_row(request_row["receiverEmail"], request_row["contactSK"]) or {}
     metadata = {field: request_row.get(field) for field in CASE_METADATA_FIELDS}
     contact_name = contact_row.get("contactName") or "the family member"

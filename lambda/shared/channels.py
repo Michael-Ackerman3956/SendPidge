@@ -10,7 +10,7 @@ from decimal import Decimal
 import boto3
 from botocore.exceptions import ClientError
 
-from shared import ask_link, email_ask, graph, orgs, payloads, rcs, verdict, whatsapp
+from shared import ask_link, email_ask, graph, inbox_rows, orgs, payloads, rcs, verdict, whatsapp
 from shared.enums import ActionOutcome, Channel, PushMessageType, RequestState
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ def push_to_user(user_id: str, message: dict, should_remove_gone_connections: bo
 
 def ask_in_app(request_row: dict, contact: graph.Contact, receiver_name: str, destination: str) -> Channel:
     """The request row is already stored, so the contact's PWA shows it on sync; the live push is a bonus."""
-    email_row = graph.get_email(request_row["emailId"])
+    email_row = inbox_rows.require_held_row(request_row)
     card = payloads.verification_card_message(request_row, email_row, receiver_name, RequestState(request_row["status"]))
     delivered_count = push_to_user(destination, card)
     logger.info("in-app ask %s pushed to %d open connection(s)", graph.request_id_of(request_row), delivered_count)
@@ -83,7 +83,7 @@ def get_rcs_client():
 def ask_on_rcs(request_row: dict, contact: graph.Contact, receiver_name: str, destination: str) -> Channel:
     """Rich card with Yes / No chips from the RCS agent; the tap comes back on the two-way SNS topic."""
     request_id = graph.request_id_of(request_row)
-    email_row = graph.get_email(request_row["emailId"]) or {}
+    email_row = inbox_rows.require_held_row(request_row)
     card = rcs.build_rich_card(request_id, email_row, contact.contact_name, receiver_name, os.environ["PIDGE_IMAGE_URL"])
     response = get_rcs_client().send_rcs_message(
         DestinationPhoneNumber=destination,

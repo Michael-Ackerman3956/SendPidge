@@ -8,7 +8,7 @@ import importlib
 import pytest
 
 from shared import graph, orgs
-from shared.enums import Friction
+from shared.enums import Channel, Friction
 from shared.org_enums import AdminRole, OrgVisibility
 from shared.org_preferences import read_org_visibility
 from shared.orgs import AdminSeed, MemberSeed, OrgSeed
@@ -176,7 +176,7 @@ def test_office_removed_with_open_request(org_preference_handler, monkeypatch, c
     seed_circle_contact(GRANDMA_ADDRESS, "jimin")  # a family row is never deleted: one that is gone still raises
     jimin = next(contact for contact in graph.list_contacts(GRANDMA_ADDRESS) if contact.contact_key == "CONTACT#jimin")
     family_request_id = graph.request_id_of(
-        graph.create_request("inbox/family-1.eml", GRANDMA_ADDRESS, jimin, OFFICE_VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+        graph.create_request("inbox/family-1.eml", GRANDMA_ADDRESS, jimin, OFFICE_VERDICT_FIELDS, Friction.SINGLE_TAP, None, Channel.EMAIL))
     graph.get_table().delete_item(Key={"PK": f"RECEIVER#{GRANDMA_ADDRESS}", "SK": "CONTACT#jimin"})
     with pytest.raises(LookupError):
         importlib.import_module("pidge_retry.handler").handle({"requestId": family_request_id, "attempt": 2}, FakeContext())

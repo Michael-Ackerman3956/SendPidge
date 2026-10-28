@@ -172,7 +172,7 @@ def request_events(new_image: dict) -> list[ProjectedEvent]:
 
 
 def is_unreachable_warning(email_image: dict | None) -> bool:
-    """An EMAIL# row the Reader marked WARN unreachable for a request (pidge_reader keep_held_with_warning). A claimed row has
+    """An EMAIL# row the Reader marked WARN unreachable for a request (pipeline.keep_held_with_warning). A claimed row has
     no state yet; a PASS row carries warnReason and requestId as NULL."""
     return (email_image is not None and "state" in email_image and email_image["state"] == PolicyDecision.WARN
             and "warnReason" in email_image and email_image["warnReason"] == WarnReason.UNREACHABLE

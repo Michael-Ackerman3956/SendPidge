@@ -1,4 +1,4 @@
-"""DynamoDB access: contacts, access tokens, WebSocket connections, emails and verification requests."""
+"""DynamoDB access: contacts, access tokens, WebSocket connections and verification requests (inbound rows: shared/inbox_rows.py)."""
 
 import hashlib
 import logging
@@ -13,10 +13,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared.enums import (
-    CaseState, Channel, Friction, ListCategory, ListSource, ListStrength, PolicyDecision, ReasonCode, RequestState, VerifiedVia,
-    WarnReason,
-)
+from shared.enums import CaseState, Channel, Friction, ListCategory, ListSource, ListStrength, RequestState, VerifiedVia
 from shared.org_ids import is_org_contact_sort_key
 from shared.reach_points import ReachPoint, askable_addresses, known_sender_addresses_of, reach_points_of, verified_via_of
 
@@ -25,7 +22,6 @@ HOLD_DURATION_SECONDS = int(os.environ.get("RE_ASK_DELAY_SECONDS", "600"))
 REQUEST_RETENTION_SECONDS = 30 * 24 * 3600
 EMAIL_RETENTION_SECONDS = 90 * 24 * 3600
 CONNECTION_RETENTION_SECONDS = 24 * 3600
-READER_RECLAIM_AFTER_SECONDS = 55  # just under pidge-reader's 60 s Lambda timeout; its first async retry comes a minute after a crash
 CONDITIONAL_CHECK_FAILED = "ConditionalCheckFailedException"
 logger = logging.getLogger(__name__)
 METADATA_SORT_KEY = "META"
@@ -195,65 +191,6 @@ def record_ask_capped(request_id: str) -> None:
     )
 
 
-def claim_email(email_id: str, email_fields: dict) -> bool:
-    """Writes EMAIL#<id> once, stamped claimedAt; False means another run holds this email (see reclaim_abandoned_email)."""
-    try:
-        get_table().put_item(
-            Item={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY, **email_fields, "claimedAt": now_timestamp(),
-                  "ttlEpochSeconds": retention_epoch(EMAIL_RETENTION_SECONDS)},
-            ConditionExpression="attribute_not_exists(PK)",
-        )
-        return True
-    except ClientError as error:
-        if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
-            return False
-        raise
-
-
-def reclaim_abandoned_email(email_id: str, now: datetime) -> bool:
-    """True when a claimed email never got its state and the claim is older than the Reader's timeout: that run crashed, so the
-    retry may carry on (otherwise the row would read "Pidge is reading" for ever and the dead-letter alarm never fire). A claim
-    younger than that is a concurrent duplicate event and stays refused."""
-    email_row = get_email(email_id)
-    if email_row is None or "state" in email_row or "claimedAt" not in email_row:
-        return False
-    claimed_at = datetime.fromisoformat(email_row["claimedAt"].replace("Z", "+00:00"))
-    if (now - claimed_at).total_seconds() < READER_RECLAIM_AFTER_SECONDS:
-        return False
-    get_table().update_item(Key={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY},
-                            UpdateExpression="SET claimedAt = :now", ExpressionAttributeValues={":now": iso_timestamp(now)})
-    return True
-
-
-def record_email_outcome(
-    email_id: str,
-    decision: PolicyDecision,
-    warn_reason: WarnReason | None,
-    reasons: tuple[ReasonCode, ...],
-    request_id: str | None,
-) -> None:
-    get_table().update_item(
-        Key={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY},
-        UpdateExpression="SET #state = :state, warnReason = :warnReason, reasons = :reasons, requestId = :requestId",
-        ExpressionAttributeNames={"#state": "state"},
-        ExpressionAttributeValues={
-            ":state": str(decision),
-            ":warnReason": str(warn_reason) if warn_reason else None,
-            ":reasons": [str(reason) for reason in reasons],
-            ":requestId": request_id,
-        },
-    )
-
-
-def record_email_escalation(email_id: str, escalation_fields: dict) -> None:
-    """EMAIL#.escalation: the second reviewer's answer on a WARN that was cleared (no REQUEST# row exists for it)."""
-    get_table().update_item(
-        Key={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY},
-        UpdateExpression="SET escalation = :escalation",
-        ExpressionAttributeValues={":escalation": decimal_fields(escalation_fields)},
-    )
-
-
 def decimal_fields(fields: dict) -> dict:
     """DynamoDB refuses floats; every float in a model dump becomes a Decimal."""
     return {key: Decimal(str(value)) if isinstance(value, float) else value for key, value in fields.items()}
@@ -261,7 +198,7 @@ def decimal_fields(fields: dict) -> dict:
 
 def create_request(
     email_id: str, receiver_address: str, contact: Contact, verdict_fields: dict,
-    friction: Friction, escalation_fields: dict | None,
+    friction: Friction, escalation_fields: dict | None, inbound_channel: Channel,
 ) -> dict:
     """Stores a pending 'Was this you?' that holds for HOLD_DURATION_SECONDS; returns the stored row."""
     created_at = datetime.now(timezone.utc)
@@ -273,7 +210,7 @@ def create_request(
         "friction": str(friction),
         "escalation": decimal_fields(escalation_fields) if escalation_fields else None,
         "status": str(RequestState.PENDING), "channelsSent": [], "inboundMessageIds": [],
-        "inboundChannel": str(Channel.EMAIL),  # only email comes in today; a Yes on this channel is refused (verdict.record_answer)
+        "inboundChannel": str(inbound_channel),  # where the held row came in; a Yes on this channel is refused (verdict.record_answer)
         "createdAt": iso_timestamp(created_at),
         "expiresAt": iso_timestamp(created_at + timedelta(seconds=HOLD_DURATION_SECONDS)),
         USER_INDEX_PARTITION_KEY: user_index_partition(contact.contact_pwa_user_id, REQUEST_ROW_KIND),
@@ -326,10 +263,6 @@ def get_request(request_id: str) -> dict | None:
     return get_table().get_item(Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY}, ConsistentRead=True).get("Item")
 
 
-def get_email(email_id: str) -> dict | None:
-    return get_table().get_item(Key={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY}).get("Item")
-
-
 def get_contact_row(receiver_address: str, contact_key: str) -> dict | None:
     return get_table().get_item(Key={"PK": f"RECEIVER#{receiver_address}", "SK": contact_key}).get("Item")
 
@@ -349,23 +282,6 @@ def write_answer(request_id: str, update_arguments: dict) -> bool:
     """Applies one conditional answer update; False when the condition refused it."""
     try:
         get_table().update_item(Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY}, **update_arguments)
-        return True
-    except ClientError as error:
-        if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
-            return False
-        raise
-
-
-def mark_email_quarantined(email_id: str) -> bool:
-    """False when the email was already quarantined."""
-    try:
-        get_table().update_item(
-            Key={"PK": f"EMAIL#{email_id}", "SK": METADATA_SORT_KEY},
-            UpdateExpression="SET quarantined = :true, quarantinedAt = :now",
-            ConditionExpression="attribute_exists(PK) AND quarantined = :false",
-            ExpressionAttributeValues={":true": True, ":false": False,
-                                       ":now": iso_timestamp(datetime.now(timezone.utc))},
-        )
         return True
     except ClientError as error:
         if error.response["Error"]["Code"] == CONDITIONAL_CHECK_FAILED:
