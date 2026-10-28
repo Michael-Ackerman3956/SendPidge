@@ -30,6 +30,7 @@ import { applyOrgAdminSyncState, handleOrgActionRejected, hideOrgView, startOrgV
 import { handleOrgBroadcastActionRejected } from "./org-messages-view.js";
 import { applyOrgNoticeSyncState, handleOrgNoticeActionRejected, handleOrgNoticePush } from "./org-notice-view.js";
 import { applyOrgPreferenceState, handleOrgPreferenceActionRejected } from "./org-preference-view.js";
+import { applyPersonalEmailState, handleSettingsActionRejected, hideSettingsView, showSettingsView } from "./settings-view.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
 const ACCESS_TOKEN_QUERY_PARAMETER = "token";
@@ -39,7 +40,7 @@ const ORG_CHANGED_RESYNC_DELAY_MS = 2000;
 let activeUserRole = null;
 let orgResyncTimeoutId = null;
 
-const RECEIVER_TAB = Object.freeze({ INBOX: "inbox", CASES: "cases", CIRCLE: "circle", PIDGE: "pidge" });
+const RECEIVER_TAB = Object.freeze({ INBOX: "inbox", CASES: "cases", CIRCLE: "circle", PIDGE: "pidge", SETTINGS: "settings" });
 let activeReceiverTab = RECEIVER_TAB.INBOX;
 let isOnboardingOpen = false;
 let hasUnseenHold = false;
@@ -65,12 +66,14 @@ const tabButtons = Object.freeze({
   [RECEIVER_TAB.CASES]: document.getElementById("tab-cases"),
   [RECEIVER_TAB.CIRCLE]: document.getElementById("tab-circle"),
   [RECEIVER_TAB.PIDGE]: document.getElementById("tab-pidge"),
+  [RECEIVER_TAB.SETTINGS]: document.getElementById("tab-settings"),
 });
 const tabViews = Object.freeze({
   [RECEIVER_TAB.INBOX]: { show: showReceiverView, hide: hideReceiverView },
   [RECEIVER_TAB.CASES]: { show: showCasesView, hide: hideCasesView },
   [RECEIVER_TAB.CIRCLE]: { show: showCircleView, hide: hideCircleView },
   [RECEIVER_TAB.PIDGE]: { show: showPidgeView, hide: hidePidgeView },
+  [RECEIVER_TAB.SETTINGS]: { show: showSettingsView, hide: hideSettingsView },
 });
 
 function renderInboxTabDot() {
@@ -162,6 +165,7 @@ function handleSyncStatePush(pushMessage) {
       applyCircleSyncState(pushMessage.circle, pushMessage.contactVerification);
       applyOrgPreferenceState(pushMessage.orgPreference);
       applyOrgNoticeSyncState(pushMessage.orgNotices);
+      applyPersonalEmailState(pushMessage.personalEmail);
       applyReceiverSyncState(pushMessage.emails, pushMessage.messages);
       applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);
       applyChatSyncState(pushMessage.chat, pushMessage.chatEnabled);
@@ -204,6 +208,7 @@ function handleActionRejectedPush(pushMessage) {
   }
   if (activeUserRole === USER_ROLE.RECEIVER && handleOnboardingActionRejected(pushMessage.reason)) return; // the form shows why
   if (activeUserRole === USER_ROLE.RECEIVER && handleComposerActionRejected(pushMessage.reason)) return; // the composer shows why
+  if (activeUserRole === USER_ROLE.RECEIVER && handleSettingsActionRejected(pushMessage.reason)) return; // Settings shows why
   if (activeUserRole === USER_ROLE.ORG_ADMIN && handleOrgBroadcastActionRejected(pushMessage.reason)) return; // the alert composer shows why
   const isAlreadyRecorded = pushMessage.reason === ACTION_REJECTED_REASON.NOT_APPLIED;
   showActionStatusMessage(isAlreadyRecorded ? ACTION_STATUS_MESSAGE.ALREADY_RECORDED : ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
@@ -244,6 +249,7 @@ const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.CIRCLE_STATE]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.ORG_CHANGED]: [USER_ROLE.ORG_ADMIN],
   [PUSH_MESSAGE_TYPE.ORG_NOTICE]: [USER_ROLE.RECEIVER],
+  [PUSH_MESSAGE_TYPE.PERSONAL_EMAIL_STATE]: [USER_ROLE.RECEIVER],
 });
 
 function isPushForActiveRole(pushMessageType) {
@@ -309,6 +315,9 @@ function handlePushMessage(pushMessage) {
       break;
     case PUSH_MESSAGE_TYPE.ORG_NOTICE:
       handleOrgNoticePush(pushMessage.notice);
+      break;
+    case PUSH_MESSAGE_TYPE.PERSONAL_EMAIL_STATE:
+      applyPersonalEmailState(pushMessage.personalEmail);
       break;
     default:
       console.warn("SendPidge: ignoring push of unknown type", pushMessageType);

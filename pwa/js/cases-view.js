@@ -14,7 +14,11 @@ const PAYMENT_RAIL_LABELS = Object.freeze({
   [PAYMENT_RAIL.GIFT_CARD]: "Gift card",
   [PAYMENT_RAIL.CRYPTO]: "Crypto",
 });
-const DEFAULT_CURRENCY = "USD";
+// The report's currency follows the country she picks, so a Korean wire is never drafted in dollars.
+const JURISDICTION_CURRENCIES = Object.freeze({
+  [JURISDICTION.US]: "USD", [JURISDICTION.KR]: "KRW", [JURISDICTION.GB]: "GBP", [JURISDICTION.AU]: "AUD", [JURISDICTION.CA]: "CAD",
+  [JURISDICTION.SG]: "SGD", [JURISDICTION.JP]: "JPY", [JURISDICTION.FR]: "EUR", [JURISDICTION.DE]: "EUR",
+});
 const SUBTAB_LABELS = Object.freeze({ [CASES_TAB.OPEN]: "Open", [CASES_TAB.CLOSED]: "Closed", [CASES_TAB.NOTES]: "Notes" });
 
 const PHONE_ICON_PATH = "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z";
@@ -267,6 +271,12 @@ function handleReportSubmitted(submitEvent) {
   submitEvent.preventDefault();
   clearActionStatusMessage();
   const fields = new FormData(submitEvent.currentTarget);
+  const currency = JURISDICTION_CURRENCIES[fields.get("jurisdiction")];
+  if (currency === undefined) {
+    console.error("SendPidge: no currency for the picked country", fields.get("jurisdiction"));
+    showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
+    return;
+  }
   const report = {
     action: CLIENT_ACTION.REPORT_PAYMENT,
     requestId: fields.get("requestId"),
@@ -274,7 +284,7 @@ function handleReportSubmitted(submitEvent) {
     paymentRail: fields.get("paymentRail"),
     bank: String(fields.get("bank")).trim(),
     amount: String(fields.get("amount")),
-    currency: DEFAULT_CURRENCY,
+    currency,
     paidAt: `${fields.get("paidOn")}T12:00:00Z`,
     payeeHint: String(fields.get("payeeHint") ?? "").trim(),
   };
@@ -344,9 +354,12 @@ export function handleCaseStatePush(caseRow) {
 export function handleCaseNotePush(note) {
   if (!isValidNote(note)) return;
   notesById.set(note.noteId, note);
-  if (note.recoveryPack) {
+  if (note.recoveryPack) {  // the pack she is waiting for opens on its own, so she never has to find the Notes tab
     isReportInFlight = false;
     isReportFormOpen = false;
+    activeCasesTab = CASES_TAB.NOTES;
+    renderCasesScreen();
+    return;
   }
   renderNotes();
   renderReportArea();

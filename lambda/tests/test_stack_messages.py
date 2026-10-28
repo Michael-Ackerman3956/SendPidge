@@ -1,6 +1,7 @@
 """CDK assertions on pidge-inbound (slice 15): its topic subscriptions with SourceArn-scoped invoke permissions, its dead-letter
 queue and alarm, its pipeline environment, and the SMS topic that exists only with smsEnabled; and on pidge-send (slice 16): its
-scoped table writes, SES From condition and phone-channel grants (its route: test_routes.py). test_stack.py is at its line limit,
+scoped table writes, SES From condition and phone-channel grants (its route: test_routes.py); and pidge-dispatch's SES From pin
+with pidge-verdict's PROTECTED_MAIL_DOMAINS (Settings → personal email). test_stack.py is at its line limit,
 so these live here and reuse its helpers and the session synth (conftest.py)."""
 import fnmatch
 import json
@@ -148,3 +149,18 @@ def test_send_function_writes_only_message_and_sendrate_rows(synthesized_templat
     send_email_statements = [statement for statement in statements if statement_grants(statement, "ses:SendEmail")]
     assert [(statement["Resource"], statement["Condition"]) for statement in send_email_statements] == [
         (SEND_EMAIL_IDENTITY_ARN, {"StringLike": {"ses:FromAddress": RESIDENT_FROM_ADDRESS_PATTERN}})]
+
+
+DISPATCH_HANDLER = "pidge_dispatch.handler.handle"
+
+
+def test_dispatch_sends_email_only_as_pidge_and_verdict_knows_our_mail_domains(synthesized_template):
+    """The recovery pack goes to each resident's own saved personal email, so pidge-dispatch's SES grant pins the sender
+    (cdk.json receiptSender), not the recipient; pidge-verdict gets our own domains, which Settings refuses as a personal email."""
+    _dispatch_logical_id, dispatch_function = find_function_by_handler(synthesized_template, DISPATCH_HANDLER)
+    statements = collect_role_allow_statements(synthesized_template, dispatch_function["Properties"]["Role"]["Fn::GetAtt"][0])
+    send_email_statements = [statement for statement in statements if statement_grants(statement, "ses:SendEmail")]
+    assert [(statement["Resource"], statement["Condition"]) for statement in send_email_statements] == [
+        (SEND_EMAIL_IDENTITY_ARN, {"StringEquals": {"ses:FromAddress": "pidge@sendpidge.com"}})]
+    _verdict_logical_id, verdict_function = find_function_by_handler(synthesized_template, VERDICT_HANDLER)
+    assert verdict_function["Properties"]["Environment"]["Variables"]["PROTECTED_MAIL_DOMAINS"] == "sendpidge.com,sendpidge.com"

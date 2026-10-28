@@ -1,0 +1,22 @@
+/* Grandma's Settings tab (js/settings-view.js): her protected address and her personal email; app.css is at its size limit. */
+.settings-card { padding: 4px 14px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); }
+.settings-row { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.settings-row:last-child { border-bottom: none; }
+.settings-row:not(.settings-personal-email) { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; min-height: 44px; }
+.settings-row-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
+.settings-label { font-size: 15px; font-weight: 600; }
+.settings-value { font-size: 14px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.settings-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-top: 4px; font-size: 13px; color: var(--text-tertiary); }
+.settings-form { display: flex; gap: 8px; margin-top: 10px; }
+.settings-input { flex: 1; min-width: 0; }
+.settings-submit { width: auto; min-height: 44px; padding: 0 18px; border-radius: 12px; font-size: 15px; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 0 16px; margin-top: 4px; }
+.settings-link-button { min-height: 44px; padding: 0; border: none; background: none; color: var(--teal-light); font: inherit; font-size: 14px; font-weight: 700; }
+.settings-link-button:disabled, .settings-submit:disabled { opacity: 0.5; }
+.settings-link-button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.settings-error { margin-top: 8px; }
+@media (min-width: 900px) {
+  #settings-screen { max-width: 640px; }
+  #tab-settings { margin-top: auto; } /* Settings sits at the bottom of the rail, above her name */
+  #tab-settings:not([hidden]) ~ .rail-me { margin-top: 0; }
+}

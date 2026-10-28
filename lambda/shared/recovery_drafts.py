@@ -14,6 +14,7 @@ PAYMENT_RAIL_LABELS = {
     PaymentRail.ZELLE: "Zelle transfer",
     PaymentRail.WIRE: "bank transfer",
     PaymentRail.GIFT_CARD: "gift card purchase",
+    PaymentRail.CRYPTO: "cryptocurrency payment",
 }
 PACK_EMAIL_SUBJECT = "Pidge: your recovery pack"
 # What the family member did when Pidge asked, by the request's final state; a draft never claims an answer nobody gave.

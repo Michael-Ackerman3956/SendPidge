@@ -229,6 +229,8 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
       TABLE_NAME: shared.table.tableName,
       EMAIL_BUCKET: shared.emailBucket.bucketName,
       RECEIPT_SENDER: settings.receiptSender,
+      // Settings refuses a personal email on our own domains: mail there would re-enter Mail Manager.
+      PROTECTED_MAIL_DOMAINS: [settings.receiverDomain, settings.sendingDomain].join(","),
       WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,
       RCS_TOPIC_ARN: dependencies.topics.rcsInboundTopic.topicArn,
       WHATSAPP_TOPIC_ARN: dependencies.topics.whatsappInboundTopic.topicArn,

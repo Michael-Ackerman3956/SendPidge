@@ -13,7 +13,7 @@ import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.config import Config
 
-from shared import case_agent, channels, chat, chat_agent, chat_email, graph, payloads, profiles, recovery_drafts
+from shared import case_agent, channels, chat, chat_agent, chat_email, graph, payloads, personal_email, profiles, recovery_drafts
 from shared.enums import (
     FINAL_REQUEST_STATES, AgentInvocationKind, CaseAgentRuntime, CaseState, CaseTrigger, ChatVia, GuardrailOutcome,
     ReaderModelChoice,
@@ -99,8 +99,8 @@ def mailbox_resident_address() -> str:
 
 
 def write_and_push_note(scope: case_agent.CaseScope, resident: profiles.ReceiverProfile) -> None:
-    """Runs the agent, stores the note, mails a recovery pack (mailbox resident only), tells the resident's PWA. A note the
-    output gate refuses is stored as case_agent.CASE_NOTE_REFUSED_TEXT, with its pack mailed and the push sent. A failed run (AgentRunError,
+    """Runs the agent, stores the note, mails a recovery pack (to her own mailbox, when she has one), tells the resident's PWA.
+    A note the output gate refuses is stored as case_agent.CASE_NOTE_REFUSED_TEXT, with its pack mailed and the push sent. A failed run (AgentRunError,
     an AgentCore error) writes nothing and raises: the stream retries it, then sends it to DispatchDeadLetterQueue."""
     if CASE_AGENT_RUNTIME is CaseAgentRuntime.LAMBDA:
         agent = case_agent.build_case_agent(CASE_AGENT_MODEL, scope)
@@ -114,18 +114,30 @@ def write_and_push_note(scope: case_agent.CaseScope, resident: profiles.Receiver
     logger.info("case note for %s (%s) stored; pushed to %d connection(s)", scope.request_id, scope.trigger, delivered_count)
 
 
-def mail_recovery_pack(note_row: dict, resident: profiles.ReceiverProfile) -> dict:
-    """The pack goes to her own mailbox (the only SES recipient this role may use), and only when the note's resident is the
-    mailbox resident; any other resident's pack stays in-app on the unstamped NOTE# row. A refused send is logged, the note
-    still reaches the app, and the row stays unstamped so the screen does not claim a copy was sent."""
+def recovery_pack_recipient(note_row: dict, resident: profiles.ReceiverProfile) -> str | None:
+    """Her personal email saved in Settings; else, for the mailbox resident only, RECEIVER_MAILBOX; else None and the pack
+    stays in-app. The address always comes from her own PROFILE row or the deployment, never from the note or a model."""
+    saved_personal_email = personal_email.verified_personal_email(resident.receiver_address)
+    if saved_personal_email is not None:
+        return saved_personal_email
     if resident.receiver_address != mailbox_resident_address():
-        logger.info("recovery pack for %s stays in-app: its resident is not the mailbox resident", note_row["PK"])
-        return note_row
+        logger.info("recovery pack for %s stays in-app: no personal email, and not the mailbox resident", note_row["PK"])
+        return None
     if not RECEIVER_MAILBOX:
         logger.warning("RECEIVER_MAILBOX is not set; recovery pack for %s not mailed", note_row["PK"])
+        return None
+    return RECEIVER_MAILBOX
+
+
+def mail_recovery_pack(note_row: dict, resident: profiles.ReceiverProfile) -> dict:
+    """The pack goes to her own mailbox (recovery_pack_recipient); with none, it stays in-app on the unstamped NOTE# row. A
+    refused send is logged, the note still reaches the app, and the row stays unstamped so the screen does not claim a copy was
+    sent."""
+    recipient = recovery_pack_recipient(note_row, resident)
+    if recipient is None:
         return note_row
     try:
-        recovery_drafts.send_pack_email(get_ses_client(), RECEIPT_SENDER, RECEIVER_MAILBOX, note_row["recoveryPack"])
+        recovery_drafts.send_pack_email(get_ses_client(), RECEIPT_SENDER, recipient, note_row["recoveryPack"])
     except Exception:
         logger.exception("recovery pack email for %s failed", note_row["PK"])
         emit_count_metric(PACK_MAIL_FAILED_METRIC_NAME)
@@ -136,6 +148,7 @@ def mail_recovery_pack(note_row: dict, resident: profiles.ReceiverProfile) -> di
     except Exception:  # the email went out; only the stamp is missing, so the screen does not claim a copy was sent
         logger.exception("recovery pack for %s was mailed but the packMailedAt stamp failed", note_row["PK"])
         return note_row
+    logger.info("recovery pack for %s mailed", note_row["PK"])
     return {**note_row, "packMailedAt": mailed_at}
 
 

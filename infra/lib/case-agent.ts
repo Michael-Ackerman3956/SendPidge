@@ -145,16 +145,18 @@ export function buildDispatchFunction(
   dispatchFunction.addToRolePolicy(
     new PolicyStatement({ actions: ["bedrock:ApplyGuardrail"], resources: [guardrail.chatGuardrail.attrGuardrailArn] }),
   );
-  // Answers to emailed questions and the recovery pack go to her real mailbox only.
+  // Answers to emailed questions go to RECEIVER_MAILBOX; the recovery pack goes to the resident's own personal email (saved in
+  // Settings only after its code came back, read from her PROFILE row in pidge_dispatch) or RECEIVER_MAILBOX. Recipients vary per
+  // resident, so the pin is on the sender: only Pidge's own address.
   dispatchFunction.addToRolePolicy(
-    buildSendEmailStatement(stack, settings.sendingDomain, { "ForAllValues:StringEquals": { "ses:Recipients": [settings.receiverMailbox] } }),
+    buildSendEmailStatement(stack, settings.sendingDomain, { StringEquals: { "ses:FromAddress": settings.receiptSender } }),
   );
   const dispatchDeadLetterQueue = buildDispatchDeadLetterQueue(stack);
   // Four filters: a REQUEST# META whose new status is final, a CASE# META insert, a CASE# META closed, or a new
   // question row (CHAT# MSG# with role grandma; replies, guardrailHit updates and RATE# counters never match).
   dispatchFunction.addEventSource(new DynamoEventSource(shared.table, {
     startingPosition: StartingPosition.LATEST,
-    batchSize: 5,
+    batchSize: 1,  // one agent run (13-23 s) per invocation, so a queued burst never outlasts the timeout mid-push
     retryAttempts: 2,
     bisectBatchOnError: true,
     onFailure: new SqsDlq(dispatchDeadLetterQueue),

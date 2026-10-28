@@ -4,6 +4,8 @@
 
 Built on **Amazon SES Mail Manager**, **AWS End User Messaging Social (WhatsApp)**, **Amazon Connect**, **Strands Agents on Amazon Bedrock** and **Amazon Bedrock AgentCore**, for the AWS CDS Agentic AI Partner Hackathon (October 2026).
 
+**Demo video (3 min):** https://youtu.be/rCe4ztLSmQ4
+
 > Grandma, Jimin and the bank are invented, and one real phone plays every party in the demo ([which moments are staged](#demo)). SendPidge never moves money and sends nothing to a bank. Pidge is the character in the app; SendPidge is the product.
 
 ## Architecture
@@ -78,7 +80,7 @@ A HOLD writes a request row in **DynamoDB**, then asks in three places at once:
 
 - "I already paid" asks the country and the payment method. Code opens the case.
 - The case agent on **Bedrock AgentCore** (Runtime plus Memory of the family) writes the note.
-- Code builds the pack from the rule book: steps with who to contact and a deadline, a call script, a dispute letter, a police report. It goes to her own mailbox.
+- Code builds the pack from the rule book: steps with who to contact and a deadline, a call script, a dispute letter, a police report. It goes to the personal email she saves in Settings.
 - What it does not do: the case agent has no tool that sends. Nothing is filed with the bank, the police or any agency; Grandma reads the drafts and makes the calls herself.
 - Her questions go to a chat agent behind a **Bedrock Guardrail**.
 
@@ -136,8 +138,16 @@ One AWS CDK stack (`infra/`). Set up outside it: the Amazon Connect instance and
 
 ## Demo
 
-- **Video:** <!-- founder: Devpost video link -->
-- **Try it:** <!-- founder: the judge inbox link goes in the Devpost testing instructions, not here -->
+- **Video:** https://youtu.be/rCe4ztLSmQ4
+- **Try it (judges):** open the judge link from the Devpost testing instructions (kept out of this public repo). No setup or code needed; everything is in the app. You are the protected resident, `judge@sendpidge.com`. The three emails already in the inbox are built-in samples.
+  1. **Circle → Add someone.** Name: your own first name. Add your WhatsApp number and a second email address of yours (not the one you will send from). Press **Add to my circle**.
+  2. The next screen shows a note to your contact with a code. Press **Copy**, open the link from the note in a private window: that is your contact's screen. Then press **Demo: <name> replies <code>** to verify the contact (nothing is sent).
+  3. From your own mailbox, email `judge@sendpidge.com`, signed with that first name, asking for money.
+  4. Within about ten seconds **Inbox** shows the email held. SendPidge asks your contact on WhatsApp and by email; the contact's screen always works even if WhatsApp does not arrive.
+  5. Tap **No** on the contact's screen (or in WhatsApp). The resident's screen reads "Not <name>".
+  6. Optional: **Settings → Personal email**, type your address, **Send code**, enter the 6-digit code from that inbox, **Save**. Recovery packs from **Cases** ("I already paid") are mailed there.
+
+  If nobody answers: SendPidge asks again at 10 minutes, marks "did not answer" at 20, and the email stays held. One inbox is shared by every judge; a name already in the circle is refused, so use your own first name.
 
 | Moment | Staged or live |
 |---|---|
@@ -145,13 +155,12 @@ One AWS CDK stack (`infra/`). Set up outside it: the Amazon Connect instance and
 | Jimin gets the WhatsApp ask and taps No; Grandma's screen changes | Live, one phone playing Jimin |
 | SendPidge calls Jimin; he answers by voice or keypad | Live, one phone playing Jimin (proven 2026-10-28: a No by voice, a Yes then keypad 1) |
 | The scammer, Jimin and the other senders | Staged: the same founder phone and mailboxes play every party |
-| <!-- founder: one row per filmed moment after the cut --> | |
 
 ## Evidence
 
 | Measure | Result |
 |---|---|
-| Offline tests (`bash scripts/run_tests.sh`) | 826 passed, 6 expected failures (2026-10-28) |
+| Offline tests (`bash scripts/run_tests.sh`) | 870 passed, 6 expected failures (2026-10-29) |
 | Attacker swarm, offline (`scripts/swarm.py --generate --seed 7`; scripted verdicts, no model) | 504 of 504 attacks caught; 0 of 288 benign controls held |
 | Swarm: camouflage named at parse time | 531 of 748. Not flagged by design (published misses): links behind a trusted-service redirect, a QR code in a PDF, a callback number only, a calendar invite |
 | Swarm, live on the deployed pipeline (2026-10-25, 10 emails into the real bucket) | 8 of 8 attacks held or warned; 0 of 2 controls held; 0 outbound summaries with a URL, number or account |
@@ -200,7 +209,7 @@ Seed the rule book and the sample lists with `scripts/seed_rows.py`, and a famil
 - Scam lists are sample data; the KISA and AMF feed sync is off.
 - The judge inbox is shared by every judge, and a circle holds 10 contacts.
 - The office sees one home; outreach by WhatsApp or email, events and reminders are not built.
-- Not checked live yet: WhatsApp texts into Grandma's inbox and her replies from the composer; the home's dashboard; passkey sign-in.
+- Not checked live yet: WhatsApp texts into Grandma's inbox and her replies from the composer; the home's safety alert and its "Got it" / "Need help" answers; signing in with a passkey. The "warned" and "contact unreachable" states have no writer yet, so the dashboard never shows them.
 <!-- founder: update after the live checks -->
 
 ## Roadmap

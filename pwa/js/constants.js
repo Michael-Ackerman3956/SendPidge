@@ -16,6 +16,7 @@ export const PUSH_MESSAGE_TYPE = Object.freeze({
   CONTACT_EDITED: "contact_edited",
   ORG_CHANGED: "org_changed",
   ORG_NOTICE: "org_notice",
+  PERSONAL_EMAIL_STATE: "personal_email_state",
 });
 
 export const CLIENT_ACTION = Object.freeze({
@@ -38,6 +39,8 @@ export const CLIENT_ACTION = Object.freeze({
   SEND_MESSAGE: "send_message",
   ORG_BROADCAST_SEND: "org_broadcast_send",
   ORG_BROADCAST_ACK: "org_broadcast_ack",
+  SET_PERSONAL_EMAIL: "set_personal_email",
+  CONFIRM_PERSONAL_EMAIL: "confirm_personal_email",
 });
 
 // What the resident's home may see (orgPreference.visibility). Mirrors OrgVisibility in lambda/shared/org_enums.py.
@@ -223,6 +226,8 @@ export const ACTION_REJECTED_REASON = Object.freeze({
   THREAD_HELD: "thread_held",
   SEND_FAILED: "send_failed",
   TEXT_REFUSED: "text_refused",
+  WRONG_CODE: "wrong_code",
+  CODE_EXPIRED: "code_expired",
 });
 
 export const POLICY_DECISION = Object.freeze({

@@ -58,7 +58,7 @@ const UPDATED_LINE_REFRESH_INTERVAL_MS = 60 * 1000;
 const pageElements = {
   topbarTitle: document.getElementById("topbar-title"),
   sidePanel: document.getElementById("receiver-tabs"),
-  receiverTabButtons: ["tab-inbox", "tab-cases", "tab-circle", "tab-pidge"].map((buttonId) => document.getElementById(buttonId)),
+  receiverTabButtons: ["tab-inbox", "tab-cases", "tab-circle", "tab-pidge", "tab-settings"].map((buttonId) => document.getElementById(buttonId)),
   railMeInitial: document.getElementById("rail-me-initial"),
   railMeName: document.getElementById("rail-me-name"),
   messagesScreen: document.getElementById("org-messages-screen"),

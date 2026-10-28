@@ -20,6 +20,7 @@ def build_verdict_handler(monkeypatch) -> tuple:
     """pidge-verdict as deployed (env names from the CDK stack); pushes to the caller's socket are captured as wire JSON."""
     monkeypatch.setenv("EMAIL_BUCKET", BUCKET_NAME)
     monkeypatch.setenv("RECEIPT_SENDER", "pidge@sendpidge.example")
+    monkeypatch.setenv("PROTECTED_MAIL_DOMAINS", "sendpidge.example")
     monkeypatch.setenv("RCS_TOPIC_ARN", "arn:aws:sns:us-east-1:123456789012:rcs")
     monkeypatch.setenv("WHATSAPP_TOPIC_ARN", "arn:aws:sns:us-east-1:123456789012:whatsapp")
     monkeypatch.setenv("WEBSOCKET_ENDPOINT", "https://example.com")

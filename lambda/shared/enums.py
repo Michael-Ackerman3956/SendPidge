@@ -266,6 +266,7 @@ class PushMessageType(StrEnum):
     CONTACT_EDITED = "contact_edited"        # to her own socket once: the edit is saved; a note and code when it added a number
     ORG_CHANGED = "org_changed"              # to an org's admins: the projection wrote their org's rows (no data; the PWA re-syncs)
     ORG_NOTICE = "org_notice"                # to a resident: her home's safety alert, or her answer to it
+    PERSONAL_EMAIL_STATE = "personal_email_state"  # to the receiver: her Settings email rows (saved, or waiting for a code)
 
 
 class ClientAction(StrEnum):
@@ -291,6 +292,8 @@ class ClientAction(StrEnum):
     SEND_MESSAGE = "send_message"                      # the receiver: one message to someone in her circle (send_message route)
     ORG_BROADCAST_SEND = "org_broadcast_send"          # a sender admin: one in-app safety alert to every member (its own route)
     ORG_BROADCAST_ACK = "org_broadcast_ack"            # the receiver: Got it / Need help on her home's alert
+    SET_PERSONAL_EMAIL = "set_personal_email"          # the receiver: a new personal email; Pidge mails it a code
+    CONFIRM_PERSONAL_EMAIL = "confirm_personal_email"  # the receiver: the code from that email, which saves the address
 
 
 class PushNotice(StrEnum):
@@ -401,11 +404,13 @@ class ActionOutcome(StrEnum):
     CIRCLE_FULL = "circle_full"        # add_contact: the circle has CIRCLE_MAXIMUM_SIZE people
     LAST_CHECKED_NUMBER = "last_checked_number"  # edit_contact: the edit drops every checked WhatsApp number
     NOT_A_CONTACT = "not_a_contact"    # send_message: the address is not one Pidge may ask of anyone in her circle
-    OVER_CAP = "over_cap"              # send_message: the hour's sends are used up, or the counter could not be written
+    OVER_CAP = "over_cap"              # send_message, set_personal_email: the hour's sends are used up, or the counter could not be written
     CHANNEL_CLOSED = "channel_closed"  # send_message: no WhatsApp message from that number in the last 24 hours
     THREAD_HELD = "thread_held"        # send_message: a message on that conversation is held, waiting for an answer
-    SEND_FAILED = "send_failed"        # send_message: the provider refused or failed; the row is kept as failed
+    SEND_FAILED = "send_failed"        # send_message: the provider refused or failed, the row is kept as failed; set_personal_email: the code email failed
     TEXT_REFUSED = "text_refused"      # org_broadcast_send: a link, address, handle, long number or a character outside the allow-list
+    WRONG_CODE = "wrong_code"          # confirm_personal_email: not the code that was mailed
+    CODE_EXPIRED = "code_expired"      # confirm_personal_email: the code expired or its attempts are used up; send a new one
 
 
 class CaseState(StrEnum):

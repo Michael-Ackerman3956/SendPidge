@@ -1,7 +1,7 @@
 """WebSocket $default: sync (an org admin's in org_admin_handlers), the contact's Yes / No / Undo / Reverse, the receiver's
 Confirm, case actions and questions to Pidge, a browser's Web Push subscription, the receiver's Add-someone form and demo
 code reply (circle_handlers), the receiver's home visibility, office row and answer to her home's alert
-(org_preference_handlers); SNS: phone-channel taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's
+(org_preference_handlers), her personal email in Settings (settings_handlers); SNS: phone-channel taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's
 reply to the ask by email; Amazon Connect: the AI agent's session facts and Jimin's keypad answer on Pidge's call
 (voice_answers).
 
@@ -13,14 +13,15 @@ import json
 import logging
 import os
 from collections.abc import Callable
+from datetime import datetime, timezone
 from urllib.parse import unquote_plus
 
 import boto3
 
-from pidge_verdict import circle_handlers, org_admin_handlers, org_preference_handlers, voice_answers
+from pidge_verdict import circle_handlers, org_admin_handlers, org_preference_handlers, settings_handlers, voice_answers
 from shared import (
     cases, channels, chat, email_ask, graph, inbox_rows, org_broadcasts, org_preferences, orgs, payloads, profiles, push_subscriptions,
-    rcs, schedules, verdict, whatsapp,
+    personal_email, rcs, schedules, verdict, whatsapp,
 )
 from shared.enums import (
     ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, EmailedAnswerOutcome, PushMessageType, RequestState,
@@ -163,7 +164,8 @@ def receiver_sync_message(resident: ReceiverProfile) -> dict:
             "circle": circle_handlers.circle_entries(circle_settings, resident),
             "contactVerification": circle_handlers.verification_flags(circle_settings),
             "orgPreference": org_preferences.org_preference_for_sync(resident),
-            "orgNotices": org_broadcasts.notices_for_resident(resident)}
+            "orgNotices": org_broadcasts.notices_for_resident(resident),
+            "personalEmail": personal_email.personal_email_for_sync(resident, datetime.now(timezone.utc))}
 
 
 def contact_sync_message(user_id: str) -> dict:
@@ -448,6 +450,8 @@ RESIDENT_ACTION_HANDLERS = {  # each acts for the caller's own resident, resolve
     ClientAction.ADD_ORG_CONTACT: org_preference_handlers.handle_add_org_contact,
     ClientAction.REMOVE_ORG_CONTACT: org_preference_handlers.handle_remove_org_contact,
     ClientAction.ORG_BROADCAST_ACK: org_preference_handlers.handle_org_broadcast_ack,
+    ClientAction.SET_PERSONAL_EMAIL: settings_handlers.handle_set_personal_email,
+    ClientAction.CONFIRM_PERSONAL_EMAIL: settings_handlers.handle_confirm_personal_email,
 }
 ACTION_ROUTES = {  # any role; the caller is the connection's user, never an id from the body
     ClientAction.SYNC: route_sync,
