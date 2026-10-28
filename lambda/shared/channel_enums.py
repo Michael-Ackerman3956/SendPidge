@@ -47,3 +47,4 @@ class VoiceFlowStep(StrEnum):
     """The static voiceStep parameter on the Connect flow's Lambda block: which step of Pidge's call invoked pidge-verdict."""
 
     RECORD_ANSWER = "record_answer"
+    LOAD_FACTS = "load_facts"  # the step before the AI bot: writes the agent's session facts

@@ -389,7 +389,9 @@ class ActionOutcome(StrEnum):
     RECORDED = "recorded"
     UNKNOWN_REQUEST = "unknown_request"
     WRONG_SENDER = "wrong_sender"  # the reply did not come from the contact's own channel
-    WRONG_CHANNEL = "wrong_channel"  # a Yes by email, or on the held message's own reach channel (verdict.is_yes_refused_on)
+    # a Yes by email, or on the held message's own reach channel (verdict.is_yes_refused_on); also the call's load_facts step
+    # on a hold where a voice Yes is refused, so the flow takes the keypad
+    WRONG_CHANNEL = "wrong_channel"
     NOT_APPLIED = "not_applied"    # duplicate, redelivered, or a Yes after the hold or after a No
     NOT_ALLOWED = "not_allowed"    # this user may not do this action
     BAD_MESSAGE = "bad_message"    # unparseable or missing fields

@@ -148,8 +148,8 @@ def test_number_not_a_checked_point_is_refused(voice_handler):
     assert recorded["pushes"] == []
 
 
-@pytest.mark.parametrize("event_fields", [{"keypad_digit": "3"}, {"keypad_digit": None}, {"voice_step": "load_facts"}],
-                         ids=["key-3", "no-key", "load-facts-step"])
+@pytest.mark.parametrize("event_fields", [{"keypad_digit": "3"}, {"keypad_digit": None}, {"voice_step": "transfer"}],
+                         ids=["key-3", "no-key", "unknown-step"])
 def test_other_digits_or_unknown_step_record_nothing(voice_handler, event_fields):
     handler, recorded = voice_handler
     request_id = hold_called_on(Channel.EMAIL)

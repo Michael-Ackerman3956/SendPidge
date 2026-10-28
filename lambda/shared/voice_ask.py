@@ -1,6 +1,7 @@
-"""The keypad call on the re-ask and its hang-up. Pidge calls the contact's first checked RCS number once (pidge-retry,
-attempt 1) through Amazon Connect, speaking only a fixed sentence, the resident's name and a channel phrase; the hourly cap
-and a hang-up booked before the call bound the cost. Every failure is logged with ids only and counted, not raised."""
+"""The call on the re-ask and its hang-up. Pidge calls the contact's first checked RCS number once (pidge-retry, attempt 1)
+through Amazon Connect, carrying the keypad prompt and the AI agent's opening line, each only fixed words, the resident's name
+and a channel phrase; the hourly cap and a hang-up booked before the call bound the cost. Every failure is logged with ids
+only and counted, not raised."""
 
 import logging
 import os
@@ -19,13 +20,14 @@ VOICE_ASK_FAILED_METRIC_NAME = "VoiceAskFailed"
 CALL_COUNTER_PARTITION_KEY = "CALLRATE#stack"
 RING_TIMEOUT_SECONDS = 30
 INSTANCE_ARN_PATTERN = re.compile(r"arn:aws:connect:(?P<region>[a-z0-9-]+):\d{12}:instance/(?P<instance_id>[0-9a-f-]{36})")
-SPOKEN_TEXT_PATTERN = re.compile(r"[A-Za-z0-9 ,.'-]{1,400}")  # plain words only: no SSML, no line breaks, no other script
+SPOKEN_TEXT_PATTERN = re.compile(r"[A-Za-z0-9 ,.'?-]{1,400}")  # plain words only: no SSML, no line breaks, no other script
 CHANNEL_PHRASES = {
     Channel.EMAIL: "an email", Channel.WHATSAPP: "a WhatsApp message", Channel.SMS: "a text message", Channel.RCS: "a text message",
 }
 CALL_ALREADY_ENDED_ERROR_CODES = frozenset({"ContactNotFoundException"})
 
 _connect_clients: dict[str, object] = {}
+_qconnect_clients: dict[str, object] = {}
 
 
 def get_connect_client(region: str):
@@ -35,20 +37,41 @@ def get_connect_client(region: str):
     return _connect_clients[region]
 
 
-def build_ask_prompt(resident_name: str, inbound_channel: Channel) -> str:
-    """The sentence the call speaks. Where a voice Yes would be refused (an SMS or RCS hold) it offers only the No. Raises
-    ValueError for a channel with no phrase or a sentence outside SPOKEN_TEXT_PATTERN."""
+def get_qconnect_client(region: str):
+    """One Amazon Q in Connect client per Region (the instance's), kept for the container's life."""
+    if region not in _qconnect_clients:
+        _qconnect_clients[region] = boto3.client("qconnect", region_name=region)
+    return _qconnect_clients[region]
+
+
+def build_call_greeting(resident_name: str, inbound_channel: Channel) -> str:
+    """The two sentences every call opens with; ValueError for a channel with no phrase."""
     if inbound_channel not in CHANNEL_PHRASES:
         raise ValueError(f"no spoken phrase for {inbound_channel}")
-    opening = (f"Hello, this is Pidge, calling for {resident_name}. "
-               f"{resident_name} just got {CHANNEL_PHRASES[inbound_channel]} in your name.")
+    return (f"Hello, this is Pidge, calling for {resident_name}. "
+            f"{resident_name} just got {CHANNEL_PHRASES[inbound_channel]} in your name.")
+
+
+def require_spoken_text(text: str) -> str:
+    """The text itself when it fullmatches SPOKEN_TEXT_PATTERN; ValueError otherwise."""
+    if SPOKEN_TEXT_PATTERN.fullmatch(text) is None:
+        raise ValueError("the text holds words Pidge may not speak")
+    return text
+
+
+def build_ask_prompt(resident_name: str, inbound_channel: Channel) -> str:
+    """The keypad sentence the call speaks. Where a voice Yes would be refused (an SMS or RCS hold) it offers only the No.
+    Raises ValueError for a channel with no phrase or a sentence outside SPOKEN_TEXT_PATTERN."""
+    greeting = build_call_greeting(resident_name, inbound_channel)
     if verdict.is_yes_refused_on(Channel.VOICE, inbound_channel):
-        prompt = f"{opening} If you did not send it, press 2. If you did send it, say so in the Pidge app."
-    else:
-        prompt = f"{opening} If you sent it, press 1. If you did not send it, press 2."
-    if SPOKEN_TEXT_PATTERN.fullmatch(prompt) is None:
-        raise ValueError("the prompt holds text Pidge may not speak")
-    return prompt
+        return require_spoken_text(f"{greeting} If you did not send it, press 2. If you did send it, say so in the Pidge app.")
+    return require_spoken_text(f"{greeting} If you sent it, press 1. If you did not send it, press 2.")
+
+
+def build_ai_opening(resident_name: str, inbound_channel: Channel) -> str:
+    """The AI agent's first line on the call. Raises ValueError for a channel with no phrase or a sentence outside
+    SPOKEN_TEXT_PATTERN."""
+    return require_spoken_text(f"{build_call_greeting(resident_name, inbound_channel)} Did you send it?")
 
 
 def parse_instance_arn(instance_arn: str) -> tuple[str, str]:
@@ -59,7 +82,9 @@ def parse_instance_arn(instance_arn: str) -> tuple[str, str]:
     return match["region"], match["instance_id"]
 
 
-def place_call(request_id: str, destination_number: str, prompt: str, attempt: int, retry_function_arn: str) -> str:
+def place_call(
+    request_id: str, destination_number: str, prompt: str, ai_opening: str, attempt: int, retry_function_arn: str
+) -> str:
     """Books the hang-up, then starts the call and stores its ContactId, which it returns. Raises on any failure, so a call
     never starts without its hang-up; a call whose ContactId could not be stored is stopped first (no answer on it could
     count, and the hang-up would not find it)."""
@@ -69,7 +94,8 @@ def place_call(request_id: str, destination_number: str, prompt: str, attempt: i
         f"hangup-{request_id}-{attempt}", hang_up_at, retry_function_arn, {"hangUpRequestId": request_id})
     response = get_connect_client(region).start_outbound_voice_contact(
         InstanceId=instance_id, ContactFlowId=os.environ["VOICE_CONTACT_FLOW_ID"], DestinationPhoneNumber=destination_number,
-        SourcePhoneNumber=os.environ["VOICE_SOURCE_PHONE_NUMBER"], Attributes={"requestId": request_id, "askPrompt": prompt},
+        SourcePhoneNumber=os.environ["VOICE_SOURCE_PHONE_NUMBER"],
+        Attributes={"requestId": request_id, "askPrompt": prompt, "aiOpening": ai_opening},
         ClientToken=f"{request_id}-call-{attempt}",  # deterministic: a retried start returns the same contact
         RingTimeoutInSeconds=RING_TIMEOUT_SECONDS,
     )
@@ -110,11 +136,13 @@ def call_contact_on_re_ask(
         logger.info("no call for %s: the contact has no checked number", request_id)
         return None
     try:
-        prompt = build_ask_prompt(resident_name, inbox_rows.inbound_channel_of(request_row))
+        inbound_channel = inbox_rows.inbound_channel_of(request_row)
+        prompt = build_ask_prompt(resident_name, inbound_channel)
+        ai_opening = build_ai_opening(resident_name, inbound_channel)
         if not hourly_counters.take_hourly_slot(CALL_COUNTER_PARTITION_KEY, int(os.environ["VOICE_CALLS_PER_HOUR"])):
             logger.warning("no call for %s: the hourly call slot was refused (cap reached or counter write failed)", request_id)
             return None
-        contact_id = place_call(request_id, destinations[0], prompt, attempt, retry_function_arn)
+        contact_id = place_call(request_id, destinations[0], prompt, ai_opening, attempt, retry_function_arn)
     except (BotoCoreError, ClientError, ValueError, KeyError) as error:
         report_voice_failure(request_id, error)
         return None

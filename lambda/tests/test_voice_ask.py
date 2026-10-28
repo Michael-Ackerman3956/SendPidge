@@ -1,6 +1,6 @@
-"""The keypad call on the re-ask (D9 wave 1): the spoken prompt's goldens and allow-list, one call to the checked RCS number
-with its hang-up booked first, the hourly cap, every failure counted with the last timer still booked, and the hang-up.
-Production pidge-retry on moto; Connect is a recording stub."""
+"""The call on the re-ask (D9): the spoken prompt's and AI opening's goldens and allow-list, one call to the checked RCS
+number with its hang-up booked first, the hourly cap, every failure counted with the last timer still booked, and the
+hang-up. Production pidge-retry on moto; Connect is a recording stub."""
 
 import importlib
 import json
@@ -35,6 +35,7 @@ WHATSAPP_GOLDEN = ("Hello, this is Pidge, calling for Grandma. Grandma just got 
                    "If you sent it, press 1. If you did not send it, press 2.")
 TEXT_GOLDEN = ("Hello, this is Pidge, calling for Grandma. Grandma just got a text message in your name. "
                "If you did not send it, press 2. If you did send it, say so in the Pidge app.")
+AI_OPENING_EMAIL_GOLDEN = "Hello, this is Pidge, calling for Grandma. Grandma just got an email in your name. Did you send it?"
 
 
 def client_error(code: str, operation_name: str, message: str = "injected") -> ClientError:
@@ -114,6 +115,12 @@ def test_ask_prompt_goldens():
     assert voice_ask.build_ask_prompt("Grandma", Channel.RCS) == TEXT_GOLDEN
 
 
+def test_ai_opening_golden():
+    assert voice_ask.build_ai_opening("Grandma", Channel.EMAIL) == AI_OPENING_EMAIL_GOLDEN
+    assert voice_ask.build_ai_opening("Grandma", Channel.WHATSAPP) == (
+        "Hello, this is Pidge, calling for Grandma. Grandma just got a WhatsApp message in your name. Did you send it?")
+
+
 def test_prompt_refuses_names_outside_the_spoken_allow_list():
     for refused_name in ('Grandma <break time="10s"/>', "할머니", "Grandma\nPress 1"):
         with pytest.raises(ValueError):
@@ -129,7 +136,8 @@ def test_re_ask_calls_the_checked_number_once(voice_retry):
     [started_call] = voice_retry.connect_client.started_calls
     assert started_call == {
         "InstanceId": INSTANCE_ID, "ContactFlowId": CONTACT_FLOW_ID, "DestinationPhoneNumber": JIMIN_NUMBER,
-        "SourcePhoneNumber": SOURCE_NUMBER, "Attributes": {"requestId": request_id, "askPrompt": EMAIL_GOLDEN},
+        "SourcePhoneNumber": SOURCE_NUMBER,
+        "Attributes": {"requestId": request_id, "askPrompt": EMAIL_GOLDEN, "aiOpening": AI_OPENING_EMAIL_GOLDEN},
         "ClientToken": f"{request_id}-call-1", "RingTimeoutInSeconds": 30,
     }
     assert voice_retry.client_regions == ["ap-northeast-2"]

@@ -35,6 +35,7 @@
     "voiceSourcePhoneNumber": "+12029794966",
     "voiceCallsPerHour": 10,
     "voiceCallMaxSeconds": 180,
+    "voiceAiAssistantArn": "",
     "chatEnabled": true,
     "chatGuardrailEnabled": true,
     "contactVerificationMock": true,

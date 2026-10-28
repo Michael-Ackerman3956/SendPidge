@@ -1,4 +1,4 @@
-import { Duration, Stack } from "aws-cdk-lib";
+import { Arn, ArnFormat, Duration, Stack } from "aws-cdk-lib";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { Effect, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Function, FunctionUrl, FunctionUrlAuthType } from "aws-cdk-lib/aws-lambda";
@@ -258,9 +258,11 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
       CALL_REMINDER_TODAY_DELAY_SECONDS: String(settings.callReminderTodayDelaySeconds),
       CALL_REMINDER_TOMORROW_DELAY_SECONDS: String(settings.callReminderTomorrowDelaySeconds),
       ...(dependencies.callReminderFunction ? { CALL_REMINDER_FUNCTION_ARN: dependencies.callReminderFunction.functionArn } : {}),
-      // The keypad answer's flow event must name this instance (lambda/pidge_verdict/voice_answers.py); "" while voice is off.
+      // The keypad answer's flow event must name this instance (lambda/pidge_verdict/voice_answers.py), and load_facts writes to
+      // this assistant (lambda/pidge_verdict/voice_facts.py); both "" while voice is off.
       VOICE_ENABLED: flagEnvironmentValue(settings.voiceEnabled),
       VOICE_INSTANCE_ARN: settings.voiceEnabled ? settings.voiceInstanceArn : "",
+      VOICE_AI_ASSISTANT_ARN: settings.voiceEnabled ? settings.voiceAiAssistantArn : "",
     },
   });
   shared.table.grantReadWriteData(verdictFunction);
@@ -290,5 +292,33 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
       sourceAccount: stack.account,
     });
   }
+  grantVoiceFactsAccessIfConfigured(stack, verdictFunction, settings);
   return verdictFunction;
+}
+
+// load_facts (lambda/pidge_verdict/voice_facts.py): read the call's contact for its Amazon Q in Connect session, then write the
+// facts into sessions of our one assistant only. Nothing without voiceEnabled and an assistant ARN (the Lambda then refuses
+// load_facts and the flow takes the keypad). Both action and resource names are inferred from AWS docs, not verified: the
+// founder's smoke call proves them.
+function grantVoiceFactsAccessIfConfigured(stack: Stack, verdictFunction: Function, settings: StackSettings): void {
+  if (!settings.voiceEnabled || settings.voiceAiAssistantArn === "") {
+    return;
+  }
+  const instanceRegion = Arn.split(settings.voiceInstanceArn, ArnFormat.SLASH_RESOURCE_NAME).region;
+  const assistantId = Arn.split(settings.voiceAiAssistantArn, ArnFormat.SLASH_RESOURCE_NAME).resourceName;
+  if (instanceRegion === undefined || assistantId === undefined) {
+    throw new Error("voiceInstanceArn needs a Region and voiceAiAssistantArn an assistant id");
+  }
+  verdictFunction.addToRolePolicy(
+    new PolicyStatement({
+      actions: ["connect:DescribeContact"],
+      resources: [`${settings.voiceInstanceArn}/contact/*`],
+    }),
+  );
+  verdictFunction.addToRolePolicy(
+    new PolicyStatement({
+      actions: ["wisdom:UpdateSessionData"],
+      resources: [`arn:aws:wisdom:${instanceRegion}:${stack.account}:session/${assistantId}/*`],
+    }),
+  );
 }

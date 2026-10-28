@@ -126,7 +126,10 @@ ALLOWED_WILDCARD_GRANTS: dict[str, dict[str, frozenset[str]]] = {
                                             "bedrock-agentcore:GetWorkloadAccessTokenForUserId"})},
     **{model_resource: grant_to_each(MODEL_CALLING_ROLES, MODEL_INVOKE_ACTIONS) for model_resource in MODEL_RESOURCES},
     "arn:aws:connect:ap-northeast-2:358148451054:instance/f6343b6c-43fc-4d43-b255-c54d8b0fb66a/contact/*": {  # the re-ask call
-        "RetryFunctionServiceRole": frozenset({"connect:StartOutboundVoiceContact", "connect:StopContact"})},
+        "RetryFunctionServiceRole": frozenset({"connect:StartOutboundVoiceContact", "connect:StopContact"}),
+        "VerdictFunctionServiceRole": frozenset({"connect:DescribeContact"})},  # load_facts finds the call's AI session
+    f"arn:aws:wisdom:ap-northeast-2:{STACK_ACCOUNT}:session/11111111-2222-3333-4444-555555555555/*": {  # synth-for-tests.ts assistant
+        "VerdictFunctionServiceRole": frozenset({"wisdom:UpdateSessionData"})},
     "*": {  # services with no resource-level scoping for these actions
         BUCKET_DEPLOYMENT_ROLE: frozenset({"cloudfront:CreateInvalidation", "cloudfront:GetInvalidation"}),
         CASE_AGENT_RUNTIME_ROLE: frozenset({"xray:PutTraceSegments", "xray:PutTelemetryRecords", "xray:GetSamplingRules",

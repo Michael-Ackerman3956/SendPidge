@@ -47,6 +47,8 @@ export interface StackSettings {
   voiceCallsPerHour: number;
   // A one-time schedule hangs up a call still open after this many seconds (30-600).
   voiceCallMaxSeconds: number;
+  // The Amazon Q in Connect assistant the AI call writes facts to; "" keeps the call keypad-only.
+  voiceAiAssistantArn: string;
   reAskDelaySeconds: number;
   bankFollowUpEnabled: boolean;
   bankFollowUpDelaySeconds: number;
@@ -77,8 +79,10 @@ const COGNITO_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const COGNITO_DOMAIN_PREFIX_RESERVED_WORDS = ["aws", "amazon", "cognito"];
 // lambda/shared/org_ids.py ORG_ID_PATTERN (fullmatch).
 const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
-// lambda/shared/voice_ask.py INSTANCE_ARN_PATTERN (fullmatch).
-const CONNECT_INSTANCE_ARN_PATTERN = /^arn:aws:connect:[a-z0-9-]+:\d{12}:instance\/[0-9a-f-]{36}$/;
+// lambda/shared/voice_ask.py INSTANCE_ARN_PATTERN (fullmatch); group 1 is the Region.
+const CONNECT_INSTANCE_ARN_PATTERN = /^arn:aws:connect:([a-z0-9-]+):\d{12}:instance\/[0-9a-f-]{36}$/;
+// An Amazon Q in Connect assistant (`aws qconnect list-assistants`); group 1 is the Region.
+const AI_ASSISTANT_ARN_PATTERN = /^arn:aws:wisdom:([a-z0-9-]+):\d{12}:assistant\/[0-9a-f-]{36}$/;
 const MINIMUM_VOICE_CALL_MAX_SECONDS = 30;
 const MAXIMUM_VOICE_CALL_MAX_SECONDS = 600;
 const E164_PHONE_NUMBER_PATTERN = /^\+[1-9][0-9]{1,14}$/;
@@ -227,12 +231,13 @@ function readSmsSettings(
 
 type VoiceSettings = Pick<
   StackSettings,
-  "voiceEnabled" | "voiceInstanceArn" | "voiceContactFlowId" | "voiceSourcePhoneNumber" | "voiceCallsPerHour" | "voiceCallMaxSeconds"
+  | "voiceEnabled" | "voiceInstanceArn" | "voiceContactFlowId" | "voiceSourcePhoneNumber" | "voiceCallsPerHour" | "voiceCallMaxSeconds"
+  | "voiceAiAssistantArn"
 >;
 
-// The keypad call settings; absent text reads as "" and an absent number as NaN. Throws when voiceEnabled is on without a Connect
+// The call settings; absent text reads as "" and an absent number as NaN. Throws when voiceEnabled is on without a Connect
 // instance ARN, a flow id, an E.164 caller number, a whole hourly cap above 0, a whole call limit of 30-600 s, or the retry
-// scheduler (pidge-retry places the call on the re-ask and hangs it up from a schedule).
+// scheduler (pidge-retry places the call on the re-ask and hangs it up from a schedule), or with a bad voiceAiAssistantArn.
 function readVoiceSettings(stack: Stack, retrySchedulerEnabled: boolean): VoiceSettings {
   const voiceEnabled = stack.node.tryGetContext("voiceEnabled") === true;
   const voiceInstanceArn = readOptionalTextContext(stack, "voiceInstanceArn");
@@ -250,7 +255,25 @@ function readVoiceSettings(stack: Stack, retrySchedulerEnabled: boolean): VoiceS
   if (voiceEnabled && !isVoiceConfigurationComplete) {
     throw new Error("voiceEnabled needs voiceInstanceArn (a Connect instance ARN), voiceContactFlowId, voiceSourcePhoneNumber (E.164), voiceCallsPerHour > 0, voiceCallMaxSeconds 30-600 and retrySchedulerEnabled");
   }
-  return { voiceEnabled, voiceInstanceArn, voiceContactFlowId, voiceSourcePhoneNumber, voiceCallsPerHour, voiceCallMaxSeconds };
+  return {
+    voiceEnabled, voiceInstanceArn, voiceContactFlowId, voiceSourcePhoneNumber, voiceCallsPerHour, voiceCallMaxSeconds,
+    voiceAiAssistantArn: readVoiceAiAssistantArn(stack, voiceEnabled, voiceInstanceArn),
+  };
+}
+
+// The AI call's assistant; absent reads as "" (the call stays keypad-only). Throws when voiceEnabled is on and it is set but is
+// not an assistant ARN in the voiceInstanceArn Region. Called after readVoiceSettings has checked voiceInstanceArn.
+function readVoiceAiAssistantArn(stack: Stack, voiceEnabled: boolean, voiceInstanceArn: string): string {
+  const voiceAiAssistantArn = readOptionalTextContext(stack, "voiceAiAssistantArn");
+  if (!voiceEnabled || voiceAiAssistantArn === "") {
+    return voiceAiAssistantArn;
+  }
+  const assistantRegion = AI_ASSISTANT_ARN_PATTERN.exec(voiceAiAssistantArn)?.[1];
+  const instanceRegion = CONNECT_INSTANCE_ARN_PATTERN.exec(voiceInstanceArn)?.[1];
+  if (assistantRegion === undefined || assistantRegion !== instanceRegion) {
+    throw new Error("voiceAiAssistantArn must be \"\" or an Amazon Q in Connect assistant ARN in the voiceInstanceArn Region");
+  }
+  return voiceAiAssistantArn;
 }
 
 // An optional text context key: absent reads as "" (the feature it configures then reports itself off), never a guess.

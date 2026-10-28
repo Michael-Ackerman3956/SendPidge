@@ -2,7 +2,7 @@
 Confirm, case actions and questions to Pidge, a browser's Web Push subscription, the receiver's Add-someone form and demo
 code reply (circle_handlers), the receiver's home visibility and office row (org_preference_handlers); SNS: phone-channel
 taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's reply to the ask by email; Amazon Connect:
-Jimin's keypad answer on Pidge's call (voice_answers).
+the AI agent's session facts and Jimin's keypad answer on Pidge's call (voice_answers).
 
 The user comes from the connection row, never from the message body; their role and resident (or org) come from their own
 USER#<id>/PROFILE row, and an answer's resident from the REQUEST# row's receiverEmail.

@@ -14,6 +14,8 @@ const FAKE_PERSONAL_CONTEXT: Record<string, unknown> = {
   orgEnabled: true,  // the org projection, OrgActions route and canary are synthesised
   orgId: "test-home",
   voiceEnabled: true,  // the call grants, invoke permission and alarms are synthesised
+  // the load_facts grants are synthesised
+  voiceAiAssistantArn: "arn:aws:wisdom:ap-northeast-2:358148451054:assistant/11111111-2222-3333-4444-555555555555",
 };
 
 const outputDirectory = process.argv[2];
