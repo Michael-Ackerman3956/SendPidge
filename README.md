@@ -214,6 +214,7 @@ Seed the rule book and the sample lists with `scripts/seed_rows.py`, and a famil
 
 - Built during the submission period: the first commit is 2026-10-22.
 - Claude Code was used throughout.
+- A judge sandbox token was committed in `3d5a31d` (README) and revoked the same night; it no longer works, and `gitleaks` flags only that one revoked token.
 - The Pidge character, the design language and the hold-and-ask idea come from MailPidge, an earlier project by the same author; this implementation is new.
 - Every person, message and bank in the demo and the samples is invented. The sample scam lists are hand-written; `infra/seed/lists.public.json` carries each public source's attribution.
 
