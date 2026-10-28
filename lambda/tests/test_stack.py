@@ -17,6 +17,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
 from enrol_resident import RESIDENT_ADDRESS_LIST_OUTPUT_NAME  # noqa: E402
 from shared.cognito_auth import APP_CLIENT_ID_ENVIRONMENT_NAME, ISSUER_ENVIRONMENT_NAME  # noqa: E402
 from shared.metrics import METRIC_NAMESPACE  # noqa: E402
+from shared.schedules import RE_ASK_SCHEDULE_FAILED_METRIC_NAME  # noqa: E402
 from shared.profiles import PROFILE_REJECTED_DIMENSION_NAME, PROFILE_REJECTED_METRIC_NAME, ProfileRejectionReason  # noqa: E402
 from shared.sanitize import AGENT_OUTPUT_REFUSED_METRIC_NAME, SUMMARY_FALLBACK_METRIC_NAME  # noqa: E402
 
@@ -549,6 +550,7 @@ def find_alarm_properties(template: dict, construct_id: str) -> dict:
          [{"Name": PROFILE_REJECTED_DIMENSION_NAME, "Value": str(ProfileRejectionReason.RECEIVER_MISMATCH)}]),
         ("SummaryFallbackAlarm", SUMMARY_FALLBACK_METRIC_NAME, None),
         ("AgentOutputRefusedAlarm", AGENT_OUTPUT_REFUSED_METRIC_NAME, None),
+        ("ReAskScheduleFailedAlarm", RE_ASK_SCHEDULE_FAILED_METRIC_NAME, None),
     ],
 )
 def test_security_counts_page_on_the_first_event(synthesized_template, construct_id, metric_name, dimensions):

@@ -41,6 +41,8 @@ const AGENT_OUTPUT_REFUSED_METRIC_NAME = "AgentOutputRefused";
 // lambda/shared/voice_ask.py VOICE_ASK_FAILED_METRIC_NAME and lambda/pidge_verdict/voice_answers.py VOICE_ANSWER_FAILED_METRIC_NAME.
 const VOICE_ASK_FAILED_METRIC_NAME = "VoiceAskFailed";
 const VOICE_ANSWER_FAILED_METRIC_NAME = "VoiceAnswerFailed";
+// lambda/shared/schedules.py RE_ASK_SCHEDULE_FAILED_METRIC_NAME (emitted by pipeline.schedule_re_ask).
+const RE_ASK_SCHEDULE_FAILED_METRIC_NAME = "ReAskScheduleFailed";
 
 // CDK stack: the declaration of every AWS resource SendPidge deploys (`cdk deploy` turns this into CloudFormation).
 // The whole SendPidge deployment: table → email store → the Lambdas → the Mail Manager ingress (it names the Reader) → the case
@@ -190,6 +192,16 @@ export class SendPidgeStack extends Stack {
       alarmDescription: "an agent's text held a link, address, handle, long number or a character outside the allow-list and the gate refused it",
       metric: new Metric({
         namespace: LAMBDA_METRIC_NAMESPACE, metricName: AGENT_OUTPUT_REFUSED_METRIC_NAME, statistic: Stats.SUM, period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
+    });
+    new Alarm(this, "ReAskScheduleFailedAlarm", {
+      alarmDescription: "a hold's first re-ask timer was not booked: no re-ask, no call and no timeout for that hold",
+      metric: new Metric({
+        namespace: LAMBDA_METRIC_NAMESPACE, metricName: RE_ASK_SCHEDULE_FAILED_METRIC_NAME, statistic: Stats.SUM, period: Duration.minutes(5),
       }),
       threshold: 1,
       evaluationPeriods: 1,

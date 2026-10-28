@@ -156,7 +156,8 @@ def ask_on_email(request_row: dict, contact: graph.Contact, receiver_name: str, 
         Destination={"ToAddresses": [destination]},
         Content={"Simple": {
             "Subject": {"Data": email_ask.ask_subject(request_id)},
-            "Body": {"Text": {"Data": email_ask.ask_body(request_row["verdict"]["summary"], receiver_name, no_link, app_url)}},
+            "Body": {"Text": {"Data": email_ask.ask_body(
+                request_row["verdict"]["summary"], receiver_name, inbox_rows.inbound_channel_of(request_row), no_link, app_url)}},
         }},
     )
     logger.info("email ask %s sent as %s", request_id, response["MessageId"])

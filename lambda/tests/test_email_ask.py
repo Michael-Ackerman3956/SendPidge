@@ -70,7 +70,21 @@ def test_the_ask_goes_from_pidge_to_the_contacts_own_address_with_the_request_id
     assert "https://app.sendpidge.example/\n" in body and "?token=" not in body  # the Yes line opens the app, never carries a token
 
 
-REQUEST_ID = "req-0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b"
+@pytest.mark.parametrize("inbound_channel, opening, yes_line", [
+    (Channel.EMAIL, "Grandma received an email that", "answer Yes in the SendPidge app or on WhatsApp:"),
+    (Channel.WHATSAPP, "Grandma received a WhatsApp message that", "answer Yes in the SendPidge app:"),  # a WhatsApp Yes is refused here
+    (Channel.SMS, "Grandma received a text message that", "answer Yes in the SendPidge app or on WhatsApp:"),
+])
+def test_the_ask_names_the_held_channel_and_offers_whatsapp_only_where_its_yes_counts(inbound_channel, opening, yes_line):
+    body = email_ask.ask_body("Asks for money.", "Grandma", inbound_channel, "https://no", "https://app")
+    assert body == (
+        f"{opening} claims to come from you. Pidge summarised it as: Asks for money.\n\n"
+        "If you did NOT send it, open this link and press the button:\nhttps://no\nor reply to this email with one word: NO\n\n"
+        f"If you did send it, {yes_line}\nhttps://app/\nA Yes by email is not accepted, because a hijacked mailbox could send one.\n\nPidge"
+    )
+
+
+REQUEST_ID ="req-0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b"
 
 
 @pytest.mark.parametrize("raw, expected_outcome", [

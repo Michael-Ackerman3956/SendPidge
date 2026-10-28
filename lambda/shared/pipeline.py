@@ -226,7 +226,8 @@ def schedule_re_ask(request_id: str) -> None:
         fire_at = datetime.now(timezone.utc) + timedelta(seconds=graph.HOLD_DURATION_SECONDS)
         schedules.schedule_one_time_invocation(f"retry-{request_id}-1", fire_at, RETRY_FUNCTION_ARN, {"requestId": request_id, "attempt": 1})
     except Exception:
-        logger.exception("re-ask schedule for %s failed; the hold stays without a retry", request_id)
+        logger.exception("re-ask schedule for %s failed; the hold stays without a retry, call or timeout", request_id)
+        emit_count_metric(schedules.RE_ASK_SCHEDULE_FAILED_METRIC_NAME)  # ReAskScheduleFailedAlarm; the ask already went out, so no raise
 
 
 def build_email_row(

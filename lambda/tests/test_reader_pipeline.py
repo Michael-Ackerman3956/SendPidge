@@ -2,6 +2,7 @@
 Bedrock: parse → links → lists → Reader → policy → EMAIL#/REQUEST# rows → the pushed email_state."""
 
 import importlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -214,3 +215,19 @@ def test_escalation_warn_on_claimed_jimin_clears_to_warn_but_never_gate_1(aws, m
     assert loaded.pushed_emails[-1]["state"] == PolicyDecision.HOLD
     assert len(scripted_reviewer_model.recorded_calls) == 2 and scripted_reviewer_model.raised_errors == []
     assert [call.user_text_count for call in scripted_reviewer_model.recorded_calls] == [1, 1]  # the second never sees the first
+
+
+def test_a_failed_re_ask_booking_is_counted_not_raised(monkeypatch, capsys):
+    from shared import pipeline
+
+    def refuse_the_booking(name, fire_at, function_arn, payload):
+        raise RuntimeError("scheduler down")
+
+    monkeypatch.setattr(pipeline, "RETRY_SCHEDULER_ENABLED", True)
+    monkeypatch.setattr(pipeline.schedules, "schedule_one_time_invocation", refuse_the_booking)
+    capsys.readouterr()
+
+    pipeline.schedule_re_ask("req-1")  # the ask already went out, so the hold stays; ReAskScheduleFailedAlarm tells the founder
+
+    metric_records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
+    assert sum(1 for record in metric_records if pipeline.schedules.RE_ASK_SCHEDULE_FAILED_METRIC_NAME in record) == 1

@@ -15,7 +15,9 @@ from email.utils import parseaddr
 
 from shared.chat_email import DKIM_SIGNATURE_HEADER_NAME, has_dkim_pass, signing_domains, strip_quoted_history
 from shared.email_parse import PIDGE_AUTH_HEADER_NAME, extract_text_body
-from shared.enums import EmailedAnswerOutcome, VerdictAnswer
+from shared import verdict
+from shared.enums import Channel, EmailedAnswerOutcome, VerdictAnswer
+from shared.voice_ask import CHANNEL_PHRASES
 
 ASK_SUBJECT_PREFIX = "Pidge: was this you?"
 ASK_SUBJECT_MARKER = "[req-"  # Mail Manager routes a reply by this substring of the subject (infra/lib/mail-ingress.ts)
@@ -39,14 +41,16 @@ def ask_subject(request_id: str) -> str:
     return f"{ASK_SUBJECT_PREFIX} [{request_id}]"
 
 
-def ask_body(summary: str, receiver_name: str, no_link: str, app_url: str) -> str:
-    """The Yes line only opens the app (no token in the mail): a hijacked mailbox must not be able to release the email."""
+def ask_body(summary: str, receiver_name: str, inbound_channel: Channel, no_link: str, app_url: str) -> str:
+    """The Yes line only opens the app (no token in the mail): a hijacked mailbox must not be able to release the email. It
+    names WhatsApp only where a WhatsApp Yes counts (verdict.is_yes_refused_on). KeyError for a channel with no phrase."""
+    yes_places = "the SendPidge app" if verdict.is_yes_refused_on(Channel.WHATSAPP, inbound_channel) else "the SendPidge app or on WhatsApp"
     return (
-        f"{receiver_name} received an email that claims to come from you. Pidge summarised it as: {summary}\n\n"
+        f"{receiver_name} received {CHANNEL_PHRASES[inbound_channel]} that claims to come from you. Pidge summarised it as: {summary}\n\n"
         "If you did NOT send it, open this link and press the button:\n"
         f"{no_link}\n"
         "or reply to this email with one word: NO\n\n"
-        "If you did send it, answer Yes in the SendPidge app or on WhatsApp:\n"
+        f"If you did send it, answer Yes in {yes_places}:\n"
         f"{app_url}/\n"
         "A Yes by email is not accepted, because a hijacked mailbox could send one.\n\n"
         "Pidge"

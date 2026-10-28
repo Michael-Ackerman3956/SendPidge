@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 _scheduler_client = None
 SCHEDULE_NAME_MAX_LENGTH = 64
+RE_ASK_SCHEDULE_FAILED_METRIC_NAME = "ReAskScheduleFailed"  # pipeline.schedule_re_ask counts a first re-ask it could not book
 
 
 def get_scheduler_client():
