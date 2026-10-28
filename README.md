@@ -141,10 +141,10 @@ One AWS CDK stack (`infra/`). Set up outside it: the Amazon Connect instance and
 - **Video:** https://youtu.be/rCe4ztLSmQ4
 - **Try it (judges):** open the judge link from the Devpost testing instructions (kept out of this public repo). No setup or code needed; everything is in the app. You are the protected resident, `judge@sendpidge.com`. The three emails already in the inbox are built-in samples.
   1. **Circle → Add someone.** Name: your own first name. Add your WhatsApp number and a second email address of yours (not the one you will send from). Press **Add to my circle**.
-  2. The next screen shows a note to your contact with a code. Press **Copy**, open the link from the note in a private window: that is your contact's screen. Then press **Demo: <name> replies <code>** to verify the contact (nothing is sent).
+  2. The next screen shows a note to your contact with a code. Press **Copy**, open the link from the note in a private window: that is your contact's screen. Then press **Demo: `<name>` replies `<code>`** to verify the contact (nothing is sent).
   3. From your own mailbox, email `judge@sendpidge.com`, signed with that first name, asking for money.
   4. Within about ten seconds **Inbox** shows the email held. SendPidge asks your contact on WhatsApp and by email; the contact's screen always works even if WhatsApp does not arrive.
-  5. Tap **No** on the contact's screen (or in WhatsApp). The resident's screen reads "Not <name>".
+  5. Tap **No** on the contact's screen (or in WhatsApp). The resident's screen reads "Not `<name>`".
   6. Optional: **Settings → Personal email**, type your address, **Send code**, enter the 6-digit code from that inbox, **Save**. Recovery packs from **Cases** ("I already paid") are mailed there.
 
   If nobody answers: SendPidge asks again at 10 minutes, marks "did not answer" at 20, and the email stays held. One inbox is shared by every judge; a name already in the circle is refused, so use your own first name.
