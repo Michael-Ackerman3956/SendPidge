@@ -6,7 +6,7 @@ Built on **Amazon SES Mail Manager**, **AWS End User Messaging Social (WhatsApp)
 
 **Demo video (3 min):** https://youtu.be/rCe4ztLSmQ4
 
-> Grandma, Jimin and the bank are invented, and one real phone plays every party in the demo ([which moments are staged](#demo)). SendPidge never moves money and sends nothing to a bank. Pidge is the character in the app; SendPidge is the product.
+> Grandma, Jimin and the bank are invented, and one real phone plays every party in the demo ([which moments are staged](#judge-sandbox)). SendPidge never moves money and sends nothing to a bank. Pidge is the character in the app; SendPidge is the product.
 
 ## Architecture
 
@@ -136,10 +136,12 @@ Every tool-holding run stops at 8 model turns (`lambda/shared/agent_run.py`).
 
 One AWS CDK stack (`infra/`). Set up outside it: the Amazon Connect instance and flow, the WhatsApp number and template, the SES domain and MX. Built but off: RCS (`rcsEnabled: false`; the RCS agent exists in testing registration, which delivers only to approved tester numbers in launch countries and refuses Korean numbers) and SMS (`smsEnabled: false`; no SMS number is provisioned); neither has run live and the live public scam-list feeds (`liveFeedsEnabled: false`; seeded samples answer). Not deployed: the rules keeper, which runs from a laptop on mock pages (`scripts/run_rules_keeper.py`).
 
-## Demo
+## Judge sandbox
+
+The demo video, and how to try the live app yourself with no setup.
 
 - **Video:** https://youtu.be/rCe4ztLSmQ4
-- **Try it (judges):** open the judge link from the Devpost testing instructions (kept out of this public repo). No setup or code needed; everything is in the app. You are the protected resident, `judge@sendpidge.com`. The three emails already in the inbox are built-in samples.
+- **Try it (judges):** open the judge sandbox at https://app.sendpidge.com/?token=REDACTED . No setup or code needed; everything is in the app. You are the protected resident, `judge@sendpidge.com`. The three emails already in the inbox are built-in samples.
   1. **Circle → Add someone.** Name: your own first name. Add your WhatsApp number and a second email address of yours (not the one you will send from). Press **Add to my circle**.
   2. The next screen shows a note to your contact with a code. Press **Copy**, open the link from the note in a private window: that is your contact's screen. Then press **Demo: `<name>` replies `<code>`** to verify the contact (nothing is sent).
   3. From your own mailbox, email `judge@sendpidge.com`, signed with that first name, asking for money.
@@ -167,7 +169,9 @@ One AWS CDK stack (`infra/`). Set up outside it: the Amazon Connect instance and
 | Live Reader on the 7 sample emails (Claude Haiku 4.5, 2026-10-28) | All 5 with a recorded expected result matched (3 HOLD, 1 WARN, 1 PASS) |
 | Case-note and chat eval (`scripts/eval_agents.py`, live Bedrock, calibrated judge, 2026-10-28) | 14 of 14 |
 
-## Run it
+## Setup instructions
+
+For developers: run the tests, or deploy your own copy of the stack to an AWS account.
 
 Tests need Python 3.12 with a `.venv` holding `lambda/requirements.txt` plus pytest and moto, and `npm ci` in `infra/`. No AWS credentials: the stack test synthesises with fake mailboxes.
 
