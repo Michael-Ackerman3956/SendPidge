@@ -19,7 +19,6 @@ from shared.reach_points import verified_via_of
 from shared.sources import query_all_pages
 
 ORG_STATS_RETENTION = timedelta(days=400)
-CONDITIONAL_CHECK_FAILED_REASON = "ConditionalCheckFailed"  # a transaction cancellation reason's Code
 
 
 def log_row_for(projected_event: ProjectedEvent) -> dict:
@@ -49,12 +48,6 @@ def day_stats_expiry(day: str) -> int:
     return int((datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc) + ORG_STATS_RETENTION).timestamp())
 
 
-def is_replayed_log_row(error: ClientError) -> bool:
-    """A transaction cancelled because its first item, the ORGLOG# Put, found its row already there: a replayed record."""
-    return (error.response["Error"]["Code"] == circle.TRANSACTION_CANCELLED and "CancellationReasons" in error.response
-            and error.response["CancellationReasons"][0]["Code"] == CONDITIONAL_CHECK_FAILED_REASON)
-
-
 def write_projected_event(projected_event: ProjectedEvent) -> bool:
     """In ONE transaction, Puts the ORGLOG# row (only when absent) and ADDs one to the event's count on
     ORGSTAT#<orgId>/DAY#<date of at>; True. False, nothing written, when the resident's stored visibility does not pass the
@@ -73,7 +66,7 @@ def write_projected_event(projected_event: ProjectedEvent) -> bool:
                         "ExpressionAttributeValues": {":expiry": day_stats_expiry(day), ":one": 1}}},
         ])
     except ClientError as error:
-        if is_replayed_log_row(error):
+        if circle.is_first_item_condition_failed(error):  # the ORGLOG# Put found its row already there: a replayed record
             return False
         raise
     return True

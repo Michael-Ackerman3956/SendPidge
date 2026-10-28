@@ -1,22 +1,27 @@
 """A resident's choices about their home: what the office may see (RECEIVER#/ORGPREF#<orgId>, written only by the
 resident's own set_org_visibility; no choice reads as none) and the office's row in the circle (added and removed only by the
-resident, built only by orgs.org_contact_row, never editable). The org is the resident's own orgId, never the body; an org
-admin's connection writes nothing under RECEIVER#."""
+resident, built only by orgs.org_contact_row, never editable; a request still open when it is removed reaches the resident
+alone). The org is the resident's own orgId, never the body; an org admin's connection writes nothing under RECEIVER#."""
 
-import json
+import importlib
 
 import pytest
 
 from shared import graph, orgs
+from shared.enums import Friction
 from shared.org_enums import AdminRole, OrgVisibility
 from shared.org_preferences import read_org_visibility
 from shared.orgs import AdminSeed, MemberSeed, OrgSeed
 from tests.helpers.orgs import seed_test_org
 from tests.helpers.profiles import TEST_TIMEZONE, seed_resident
-from tests.test_org import BOB_ADDRESS, GRANDMA_ADDRESS, MAPLE_ORG_ID, SUNRISE_NAME_VARIANT, SUNRISE_ORG_ID, seed_sunrise_and_maple
+from tests.test_org import (
+    BOB_ADDRESS, GRANDMA_ADDRESS, MAPLE_ORG_ID, OFFICE_VERDICT_FIELDS, SUNRISE_NAME_VARIANT, SUNRISE_ORG_ID, hold_three_office_requests,
+    record_user_pushes, run_release_retries_and_confirm, seed_sunrise_and_maple, summarize_request_pushes,
+)
+from tests.test_retry import FakeContext
 from tests.test_seed_org import read_all_rows, read_receiver_partition_rows
 from tests.test_verdict import aws  # noqa: F401
-from tests.test_verify_contact import MINSOO_FORM, rejection, send_action, verdict_handler_without_profiles  # noqa: F401
+from tests.test_verify_contact import MINSOO_FORM, rejection, seed_circle_contact, send_action, verdict_handler_without_profiles  # noqa: F401
 
 OFFICE_SORT_KEY = "CONTACT#org-sunrise"
 SUNRISE_PREFERENCE_KEY = {"PK": f"RECEIVER#{GRANDMA_ADDRESS}", "SK": "ORGPREF#sunrise"}
@@ -27,10 +32,7 @@ EDIT_OFFICE_FORM = {**MINSOO_FORM, "action": "edit_contact", "contactUserId": "o
 def org_preference_handler(verdict_handler_without_profiles, monkeypatch):  # noqa: F811
     """pidge-verdict with no PROFILE rows yet; pushes to a user's sockets are recorded as wire JSON."""
     handler, pushed_messages = verdict_handler_without_profiles
-    user_pushes: list[tuple[str, dict]] = []
-    monkeypatch.setattr(handler.channels, "push_to_user",
-                        lambda user_id, message: user_pushes.append((user_id, json.loads(handler.channels.encode_push_message(message)))) or 1)
-    return handler, pushed_messages, user_pushes
+    return handler, pushed_messages, record_user_pushes(handler, monkeypatch)
 
 
 def stored_office_row() -> dict | None:
@@ -155,3 +157,26 @@ def test_org_name_clash_is_duplicate_name(org_preference_handler):
     send_action(handler, "bob", {"action": "add_org_contact"})
     assert pushed_messages == [rejection("duplicate_name")] * 2
     assert stored_office_row() is None and graph.get_contact_row(BOB_ADDRESS, "CONTACT#org-maple") is None
+
+
+def test_office_removed_with_open_request(org_preference_handler, monkeypatch, caplog):
+    handler, _pushed_messages, user_pushes = org_preference_handler
+    seed_sunrise_and_maple()
+    request_ids = released_id, timed_out_id, confirmed_id = hold_three_office_requests(handler)
+    send_action(handler, "grandma", {"action": "remove_org_contact"})
+    assert stored_office_row() is None
+    user_pushes.clear()
+    scheduled, office_log_request_ids = run_release_retries_and_confirm(handler, monkeypatch, caplog, request_ids)
+    assert scheduled == [(f"retry-{timed_out_id}-2", {"requestId": timed_out_id, "attempt": 2})]
+    assert summarize_request_pushes(user_pushes) == [("grandma", "request_state", released_id, "confirmed", "Sunrise Commons"),
+                                                     ("grandma", "request_state", timed_out_id, "timeout", "Sunrise Commons"),
+                                                     ("grandma", "request_state", confirmed_id, "denied", "Sunrise Commons")]
+    assert office_log_request_ids == [[released_id], [timed_out_id], [timed_out_id], [confirmed_id]]
+
+    seed_circle_contact(GRANDMA_ADDRESS, "jimin")  # a family row is never deleted: one that is gone still raises
+    jimin = next(contact for contact in graph.list_contacts(GRANDMA_ADDRESS) if contact.contact_key == "CONTACT#jimin")
+    family_request_id = graph.request_id_of(
+        graph.create_request("inbox/family-1.eml", GRANDMA_ADDRESS, jimin, OFFICE_VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+    graph.get_table().delete_item(Key={"PK": f"RECEIVER#{GRANDMA_ADDRESS}", "SK": "CONTACT#jimin"})
+    with pytest.raises(LookupError):
+        importlib.import_module("pidge_retry.handler").handle({"requestId": family_request_id, "attempt": 2}, FakeContext())

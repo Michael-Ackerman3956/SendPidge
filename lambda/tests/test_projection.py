@@ -145,6 +145,13 @@ def episode_of(request_id: str) -> MemberSafetyState | None:
     return org_view.episode_state_for(SUNRISE_ORG_ID, GRANDMA_ADDRESS, f"REQUEST#{request_id}")
 
 
+def resolve_record(request_id: str) -> dict:
+    """The INSERT record of the episode's one ORG#<orgId>/RESOLVE#REQUEST#<id>#<at> row, as pidge-org wrote it."""
+    [resolve_row] = graph.get_table().query(KeyConditionExpression=Key("PK").eq(f"ORG#{SUNRISE_ORG_ID}")
+                                            & Key("SK").begins_with(f"RESOLVE#REQUEST#{request_id}#"))["Items"]
+    return stream_record_for_row({"PK": resolve_row["PK"], "SK": resolve_row["SK"]}, None)
+
+
 def actionable_now() -> list[tuple[str, str, str]]:
     dashboard = org_view.org_dashboard_for(orgs.require_org_admin("ann"), datetime.now(timezone.utc))
     return [(item["memberRef"], item["sourceKey"], item["state"]) for item in dashboard["actionable"]]
@@ -310,9 +317,15 @@ def test_resolve_row_projects_org_resolved_and_exits_state(projection, monkeypat
     resolve_records = []
     for request_id in (first_id, second_id):  # ann resolves both through pidge-org, the RESOLVE# writer
         send_action(org_handler, "ann", {"action": "org_resolve", "memberRef": GRANDMA_ADDRESS, "sourceKey": f"REQUEST#{request_id}"})
-        resolve_records.append(stream_record_for_row({"PK": f"ORG#{SUNRISE_ORG_ID}", "SK": f"RESOLVE#REQUEST#{request_id}"}, None))
+        resolve_records.append(resolve_record(request_id))
     assert project(handler, resolve_records[0]) == NO_FAILURES
     assert logged_events(f"REQUEST#{first_id}") == ["ask_timed_out", "message_held", "org_resolved"]
+    [resolved_log_row] = [row for row in org_log_rows() if row["event"] == "org_resolved"]
+    # the episode comes from the row's sourceKey attribute (never the #<at> sort key), the ttl from its ttlEpochSeconds
+    resolve_image = resolve_records[0]["dynamodb"]["NewImage"]
+    assert (resolved_log_row["sourceKey"], resolved_log_row["requestId"]) == (f"REQUEST#{first_id}", first_id)
+    assert resolved_log_row["at"] == resolve_image["at"]["S"]
+    assert resolved_log_row["ttlEpochSeconds"] == int(resolve_image["ttlEpochSeconds"]["N"])
     assert episode_of(first_id) is None
     assert actionable_now() == [(GRANDMA_ADDRESS, f"REQUEST#{second_id}", "held_no_answer")]
     assert project(handler, choose_visibility(OrgVisibility.NONE)) == NO_FAILURES

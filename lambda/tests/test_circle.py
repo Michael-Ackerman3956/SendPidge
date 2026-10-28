@@ -8,8 +8,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from boto3.dynamodb.conditions import Key
 
-from shared import circle, graph, verdict
+from shared import circle, graph, orgs, verdict
 from shared.enums import ActionOutcome, Channel, Friction, VerdictAnswer, VerifiedVia
+from shared.orgs import OrgProfile
+from tests.helpers.profiles import TEST_ORG_ID, TEST_TIMEZONE
 from tests.test_reach_points import recorded_fan_out
 from tests.test_verdict import EMAIL_ID, RECEIVER_ADDRESS, RECEIVER_USER_ID, VERDICT_FIELDS, aws  # noqa: F401
 from tests.test_verify_contact import rejection, seed_circle_contact, send_action, verdict_handler  # noqa: F401
@@ -23,6 +25,7 @@ MINSOO_PHONE = "+8227341234"
 MINSOO_FORM = {"action": "add_contact", "contactName": " Minsoo  Kim ", "relationship": "son", "whatsappNumbers": [MINSOO_NUMBER],
                "phoneNumbers": [], "emailAddresses": ["Minsoo@Example.com", "minsoo.kim@work.example"]}
 TWO_NUMBER_FORM = {**MINSOO_FORM, "whatsappNumbers": [MINSOO_NUMBER, MINSOO_SECOND_NUMBER], "phoneNumbers": [MINSOO_PHONE]}
+OFFICE_NAME_VARIANT = "Test Commons Billing"
 
 
 @pytest.fixture
@@ -113,6 +116,21 @@ def test_the_contact_a_bad_field_a_duplicate_name_and_a_full_circle_write_nothin
     send_action(handler, RECEIVER_USER_ID, MINSOO_FORM)
     assert pushed_messages[-1] == rejection("circle_full")
     assert [row["SK"] for row in graph.list_contact_rows(RECEIVER_ADDRESS)] == ["CONTACT#jimin"]
+
+
+def test_a_name_variant_of_the_office_is_a_taken_name(circle_handler):
+    """Asks are matched by the office's name variants too, so neither a new contact nor an edit may take one."""
+    handler, pushed_messages, _user_pushes, _sent = circle_handler
+    office = OrgProfile(TEST_ORG_ID, "Test Commons", ("office@test.example",), (OFFICE_NAME_VARIANT,), TEST_TIMEZONE)
+    graph.get_table().put_item(Item=orgs.org_contact_row(RECEIVER_ADDRESS, office, graph.now_timestamp()))
+    _contact_added, minsoo_row = added_contact(circle_handler)
+    pushed_messages.clear()
+    send_action(handler, RECEIVER_USER_ID, {**MINSOO_FORM, "contactName": " test commons  BILLING "})
+    send_action(handler, RECEIVER_USER_ID, {**MINSOO_FORM, "action": "edit_contact", "contactUserId": minsoo_row["contactPwaUserId"],
+                                            "contactName": OFFICE_NAME_VARIANT})
+    assert pushed_messages == [rejection("duplicate_name")] * 2
+    assert sorted(row["contactName"] for row in graph.list_contact_rows(RECEIVER_ADDRESS)) == ["Minsoo Kim", "Test Commons"]
+    assert graph.get_contact_row(RECEIVER_ADDRESS, minsoo_row["SK"]) == minsoo_row
 
 
 def test_a_pending_contact_is_never_asked(circle_handler):

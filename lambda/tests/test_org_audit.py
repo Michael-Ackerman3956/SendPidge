@@ -104,13 +104,15 @@ def test_org_resolve_writes_resolve_row_and_audit_row(sunrise):  # noqa: F811
     pushed_messages.clear()
     send_action(org_actions_handler, "amy", resolve_body)
     assert pushed_messages == []  # success sends no reply; the projection's org_changed brings the re-sync
-    resolve_key = {"PK": f"ORG#{SUNRISE_ORG_ID}", "SK": f"RESOLVE#{source_key}"}
-    resolve_row = graph.get_table().get_item(Key=resolve_key)["Item"]
-    assert set(resolve_row) == {"PK", "SK", "memberRef", "adminId", "at"}
-    assert (resolve_row["memberRef"], resolve_row["adminId"]) == (GRANDMA_ADDRESS, "amy")
+    [resolve_row] = graph.get_table().query(KeyConditionExpression=Key("PK").eq(f"ORG#{SUNRISE_ORG_ID}")
+                                            & Key("SK").begins_with(f"RESOLVE#{source_key}#"))["Items"]
+    assert set(resolve_row) == {"PK", "SK", "memberRef", "adminId", "at", "sourceKey", "ttlEpochSeconds"}
+    assert (resolve_row["memberRef"], resolve_row["adminId"], resolve_row["sourceKey"]) == (GRANDMA_ADDRESS, "amy", source_key)
     [resolve_audit_row] = [row for row in read_audit_rows(SUNRISE_ORG_ID) if row["action"] == "org_resolve"]
     assert audit_fields(resolve_audit_row) == ("amy", "org_resolve", source_key) and set(resolve_audit_row) == AUDIT_ROW_FIELDS
 
+    resolve_key = {"PK": resolve_row["PK"], "SK": resolve_row["SK"]}
+    project(stream_record_for_row(resolve_key, None))  # org_resolved closes the episode
     send_action(org_actions_handler, "ann", resolve_body)
     assert pushed_messages == [rejection(None, "not_applied")]
     assert graph.get_table().get_item(Key=resolve_key)["Item"] == resolve_row

@@ -30,6 +30,7 @@ EMAIL_ADDRESS_MAXIMUM_LENGTH = 254
 PROFILE_SORT_KEY = "PROFILE"
 CODE_FIELDS = ("verificationCodeHash", "verificationExpiresAt")
 TRANSACTION_CANCELLED = "TransactionCanceledException"
+CONDITIONAL_CHECK_FAILED_REASON = "ConditionalCheckFailed"  # a transaction cancellation reason's Code
 WHATSAPP_CODE_PARTITION_PREFIX = "WACODE#"  # WACODE#<E.164>/RECEIVER#<address>: which residents a number's code may answer
 
 CONTACT_NOTE_TEMPLATE = (
@@ -138,16 +139,27 @@ def issue_access_token(user_id: str) -> str:
     return access_token
 
 
+def names_of_row(contact_row: dict) -> tuple[str, ...]:
+    """The names asks are matched by (graph.find_contact_among): contactName, plus nameVariants on the home office's row,
+    which must carry them (KeyError when absent)."""
+    if is_org_contact_sort_key(contact_row["SK"]):
+        return (contact_row["contactName"], *contact_row["nameVariants"])
+    return (contact_row["contactName"],)
+
+
 def find_same_name_row(contact_rows: list[dict], contact_name: str) -> dict | None:
-    wanted_name = contact_name.casefold()
-    return next((row for row in contact_rows if " ".join(row["contactName"].split()).casefold() == wanted_name), None)
+    """The row one of whose names (names_of_row) is this name, case and spacing ignored; None when no row has it."""
+    wanted_name = graph.normalize_person_name(contact_name)
+    return next((row for row in contact_rows
+                 if any(graph.normalize_person_name(name) == wanted_name for name in names_of_row(row))), None)
 
 
 def enrol_contact(receiver_address: str, form: ContactForm, now: datetime) -> Enrolment:
     """Writes the PENDING row with a server-made id, a hashed six-digit code, a PWA token for the in-app channel and a WACODE#
     row per WhatsApp number, in one transaction (no row without its token, no token without its row). Adding a name that is still PENDING re-issues it: the
     row takes the new form, a new code and a new token, and the old token dies, so a lost note or an expired code is recovered
-    by adding the person again. A verified name is refused (asks are matched by name), as is a full circle; both write nothing."""
+    by adding the person again. A name a verified row holds (names_of_row: the office's name variants too) is refused, as asks
+    are matched by name, and so is a full circle; both write nothing."""
     contact_rows = graph.list_contact_rows(receiver_address)
     same_name_row = find_same_name_row(contact_rows, form.contact_name)
     if same_name_row is not None and verified_via_of(same_name_row) is not VerifiedVia.PENDING:
@@ -193,9 +205,9 @@ def edit_contact(receiver_address: str, contact_user_id: str, form: ContactForm,
     its stored entry, so a checked number keeps being asked; a new WhatsApp number waits for a fresh code (one per edit, for
     every number still waiting), returned once. The row and a WACODE# row per number still waiting are written in one
     transaction. Refused, writing nothing: an unknown contact, the home office's CONTACT#org-<orgId> row (NOT_ALLOWED: only
-    orgs.org_contact_row builds it), a name another row has, an edit that drops every checked WhatsApp number, and a row
-    whose points, check state or code changed since it was read (two edits that change only the name or relationship: the
-    last one wins)."""
+    orgs.org_contact_row builds it), a name another row has (names_of_row), an edit that drops every checked WhatsApp
+    number, and a row whose points, check state or code changed since it was read (two edits that change only the name or
+    relationship: the last one wins)."""
     contact_rows = graph.list_contact_rows(receiver_address)
     contact_row = next((row for row in contact_rows if row["contactPwaUserId"] == contact_user_id), None)
     if contact_row is None:
@@ -266,6 +278,13 @@ def unchanged_since_read_condition(contact_row: dict) -> dict:
         else:
             clauses.append(f"attribute_not_exists({field_name})")
     return {"ConditionExpression": " AND ".join(clauses), **({"ExpressionAttributeValues": values} if values else {})}
+
+
+def is_first_item_condition_failed(error: ClientError) -> bool:
+    """A transaction cancelled because its first item's condition failed; False for any other cancellation reason (a
+    conflict, a throttle) and any other error."""
+    return (error.response["Error"]["Code"] == TRANSACTION_CANCELLED and "CancellationReasons" in error.response
+            and error.response["CancellationReasons"][0]["Code"] == CONDITIONAL_CHECK_FAILED_REASON)
 
 
 def dead_token_deletions(table_name: str, contact_user_id: str, same_name_row: dict | None) -> list[dict]:

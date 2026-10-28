@@ -1,8 +1,8 @@
 """WebSocket route org_resolve (pidge-org, its own function and role, writes limited to ORG#*/ORGAUDIT#*): an org admin marks
 one member's open episode followed up. The admin comes from the connection's user -> orgs.require_org_admin, never the body;
 the body's memberRef and sourceKey are parsed, must name a MEMBER# of the admin's own org, and the episode must be in a
-RESOLVABLE state. ORG#<orgId>/RESOLVE#<sourceKey> and its ORGAUDIT# row are written in one transaction; the projection turns
-the RESOLVE# row into org_resolved. Only a refusal is answered. Logs ids only (never a member's address)."""
+RESOLVABLE state. ORG#<orgId>/RESOLVE#<sourceKey>#<at> and its ORGAUDIT# row are written in one transaction; the projection
+turns the RESOLVE# row into org_resolved. Only a refusal is answered. Logs ids only (never a member's address)."""
 
 import json
 import logging
@@ -13,7 +13,7 @@ from botocore.exceptions import ClientError
 from shared import channels, circle, graph, org_audit, org_view, orgs
 from shared.enums import ActionOutcome, ClientAction
 from shared.org_enums import OrgAuditAction
-from shared.org_events import RESOLVABLE_STATES, RESOLVE_SORT_KEY_PREFIX
+from shared.org_events import RESOLVABLE_STATES, resolve_row_expiry, resolve_sort_key_for
 from shared.orgs import OrgAdmin
 
 logger = logging.getLogger()
@@ -64,7 +64,8 @@ def is_member_of_org(org_id: str, member_ref: str) -> bool:
 
 def handle_org_resolve(connection_id: str, org_admin: OrgAdmin, body: dict) -> None:
     """BAD_MESSAGE for a malformed memberRef or sourceKey; NOT_ALLOWED for a member outside the admin's org; NOT_APPLIED for
-    an episode of that member that is not in a RESOLVABLE state, or already resolved."""
+    an episode of that member that is not in a RESOLVABLE state (a projected resolve closed it), or resolved in the same
+    second. An episode reopened after a resolve is resolved again."""
     try:
         member_ref = circle.parse_email_address(body["memberRef"])
         source_key = parse_source_key(body["sourceKey"])
@@ -86,11 +87,14 @@ def handle_org_resolve(connection_id: str, org_admin: OrgAdmin, body: dict) -> N
 
 
 def write_resolve(org_admin: OrgAdmin, member_ref: str, source_key: str) -> ActionOutcome:
-    """ONE transaction: Put ORG#<orgId>/RESOLVE#<sourceKey> {memberRef, adminId, at} and the org_resolve audit row (targetRef
-    the sourceKey), each only when absent. Cancelled (the episode was resolved before): NOT_APPLIED, nothing written."""
+    """ONE transaction: Put ORG#<orgId>/RESOLVE#<sourceKey>#<at> {memberRef, adminId, at, sourceKey, ttlEpochSeconds} and
+    the org_resolve audit row (targetRef the sourceKey), each only when absent. NOT_APPLIED, nothing written, only when the
+    RESOLVE# Put's condition failed (the same episode resolved in the same second); any other failure raises."""
     table = graph.get_table()
-    resolve_row = {"PK": orgs.org_partition(org_admin.org_id), "SK": f"{RESOLVE_SORT_KEY_PREFIX}{source_key}",
-                   "memberRef": member_ref, "adminId": org_admin.user_id, "at": graph.now_timestamp()}
+    resolved_at = graph.now_timestamp()
+    resolve_row = {"PK": orgs.org_partition(org_admin.org_id), "SK": resolve_sort_key_for(source_key, resolved_at),
+                   "memberRef": member_ref, "adminId": org_admin.user_id, "at": resolved_at, "sourceKey": source_key,
+                   "ttlEpochSeconds": resolve_row_expiry(resolved_at)}
     audit_row = org_audit.build_audit_row(org_admin, OrgAuditAction.ORG_RESOLVE, source_key)
     try:
         table.meta.client.transact_write_items(TransactItems=[
@@ -98,7 +102,7 @@ def write_resolve(org_admin: OrgAdmin, member_ref: str, source_key: str) -> Acti
             {"Put": {"TableName": table.name, "Item": audit_row, "ConditionExpression": "attribute_not_exists(SK)"}},
         ])
     except ClientError as error:
-        if error.response["Error"]["Code"] == circle.TRANSACTION_CANCELLED:
+        if circle.is_first_item_condition_failed(error):
             return ActionOutcome.NOT_APPLIED
         raise
     return ActionOutcome.RECORDED

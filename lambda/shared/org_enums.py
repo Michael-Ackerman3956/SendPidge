@@ -44,7 +44,7 @@ class OrgEvent(StrEnum):
     BROADCAST_SENT = "broadcast_sent"  # no writer yet
     BROADCAST_ACKNOWLEDGED = "broadcast_acknowledged"  # no writer yet
     HELP_REQUESTED = "help_requested"  # no writer yet
-    ORG_RESOLVED = "org_resolved"  # an admin marked the episode followed up (ORG#<orgId>/RESOLVE#<sourceKey>)
+    ORG_RESOLVED = "org_resolved"  # an admin marked the episode followed up (ORG#<orgId>/RESOLVE#<sourceKey>#<at>)
 
 
 class MemberSafetyState(StrEnum):
@@ -84,7 +84,7 @@ class ProjectedRecordKind(StrEnum):
     REQUEST_NOTE = "request_note"  # REQUEST#<id>/NOTE#<writtenAt>
     EMAIL_META = "email_meta"  # EMAIL#<id>/META
     CASE_META = "case_meta"  # CASE#<id>/META
-    ORG_RESOLVE = "org_resolve"  # ORG#<orgId>/RESOLVE#<sourceKey>
+    ORG_RESOLVE = "org_resolve"  # ORG#<orgId>/RESOLVE#<sourceKey>#<at>
     ORG_CANARY = "org_canary"  # ORG#<orgId>/CANARY, put every 5 minutes by the scheduler
     RECEIVER_ORG_PREFERENCE = "receiver_org_preference"  # RECEIVER#<address>/ORGPREF#<orgId>
     RECEIVER_CONTACT = "receiver_contact"  # RECEIVER#<address>/CONTACT#<id>

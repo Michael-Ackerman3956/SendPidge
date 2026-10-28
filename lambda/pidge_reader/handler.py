@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import boto3
 from botocore.exceptions import ClientError
 
-from shared import channels, graph, hourly_counters, lists, payloads, schedules, sources
+from shared import channels, graph, hourly_counters, lists, orgs, payloads, schedules, sources
 from shared.metrics import emit_count_metric
 from shared.auth import authentication_reasons
 from shared import links as link_checks
@@ -113,6 +113,7 @@ def fetch_raw_email(bucket_name: str, object_key: str) -> bytes:
 def process_email(receiver: ReceiverProfile, object_key: str, raw_email: bytes) -> None:
     parsed_email = parse_eml(raw_email)
     contacts = graph.list_contacts(receiver.receiver_address)  # one query per email; every name match below reads this list
+    contacts = orgs.contacts_with_live_office(receiver, contacts)  # the own home's office from its live PROFILE, any other dropped
     link_assessments = link_checks.assess_links(parsed_email.links, graph.domains_of(contacts))
     # Before the claim, so EMAIL# stores LINK_LISTED and the coverage in one write; a failed read answers unavailable.
     scam_list_check = sources.check_against_live_sources(

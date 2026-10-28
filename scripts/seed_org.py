@@ -1,8 +1,10 @@
 """Seeds one org on the deployed stack (founder only): ORG#<orgId>/PROFILE, an ADMIN# row per admin (role org_admin and the
 orgId set on their USER#<id>/PROFILE) and the tags on each member's MEMBER# row, in one transaction
 (orgs.write_org_seed); each member must already be a resident enrolled in this org. Re-running it rewrites the profile, the
-admins and the tags and keeps everything else. An admin without a PWA token gets one in .env.tokens.<userId> (git-ignored,
-owner-only), never printed; the org's own org-<orgId> user never gets one.
+listed admins and the tags, deletes the ADMIN# row of every admin of this org it does not list (in the same transaction;
+their USER#/PROFILE keeps its role and orgId, and require_org_admin refuses them) and keeps everything else. An admin
+without a PWA token gets one in .env.tokens.<userId> (git-ignored, owner-only), never printed; the org's own org-<orgId>
+user never gets one.
 Usage: AWS_PROFILE=sendpidge python scripts/seed_org.py --org-id home-demo --org-name "<home name>"
            --verified-address office@<home domain> [--verified-address ...] [--name-variant "<other name>" ...]
            --timezone <IANA name> --admin <userId>:<viewer|sender> [--admin ...] [--member <address>[:<tag>,<tag>] ...]

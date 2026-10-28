@@ -24,6 +24,7 @@ from shared.enums import (
     UserRole, VerdictAnswer,
 )
 from shared.metrics import emit_count_metric
+from shared.org_ids import is_org_user_id, org_id_of_org_user
 from shared.profiles import ReceiverProfile, UnknownReceiverError
 
 logger = logging.getLogger()
@@ -153,21 +154,26 @@ def contact_sync_message(user_id: str) -> dict:
 
 def contact_cards_for(user_id: str) -> list:
     """The cards asked of this PWA user (a contact, or an org's org-<orgId> user), each named for its own resident; a card
-    whose resident has no profile is skipped (and counted)."""
+    whose resident has no profile is skipped (and counted), and an org's card whose resident's orgId is not that org
+    (orgs.is_residents_own_org: a former home after re-enrolment) is skipped (logged)."""
     now = graph.now_timestamp()
-    resident_names: dict[str, str] = {}
+    card_org_id = org_id_of_org_user(user_id) if is_org_user_id(user_id) else None
+    residents_by_address: dict[str, ReceiverProfile] = {}
     cards = []
     for request_row in graph.list_recent_rows(user_id, graph.REQUEST_ROW_KIND, SYNC_REQUEST_LIMIT):
         receiver_address = request_row["receiverEmail"]
-        if receiver_address not in resident_names:
+        if receiver_address not in residents_by_address:
             try:
-                resident_names[receiver_address] = profiles.require_receiver_profile(receiver_address).resident_name
+                residents_by_address[receiver_address] = profiles.require_receiver_profile(receiver_address)
             except UnknownReceiverError:
                 logger.warning("request %s skipped in sync: its receiver has no profile", graph.request_id_of(request_row))
                 continue
+        resident = residents_by_address[receiver_address]
+        if card_org_id is not None and not orgs.is_residents_own_org(resident, card_org_id):
+            logger.info("request %s skipped in %s's sync: its resident's home is another org", graph.request_id_of(request_row), user_id)
+            continue
         email_row = graph.get_email(request_row["emailId"])
-        cards.append(payloads.card_for_contact(request_row, email_row, resident_names[receiver_address],
-                                               verdict.effective_status(request_row, now)))
+        cards.append(payloads.card_for_contact(request_row, email_row, resident.resident_name, verdict.effective_status(request_row, now)))
     return cards
 
 
@@ -324,6 +330,8 @@ def handle_emailed_answer_object(bucket_name: str, object_key: str) -> None:
 
 
 def handle_confirm(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
+    """After a No: the email is quarantined and both PWAs hear it (the resident alone, named after their current home, when
+    the office the request was held for is no longer reached: orgs.read_request_contact_row)."""
     request_id = body.get("requestId")
     if not isinstance(request_id, str):
         channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
@@ -334,10 +342,11 @@ def handle_confirm(connection_id: str, resident: ReceiverProfile, body: dict) ->
     if result.outcome is not ActionOutcome.RECORDED:
         channels.reject_action(connection_id, request_id, result.outcome)
         return
-    contact_row = graph.get_contact_row(result.request_row["receiverEmail"], result.request_row["contactSK"])
-    message = payloads.request_state_message(result.request_row, result.status, contact_row["contactName"], True)
+    contact_row = orgs.read_request_contact_row(result.request_row, resident)
+    message = payloads.request_state_message(result.request_row, result.status, orgs.contact_name_for_request(contact_row, resident), True)
     channels.push_to_user(resident.receiver_user_id, message)
-    channels.push_to_user(contact_row["contactPwaUserId"], message)
+    if contact_row is not None:
+        channels.push_to_user(contact_row["contactPwaUserId"], message)
 
 
 def handle_report_payment(connection_id: str, resident: ReceiverProfile, body: dict) -> None:

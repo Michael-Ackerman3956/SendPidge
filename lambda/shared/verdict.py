@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from shared import graph, orgs, reach_points, refund_rules
+from shared import graph, orgs, profiles, reach_points, refund_rules
 from shared.enums import (
     FINAL_REQUEST_STATES, PHONE_CHANNEL_ANSWERS, ActionOutcome, Channel, Jurisdiction, PaymentRail, RequestState, VerdictAnswer,
 )
-from shared.org_ids import is_org_user_id
+from shared.org_ids import is_org_user_id, org_id_of_org_user
 
 logger = logging.getLogger(__name__)
 
@@ -119,15 +119,24 @@ def build_answer_update(answer: VerdictAnswer, sender: SenderIdentity, inbound_m
     }
 
 
+def is_office_of_residents_own_org(contact_row: dict, org_user_id: str) -> bool:
+    """Whether the org behind an office row's org-<orgId> is the org on the PROFILE of the RECEIVER# resident whose circle
+    holds the row (orgs.is_residents_own_org). A resident without a complete profile raises UnknownReceiverError (counted)."""
+    resident = profiles.require_receiver_profile(contact_row["PK"].removeprefix("RECEIVER#"))
+    return orgs.is_residents_own_org(resident, org_id_of_org_user(org_user_id))
+
+
 def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool:
-    """The contact's own PWA user (for an org contact, an admin of that org: org-<orgId> itself never answers), or one of the
-    addresses Pidge may ask on that channel, exactly; an email address compares case-insensitively."""
+    """The contact's own PWA user (for an org contact, an admin of that org, and only while the org is the resident's own: a
+    former home's row is refused; org-<orgId> itself never answers), or one of the addresses Pidge may ask on that channel,
+    exactly; an email address compares case-insensitively."""
     if contact_row is None:
         return False
     if sender.channel is Channel.INAPP:
         contact_user_id = str(contact_row["contactPwaUserId"])
         if is_org_user_id(contact_user_id):
-            return orgs.is_admin_of_org_user(sender.value, contact_user_id)
+            return (is_office_of_residents_own_org(contact_row, contact_user_id)
+                    and orgs.is_admin_of_org_user(sender.value, contact_user_id))
         return hmac.compare_digest(contact_user_id, sender.value)
     askable_addresses = reach_points.askable_addresses(reach_points.reach_points_of(contact_row), sender.channel)
     if sender.channel is Channel.EMAIL:
@@ -165,7 +174,8 @@ def record_answer(
 
 
 def release_if_still_pending(request_id: str) -> ActionResult:
-    """The release timer fired: confirmed only if nobody tapped Undo (or No) meanwhile."""
+    """The release timer fired: confirmed only if nobody tapped Undo (or No) meanwhile. The result carries no contact_row: the
+    caller reads it through orgs.read_request_contact_row, which decides whether the contact is still reached."""
     request_row = graph.get_request(request_id)
     if request_row is None:
         return ActionResult(ActionOutcome.UNKNOWN_REQUEST)
@@ -177,8 +187,7 @@ def release_if_still_pending(request_id: str) -> ActionResult:
     })
     if not applied:
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row)
-    contact_row = graph.get_contact_row(request_row["receiverEmail"], request_row["contactSK"])
-    return ActionResult(ActionOutcome.RECORDED, graph.get_request(request_id), contact_row, status=RequestState.CONFIRMED)
+    return ActionResult(ActionOutcome.RECORDED, graph.get_request(request_id), status=RequestState.CONFIRMED)
 
 
 def receipt_text(status: RequestState, receiver_name: str) -> tuple[str, str]:

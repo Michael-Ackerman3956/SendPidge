@@ -1,7 +1,8 @@
 """pidge-verdict's org admin paths: the admin's sync (the office's "Was this you?" cards and the home's safety overview) and
 the audit of an admin's answer as the office. Each acts for the OrgAdmin resolved from the caller's own PROFILE and
-ORG#<orgId>/ADMIN# rows (orgs.require_org_admin), and writes its ORGAUDIT# row before anything is pushed or recorded: a failed
-audit write raises, so nothing is sent (fail closed)."""
+ORG#<orgId>/ADMIN# rows (orgs.require_org_admin for the sync; the answer audit reads the same two rows without counting a
+refusal), and writes its ORGAUDIT# row before anything is pushed or recorded: a failed audit write raises, so nothing is
+sent (fail closed)."""
 
 import hmac
 from datetime import datetime, timezone
@@ -29,19 +30,24 @@ def org_admin_sync_message(org_admin: OrgAdmin) -> dict | None:
 
 
 def audit_office_answer(user_id: str, request_row: dict) -> OrgAdmin | None:
-    """For an in-app answer on a request held for a home's office (contactSK CONTACT#org-<orgId>) by a complete admin of
-    that same org: writes the ORGAUDIT# answer row (targetRef the request id) and returns the admin; a failed write raises,
-    so the caller records no answer. Any other request or caller: None and nothing written; record_answer's
-    is_expected_sender then refuses a non-admin, counted once there (the role is read here without counting a refusal)."""
+    """For an in-app answer on a request held for a home's office (contactSK CONTACT#org-<orgId>) by an admin of that same
+    org (PROFILE role ORG_ADMIN and orgId, and an ORG#<orgId>/ADMIN# row holding an AdminRole): writes the ORGAUDIT# answer
+    row (targetRef the request id) and returns the admin; a failed write raises, so the caller records no answer. Any other
+    request or caller: None and nothing written or counted here (the PROFILE and orgs.read_admin_role are read without
+    counting a refusal); record_answer's is_expected_sender then refuses a non-admin, counted once there."""
     contact_sort_key = request_row["contactSK"]
     if not is_org_contact_sort_key(contact_sort_key):
         return None
     profile_row = profiles.read_profile_row(f"USER#{user_id}")
-    if profile_row is None or "role" not in profile_row or profile_row["role"] != UserRole.ORG_ADMIN:
+    if (profile_row is None or "role" not in profile_row or profile_row["role"] != UserRole.ORG_ADMIN
+            or not profiles.is_filled_text(profile_row, "orgId")):
         return None
-    org_admin = orgs.require_org_admin(user_id)
-    request_org_id = contact_sort_key.removeprefix(ORG_CONTACT_SORT_KEY_PREFIX)
-    if org_admin is None or not hmac.compare_digest(org_admin.org_id.encode(), request_org_id.encode()):
+    org_id = profile_row["orgId"]
+    if not hmac.compare_digest(org_id.encode(), contact_sort_key.removeprefix(ORG_CONTACT_SORT_KEY_PREFIX).encode()):
         return None
+    admin_role = orgs.read_admin_role(org_id, user_id)
+    if admin_role is None:
+        return None
+    org_admin = OrgAdmin(user_id, org_id, admin_role)
     org_audit.write_audit_row(org_admin, OrgAuditAction.ANSWER, graph.request_id_of(request_row))
     return org_admin

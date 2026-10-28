@@ -1,24 +1,30 @@
 """A home (org) in the kernel: the office's contact identity org-<orgId> is answered and reached through the org's admins only,
-an admin's org comes from their own PROFILE and ADMIN# rows (never the body), a name variant is held by gate 1, the ask
-cap counts each resident of the office apart, and an org action is refused to anyone but an admin of the member's own org."""
+an admin's org comes from their own PROFILE and ADMIN# rows (never the body), a name variant is held by gate 1, gate 1 reads
+the org's live verified addresses, a former home's office is neither asked nor answers, the ask cap counts each resident of
+the office apart, and an org action is refused to anyone but an admin of the member's own org."""
 
+import importlib
 import json
+import logging
+from dataclasses import replace
 
 import boto3
 
 from pidge_org import handler as org_actions_handler
-from shared import channels, graph, hourly_counters
-from shared.enums import Channel, Friction, Intent, PolicyDecision, ReasonCode, RequestState
+from shared import channels, graph, hourly_counters, orgs, verdict
+from shared.enums import ActionOutcome, Channel, Friction, Intent, PolicyDecision, ReasonCode, RequestState, VerdictAnswer
 from shared.org_ids import org_contact_sort_key_for, org_user_id_for
 from shared.reader_agent import EmailVerdict
 from tests.helpers.orgs import seed_org_contact, seed_test_org
 from tests.helpers.profiles import seed_contact_roles, seed_resident
 from tests.helpers.scripted_model import ScriptedModel, verdict_step
+from tests.test_cross_resident import read_profile_rejection_reasons
 from tests.test_reader_reading_state import inbound_event
 from tests.test_reader_receiver import BUCKET_NAME, reader_with_bucket  # noqa: F401
+from tests.test_retry import FakeContext
 from tests.test_roles import put_profile
 from tests.test_seed_org import read_all_rows
-from tests.test_verdict import aws  # noqa: F401
+from tests.test_verdict import BUCKET_NAME as VERDICT_BUCKET_NAME, aws  # noqa: F401
 from tests.test_verify_contact import seed_circle_contact, send_action, verdict_handler_without_profiles  # noqa: F401
 
 SUNRISE_ORG_ID = "sunrise"
@@ -30,6 +36,10 @@ BILLING_LOOKALIKE_FROM = f"{SUNRISE_NAME_VARIANT} <billing@sunrise-help.example>
 STATEMENT_SUBJECT = "Your October statement"
 OFFICE_VERDICT_FIELDS = {"claimed_person": "Sunrise Commons", "intent": "money", "confidence": 0.95, "summary": "Asks to pay an invoice."}
 STATEMENT_NO_ASK = {"claimed_person": "Sunrise Commons", "intent": Intent.NONE, "confidence": 0.9, "summary": "A monthly statement."}
+SUNRISE_OFFICE_ADDRESS = "office@sunrise.example"
+SUNRISE_BILLING_ADDRESS = "billing@sunrise.example"
+INVOICE_SUBJECT = "Your October invoice"
+OFFICE_SORT_KEY = "CONTACT#org-sunrise"
 
 
 def seed_sunrise_and_maple() -> None:
@@ -52,6 +62,66 @@ def new_office_request(email_id: str, office: graph.Contact) -> str:
     graph.claim_email(email_id, {"s3Key": email_id, "senderAddress": "billing@sunrise-help.example", "subject": "Invoice",
                                  "quarantined": False})
     return graph.request_id_of(graph.create_request(email_id, GRANDMA_ADDRESS, office, OFFICE_VERDICT_FIELDS, Friction.SINGLE_TAP, None))
+
+
+def store_email_to_grandma(message_id: str, from_header: str, subject: str) -> None:
+    """A raw email to Grandma, stored where Mail Manager stores it (inbox/<messageId>)."""
+    raw_email = (f"From: {from_header}\r\nTo: Grandma <{GRANDMA_ADDRESS}>\r\nSubject: {subject}\r\n"
+                 f"Message-ID: <{message_id}@sender.example>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+                 "Please see this month's account.\r\n").encode()
+    boto3.client("s3").put_object(Bucket=BUCKET_NAME, Key=f"inbox/{message_id}", Body=raw_email)
+
+
+def read_email_to_grandma(handler, message_id: str, from_header: str, subject: str) -> dict:
+    """Runs pidge-reader on one email to Grandma and returns its EMAIL# row."""
+    store_email_to_grandma(message_id, from_header, subject)
+    handler.handle(inbound_event(message_id, [GRANDMA_ADDRESS]), None)
+    return graph.get_email(f"inbox/{message_id}")
+
+
+def record_user_pushes(handler, monkeypatch) -> list[tuple[str, dict]]:
+    """Every push_to_user from any handler (they share shared.channels), recorded with its user as wire JSON."""
+    user_pushes: list[tuple[str, dict]] = []
+    monkeypatch.setattr(handler.channels, "push_to_user",
+                        lambda user_id, message: user_pushes.append((user_id, json.loads(handler.channels.encode_push_message(message)))) or 1)
+    return user_pushes
+
+
+def summarize_request_pushes(user_pushes: list[tuple[str, dict]]) -> list[tuple]:
+    return [(user_id, message["type"], message["request"]["requestId"], message["request"]["status"], message["request"].get("contactName"))
+            for user_id, message in user_pushes]
+
+
+def hold_three_office_requests(handler) -> tuple[str, str, str]:
+    """Three of Grandma's requests held for Sunrise's office: one ann answered Yes (to release), one unanswered (to time
+    out) and one ann answered No (to confirm; its raw email stored)."""
+    office = add_office_to_circle(GRANDMA_ADDRESS, SUNRISE_ORG_ID)
+    released_id, timed_out_id, confirmed_id = (new_office_request(f"inbox/office-{number}.eml", office) for number in (1, 2, 3))
+    boto3.client("s3").create_bucket(Bucket=VERDICT_BUCKET_NAME)
+    boto3.client("s3").put_object(Bucket=VERDICT_BUCKET_NAME, Key="inbox/office-3.eml", Body=b"raw")
+    send_action(handler, "ann", {"action": "answer", "answer": "yes", "requestId": released_id})
+    send_action(handler, "ann", {"action": "answer", "answer": "no", "requestId": confirmed_id})
+    return released_id, timed_out_id, confirmed_id
+
+
+def run_release_retries_and_confirm(handler, monkeypatch, caplog, request_ids: tuple[str, str, str]) -> tuple[list, list]:
+    """The production pidge-release on the first request, pidge-retry attempts 1 and 2 on the second and Grandma's Confirm on
+    the third. Returns the retry timers booked and, per shared.orgs log line, the request ids it names."""
+    released_id, timed_out_id, confirmed_id = request_ids
+    monkeypatch.setenv("RE_ASK_DELAY_SECONDS", "600")
+    release_handler = importlib.reload(importlib.import_module("pidge_release.handler"))
+    retry_handler = importlib.reload(importlib.import_module("pidge_retry.handler"))
+    scheduled: list[tuple[str, dict]] = []
+    monkeypatch.setattr(retry_handler.schedules, "schedule_one_time_invocation",
+                        lambda name, _fire_at, _function_arn, payload: scheduled.append((name, payload)))
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger=orgs.logger.name):
+        release_handler.handle({"requestId": released_id}, None)
+        retry_handler.handle({"requestId": timed_out_id, "attempt": 1}, FakeContext())
+        retry_handler.handle({"requestId": timed_out_id, "attempt": 2}, FakeContext())
+        send_action(handler, "grandma", {"action": "confirm", "requestId": confirmed_id})
+    office_logs = [record.getMessage() for record in caplog.records if record.name == orgs.logger.name]
+    return scheduled, [[request_id for request_id in request_ids if request_id in log] for log in office_logs]
 
 
 def rejection(request_id: str | None, reason: str) -> dict:
@@ -177,3 +247,78 @@ def test_non_admin_org_action_not_allowed(verdict_handler_without_profiles):  # 
     send_action(org_actions_handler, "ann", resolve_body)  # Sunrise's admin passes the member check; nothing is open yet
     assert pushed_messages[-1] == rejection(None, "not_applied")
     assert read_rows_except_connections() == rows_before
+
+
+def test_address_removed_from_profile_is_no_longer_known(reader_with_bucket):  # noqa: F811
+    handler, _pushes = reader_with_bucket
+    seed_resident(GRANDMA_ADDRESS, "grandma", "Grandma", org_id=SUNRISE_ORG_ID)
+    office_only_seed = seed_test_org(SUNRISE_ORG_ID, ["ann"], [GRANDMA_ADDRESS])
+    orgs.write_org_seed(orgs.validate_org_seed(replace(office_only_seed, verified_addresses=(SUNRISE_OFFICE_ADDRESS, SUNRISE_BILLING_ADDRESS))))
+    add_office_to_circle(GRANDMA_ADDRESS, SUNRISE_ORG_ID)
+    handler.reader.model = ScriptedModel(EmailVerdict, {STATEMENT_SUBJECT: [verdict_step(STATEMENT_NO_ASK)] * 2})
+    from_billing = f"Sunrise Commons <{SUNRISE_BILLING_ADDRESS}>"
+    known_row = read_email_to_grandma(handler, "msg-billing-0002", from_billing, STATEMENT_SUBJECT)
+    assert known_row["state"] != str(PolicyDecision.HOLD) and str(ReasonCode.UNKNOWN_ADDRESS) not in known_row["reasons"]
+    orgs.write_org_seed(office_only_seed)  # the re-seed drops billing@
+    assert SUNRISE_BILLING_ADDRESS in graph.get_contact_row(GRANDMA_ADDRESS, OFFICE_SORT_KEY)["knownAddresses"]  # the stale copy
+    email_row = read_email_to_grandma(handler, "msg-billing-0003", from_billing, STATEMENT_SUBJECT)
+    assert email_row["state"] == str(PolicyDecision.HOLD) and str(ReasonCode.UNKNOWN_ADDRESS) in email_row["reasons"]
+    assert graph.get_request(email_row["requestId"])["contactSK"] == OFFICE_SORT_KEY
+
+
+def office_ask_count(pushes: list[tuple[str, dict]]) -> int:
+    return [(user_id, message["type"]) for user_id, message in pushes].count(("org-sunrise", "verification_card"))
+
+
+def test_former_home_office_neither_asked_nor_answers(reader_with_bucket):  # noqa: F811
+    handler, pushes = reader_with_bucket
+    seed_sunrise_and_maple()
+    office = add_office_to_circle(GRANDMA_ADDRESS, SUNRISE_ORG_ID)
+    answered_id, open_id = (new_office_request(f"inbox/office-{number}.eml", office) for number in (1, 2))
+    ann = verdict.SenderIdentity(Channel.INAPP, "ann")
+    assert verdict.record_answer(answered_id, VerdictAnswer.NO, ann, "inapp:m1", graph.now_timestamp()).outcome is ActionOutcome.RECORDED
+    handler.reader.model = ScriptedModel(EmailVerdict, {INVOICE_SUBJECT: [verdict_step(OFFICE_VERDICT_FIELDS)] * 2})
+    from_office = f"Sunrise Commons <{SUNRISE_OFFICE_ADDRESS}>"
+    held_row = read_email_to_grandma(handler, "msg-office-0001", from_office, INVOICE_SUBJECT)
+    assert graph.get_request(held_row["requestId"])["contactSK"] == OFFICE_SORT_KEY and office_ask_count(pushes) == 1
+
+    seed_resident(GRANDMA_ADDRESS, "grandma", "Grandma", org_id=MAPLE_ORG_ID)  # re-enrolled at Maple: Grandma's Sunrise office row stays
+    assert graph.get_contact_row(GRANDMA_ADDRESS, OFFICE_SORT_KEY) is not None
+    email_row = read_email_to_grandma(handler, "msg-office-0002", from_office, INVOICE_SUBJECT)
+    assert (email_row["state"], email_row["warnReason"], email_row["requestId"]) == ("warn", "unknown_name", None)
+    assert office_ask_count(pushes) == 1
+    unanswered = graph.get_request(open_id)
+    assert verdict.record_answer(open_id, VerdictAnswer.NO, ann, "inapp:m2", graph.now_timestamp()).outcome is ActionOutcome.WRONG_SENDER
+    assert graph.get_request(open_id) == unanswered
+
+
+def test_former_home_office_left_out_of_open_requests(verdict_handler_without_profiles, monkeypatch, caplog):  # noqa: F811
+    handler, pushed_messages = verdict_handler_without_profiles
+    user_pushes = record_user_pushes(handler, monkeypatch)
+    seed_sunrise_and_maple()
+    request_ids = released_id, timed_out_id, confirmed_id = hold_three_office_requests(handler)
+    send_action(handler, "ann", {"action": "sync"})
+    assert sorted(card["requestId"] for card in pushed_messages[-1]["requests"]) == sorted(request_ids)
+
+    seed_resident(GRANDMA_ADDRESS, "grandma", "Grandma", org_id=MAPLE_ORG_ID)  # re-enrolled at Maple: Grandma's Sunrise office row stays
+    assert graph.get_contact_row(GRANDMA_ADDRESS, OFFICE_SORT_KEY) is not None
+    user_pushes.clear()
+    scheduled, office_log_request_ids = run_release_retries_and_confirm(handler, monkeypatch, caplog, request_ids)
+    assert scheduled == [(f"retry-{timed_out_id}-2", {"requestId": timed_out_id, "attempt": 2})]
+    assert summarize_request_pushes(user_pushes) == [("grandma", "request_state", released_id, "confirmed", "Maple Commons"),
+                                                     ("grandma", "request_state", timed_out_id, "timeout", "Maple Commons"),
+                                                     ("grandma", "request_state", confirmed_id, "denied", "Maple Commons")]
+    assert office_log_request_ids == [[released_id], [timed_out_id], [timed_out_id], [confirmed_id]]
+    send_action(handler, "ann", {"action": "sync"})
+    assert (pushed_messages[-1]["type"], pushed_messages[-1]["requests"]) == ("sync_state", [])
+
+
+def test_office_answer_refusal_counted_once(verdict_handler_without_profiles, capsys):  # noqa: F811
+    handler, pushed_messages = verdict_handler_without_profiles
+    seed_sunrise_and_maple()
+    request_id = new_office_request("inbox/office-1.eml", add_office_to_circle(GRANDMA_ADDRESS, SUNRISE_ORG_ID))
+    put_profile("no-admin-row", {"role": "org_admin", "orgId": SUNRISE_ORG_ID})  # an org admin's PROFILE with no ADMIN# row
+    capsys.readouterr()
+    send_action(handler, "no-admin-row", {"action": "answer", "answer": "no", "requestId": request_id})
+    assert pushed_messages == [rejection(request_id, "wrong_sender")]
+    assert read_profile_rejection_reasons(capsys) == ["not_in_org"]

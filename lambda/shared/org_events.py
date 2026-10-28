@@ -22,7 +22,7 @@ RESOLVE_SORT_KEY_PREFIX = "RESOLVE#"
 CANARY_SORT_KEY = "CANARY"
 REQUEST_SOURCE_PREFIX = "REQUEST#"
 CASE_SOURCE_PREFIX = "CASE#"
-RESOLVE_LOG_RETENTION = timedelta(days=90)  # an org_resolved row has no source row whose ttl it could copy
+RESOLVE_LOG_RETENTION = timedelta(days=90)  # a RESOLVE# row's ttl, from its at; its org_resolved log row copies it
 
 CASE_EVENTS = frozenset({OrgEvent.WRONG_PAYMENT_REPORTED, OrgEvent.RECOVERY_PACK_DRAFTED, OrgEvent.CASE_CLOSED})
 ANY_VISIBILITY_EVENTS = frozenset({OrgEvent.HELP_REQUESTED, OrgEvent.BROADCAST_ACKNOWLEDGED, OrgEvent.ORG_RESOLVED})
@@ -30,7 +30,8 @@ ANY_VISIBILITY_EVENTS = frozenset({OrgEvent.HELP_REQUESTED, OrgEvent.BROADCAST_A
 # state (None: no open episode) -> {event: next state}; an event not listed for a state leaves the state as it is.
 EPISODE_TRANSITIONS: dict[MemberSafetyState | None, dict[OrgEvent, MemberSafetyState | None]] = {
     None: {OrgEvent.MESSAGE_HELD: MemberSafetyState.HELD, OrgEvent.CONTACT_CONFIRMED_NOT_ME: MemberSafetyState.CONFIRMED_NOT_ME,
-           OrgEvent.WRONG_PAYMENT_REPORTED: MemberSafetyState.CASE_OPEN, OrgEvent.PAYMENT_DOUBTED: MemberSafetyState.WARNED},
+           OrgEvent.WRONG_PAYMENT_REPORTED: MemberSafetyState.CASE_OPEN, OrgEvent.PAYMENT_DOUBTED: MemberSafetyState.WARNED,
+           OrgEvent.CONTACT_UNREACHABLE: MemberSafetyState.CONTACT_UNREACHABLE},  # its record time may precede message_held
     MemberSafetyState.HELD: {
         OrgEvent.CONTACT_CONFIRMED_YES: None, OrgEvent.CONTACT_CONFIRMED_NOT_ME: MemberSafetyState.CONFIRMED_NOT_ME,
         OrgEvent.ASK_TIMED_OUT: MemberSafetyState.HELD_NO_ANSWER, OrgEvent.ASK_CAPPED: MemberSafetyState.HELD_NO_ANSWER,
@@ -50,7 +51,7 @@ STATE_PRIORITY = (MemberSafetyState.CASE_OPEN, MemberSafetyState.CONFIRMED_NOT_M
                   MemberSafetyState.CONTACT_UNREACHABLE, MemberSafetyState.HELD, MemberSafetyState.WARNED)
 RESOLVABLE_STATES = frozenset({MemberSafetyState.HELD_NO_ANSWER, MemberSafetyState.CONTACT_UNREACHABLE,
                                MemberSafetyState.CONFIRMED_NOT_ME, MemberSafetyState.WARNED})
-ACTIONABLE_STATES = frozenset({MemberSafetyState.HELD_NO_ANSWER, MemberSafetyState.CONTACT_UNREACHABLE})
+ACTIONABLE_STATES = RESOLVABLE_STATES  # staff see every episode they may resolve
 
 ANSWER_EVENTS = {  # a REQUEST# status an answer wrote -> its event, timed at resolvedAt, on the channel in repliedVia
     RequestState.CONFIRMED_PENDING: OrgEvent.CONTACT_CONFIRMED_YES,
@@ -215,20 +216,29 @@ def case_events(new_image: dict) -> list[ProjectedEvent]:
                            graph.case_id_of(new_image), int(new_image["ttlEpochSeconds"]))]
 
 
+def resolve_sort_key_for(source_key: str, at: str) -> str:
+    """RESOLVE#<sourceKey>#<at>: one row per resolve, so an episode reopened after a resolve can be resolved again."""
+    return f"{RESOLVE_SORT_KEY_PREFIX}{source_key}#{at}"
+
+
+def resolve_row_expiry(at: str) -> int:
+    """A RESOLVE# row's ttlEpochSeconds: its at plus RESOLVE_LOG_RETENTION."""
+    return int((datetime.fromisoformat(at.replace("Z", "+00:00")) + RESOLVE_LOG_RETENTION).timestamp())
+
+
 def resolve_events(resolve_row: dict) -> list[ProjectedEvent]:
-    """org_resolved at the row's at on the episode named in its sort key, kept RESOLVE_LOG_RETENTION. Raises ValueError when
-    the member's resident belongs to another org or the sort key names no REQUEST#/CASE# episode."""
+    """org_resolved at the row's at on the episode in its sourceKey attribute, with the row's ttl. Raises ValueError when the
+    member's resident belongs to another org or the sourceKey names no REQUEST#/CASE# episode."""
     org_id = resolve_row["PK"].removeprefix("ORG#")
     member = profiles.require_receiver_profile(resolve_row["memberRef"])
     if member.org_id != org_id:
         raise ValueError("a RESOLVE# row names a resident of another org")
-    source_key = resolve_row["SK"].removeprefix(RESOLVE_SORT_KEY_PREFIX)
+    source_key = resolve_row["sourceKey"]
     if source_key.startswith(REQUEST_SOURCE_PREFIX):
         request_id, case_id = source_key.removeprefix(REQUEST_SOURCE_PREFIX), None
     elif source_key.startswith(CASE_SOURCE_PREFIX):
         request_id, case_id = None, source_key.removeprefix(CASE_SOURCE_PREFIX)
     else:
         raise ValueError("a RESOLVE# row names no episode")
-    expiry = datetime.fromisoformat(resolve_row["at"].replace("Z", "+00:00")) + RESOLVE_LOG_RETENTION
     return [ProjectedEvent(org_id, member.receiver_address, OrgEvent.ORG_RESOLVED, source_key, resolve_row["at"], None, request_id,
-                           case_id, int(expiry.timestamp()))]
+                           case_id, int(resolve_row["ttlEpochSeconds"]))]

@@ -1,7 +1,10 @@
 // Grandma's home on the Circle tab (RECEIVER), from sync_state.orgPreference and every circle_state push: a radio group named for
 // the home (what it may see) and one button that adds the home to her circle or removes it. Hidden when orgPreference is null.
-// The checked choice and the button come from the payload; a refused or unsent action shows the payload's state again. The
-// elements are built once and updated in place, so keyboard focus survives every push. The org name is server text: textContent only.
+// One set_org_visibility is in flight at a time: picks made meanwhile wait, and when it settles (any payload or refusal) only
+// the newest is sent, if it differs from the payload's choice. While a send is in flight the radios keep the user's pick; once
+// nothing is in flight they show the payload, as does the button, so a refused or unsent action shows the payload's state again.
+// The elements are built once and updated in place, so keyboard focus survives every push. The org name is server text:
+// textContent only.
 import { CLIENT_ACTION, ORG_VISIBILITY } from "./constants.js";
 import { createElementWithText } from "./dom-helpers.js";
 import { sendClientAction } from "./websocket.js";
@@ -17,6 +20,8 @@ const VISIBILITY_RADIO_GROUP_NAME = "org-visibility";
 
 let lastOrgPreference = null;
 let isOrgContactActionInFlight = false;
+let isOrgVisibilityActionInFlight = false;
+let newestUnsentOrgVisibility = null; // the newest pick made while a set_org_visibility was in flight, else null
 
 const orgPreferenceHost = document.getElementById("org-preference-host");
 const orgPreferenceElements = buildOrgPreferenceElements();
@@ -66,21 +71,41 @@ function renderOrgContactButton() {
   button.setAttribute("aria-disabled", String(isOrgContactActionInFlight));
 }
 
+// The radios are left as the user picked them while a send is in flight; the payload sets them once it settles.
 function renderOrgPreference() {
   orgPreferenceElements.visibilityLegend.textContent = lastOrgPreference.orgName;
-  orgPreferenceElements.visibilityRadiosByValue.forEach((radio, visibility) => {
-    radio.checked = visibility === lastOrgPreference.visibility;
-  });
+  if (!isOrgVisibilityActionInFlight) {
+    orgPreferenceElements.visibilityRadiosByValue.forEach((radio, visibility) => {
+      radio.checked = visibility === lastOrgPreference.visibility;
+    });
+  }
   renderOrgContactButton();
 }
 
-// The browser has already checked the chosen radio; the next push (or a refusal) sets it from the payload.
+// A send that fails (socket not open) shows the failure, and nothing is in flight, so the next render shows the payload.
+function sendOrgVisibility(visibility) {
+  isOrgVisibilityActionInFlight = sendClientAction({ action: CLIENT_ACTION.SET_ORG_VISIBILITY, visibility });
+  if (!isOrgVisibilityActionInFlight) showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
+}
+
+// The browser has already checked the chosen radio. While a send is in flight the pick waits; a newer pick replaces it.
 function handleUserChoseOrgVisibility(visibility) {
   clearActionStatusMessage();
-  if (!sendClientAction({ action: CLIENT_ACTION.SET_ORG_VISIBILITY, visibility })) {
-    showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
-    renderOrgPreference();
+  if (isOrgVisibilityActionInFlight) {
+    newestUnsentOrgVisibility = visibility;
+    return;
   }
+  sendOrgVisibility(visibility);
+  if (!isOrgVisibilityActionInFlight) renderOrgPreference();
+}
+
+// A payload or a refusal settles the send in flight: the waiting pick is sent when it differs from the payload's choice, else
+// dropped. A pick already sent is never sent again here, so a refused choice is not retried.
+function settleOrgVisibilityAction() {
+  const waitingOrgVisibility = newestUnsentOrgVisibility;
+  isOrgVisibilityActionInFlight = false;
+  newestUnsentOrgVisibility = null;
+  if (waitingOrgVisibility !== null && waitingOrgVisibility !== lastOrgPreference.visibility) sendOrgVisibility(waitingOrgVisibility);
 }
 
 function handleUserTappedOrgContactButton() {
@@ -95,24 +120,30 @@ function handleUserTappedOrgContactButton() {
   renderOrgContactButton();
 }
 
-// sync_state.orgPreference or circle_state.orgPreference: null hides the section (her org has no profile); a malformed value
-// or an unknown visibility is reported and hides it too, never shown as a guessed choice.
+// sync_state.orgPreference or circle_state.orgPreference: null hides the section (her org has no profile) and drops any
+// waiting pick; a malformed value or an unknown visibility is reported and hides it too, never shown as a guessed choice.
 export function applyOrgPreferenceState(orgPreference) {
   isOrgContactActionInFlight = false;
   const isOrgPreferenceShown = orgPreference !== null && isValidOrgPreference(orgPreference);
   if (!isOrgPreferenceShown) {
     if (orgPreference !== null) showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
     lastOrgPreference = null;
+    isOrgVisibilityActionInFlight = false;
+    newestUnsentOrgVisibility = null;
     orgPreferenceHost.hidden = true;
     return;
   }
   lastOrgPreference = orgPreference;
+  settleOrgVisibilityAction();
   renderOrgPreference();
   orgPreferenceHost.hidden = false;
 }
 
-// Any refused receiver action: the button comes back and the radios show the payload's choice again.
+// Any refused receiver action (it names no action): the button comes back and the visibility send in flight is settled, so
+// the radios show the payload's choice again unless a newer waiting pick is sent.
 export function handleOrgPreferenceActionRejected() {
   isOrgContactActionInFlight = false;
-  if (lastOrgPreference !== null) renderOrgPreference();
+  if (lastOrgPreference === null) return;
+  settleOrgVisibilityAction();
+  renderOrgPreference();
 }

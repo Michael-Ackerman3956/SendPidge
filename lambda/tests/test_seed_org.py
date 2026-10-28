@@ -1,5 +1,6 @@
-"""The org seed: one transaction of ORG# rows and admin roles that never writes a RECEIVER# row; a re-seed rewrites the tags
-and keeps what other writers SET on MEMBER#; a resident's user id is refused as an admin with nothing written."""
+"""The org seed: one transaction of ORG# rows and admin roles that never writes a RECEIVER# row; a re-seed rewrites the tags,
+keeps what other writers SET on MEMBER# and deletes the ADMIN# row of every admin it no longer lists; a resident's user id is
+refused as an admin with nothing written."""
 
 from dataclasses import replace
 
@@ -51,4 +52,21 @@ def test_seed_writes_no_receiver_partition_and_refuses_a_resident_as_admin(aws):
                                      admins=(AdminSeed("ann", AdminRole.SENDER), AdminSeed("grandma", AdminRole.VIEWER)))
     with pytest.raises(ValueError):
         orgs.write_org_seed(orgs.validate_org_seed(resident_as_admin_seed))
+    assert read_all_rows() == rows_before_refusal
+
+
+def test_reseed_without_an_admin_deletes_their_admin_row(aws):  # noqa: F811
+    seed_resident(GRANDMA_ADDRESS, "grandma", "Grandma", org_id="sunrise")
+    ann_and_amy_seed = replace(SUNRISE_SEED, admins=(AdminSeed("ann", AdminRole.VIEWER), AdminSeed("amy", AdminRole.SENDER)))
+    orgs.write_org_seed(orgs.validate_org_seed(ann_and_amy_seed))
+    assert orgs.require_org_admin("amy") == OrgAdmin("amy", "sunrise", AdminRole.SENDER)
+
+    orgs.write_org_seed(orgs.validate_org_seed(SUNRISE_SEED))  # amy is no longer listed
+    assert orgs.list_admin_user_ids("sunrise") == ["ann"]
+    assert orgs.require_org_admin("amy") is None
+    assert orgs.require_org_admin("ann") == OrgAdmin("ann", "sunrise", AdminRole.VIEWER)
+
+    rows_before_refusal = read_all_rows()  # dropping ann in a seed that fails deletes nothing: one transaction
+    with pytest.raises(ValueError):
+        orgs.write_org_seed(orgs.validate_org_seed(replace(SUNRISE_SEED, admins=(AdminSeed("grandma", AdminRole.VIEWER),))))
     assert read_all_rows() == rows_before_refusal

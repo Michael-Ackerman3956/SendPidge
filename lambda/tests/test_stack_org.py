@@ -1,10 +1,11 @@
-"""CDK assertions on the org dashboard's resources (S3): scoped org roles, the projection's filters and dead-letter queue, the
-OrgActions route and the synth guard. test_stack.py is at its line limit, so these live here and reuse its helpers and the session
-synth (conftest.py)."""
+"""CDK assertions on the org dashboard's resources (S3): scoped org roles that may still write what their code writes, the
+projection's filters and dead-letter queue, the OrgActions route, the canary's Item and the synth guard. test_stack.py is at
+its line limit, so these live here and reuse its helpers and the session synth (conftest.py)."""
 import fnmatch
 import json
 
 from pidge_org import handler as org_actions_handler
+from shared import org_audit, org_events, orgs
 from tests.test_stack import (
     as_list, collect_role_allow_statements, find_alarm_properties, find_function_by_handler, render_intrinsic_as_text, resources_of_type,
     run_synth_for_tests, statement_grants, strip_trailing_logical_id_hash,
@@ -18,6 +19,20 @@ TABLE_WRITE_ACTIONS = (
 RESIDENT_PARTITION_KEY = "RECEIVER#grandma@sendpidge.com"
 CANARY_PARTITION_KEY = "ORG#test-home"  # synth-for-tests.ts orgId
 RELEASE_SCHEDULER_REFUSAL = "orgEnabled needs releaseSchedulerEnabled"
+SCHEDULED_TIME_PLACEHOLDER = "<aws.scheduler.scheduled-time>"  # ContextAttribute.scheduledTime, filled in by Scheduler
+# role -> (a partition key the Python code writes, the write action it needs); keys built from the production constants.
+WRITES_BY_ROLE = {
+    "OrgProjectionFunctionServiceRole": (
+        (f"{org_events.ORG_LOG_PARTITION_PREFIX}sunrise", "dynamodb:PutItem"),  # the ORGLOG# Put in the event transaction
+        (f"{org_events.ORG_LOG_PARTITION_PREFIX}sunrise", "dynamodb:BatchWriteItem"),  # rows a visibility of none deletes
+        (f"{org_events.ORG_STATS_PARTITION_PREFIX}sunrise", "dynamodb:UpdateItem"),  # day counts and lastProjectedAt
+        (orgs.org_partition("sunrise"), "dynamodb:UpdateItem"),  # the MEMBER# coverage fact
+    ),
+    "OrgActionsFunctionServiceRole": (
+        (orgs.org_partition("sunrise"), "dynamodb:PutItem"),  # RESOLVE#
+        (org_audit.audit_partition("sunrise"), "dynamodb:PutItem"),  # its ORGAUDIT# row, in the same transaction
+    ),
+}
 # (eventName, PK, SK) of rows the projection maps, and of rows it must never wake on (its own writes among them).
 PROJECTED_RECORD_KEYS = (
     ("INSERT", "REQUEST#req-1", "META"), ("MODIFY", "REQUEST#req-1", "META"), ("INSERT", "REQUEST#req-1", "NOTE#2026-10-28"),
@@ -92,3 +107,22 @@ def test_org_enabled_requires_release_scheduler(tmp_path):
     completed = run_synth_for_tests(tmp_path, {"releaseSchedulerEnabled": False})
     assert completed.returncode != 0
     assert RELEASE_SCHEDULER_REFUSAL in completed.stderr
+
+
+def test_org_canary_puts_the_canary_row(synthesized_template):
+    [target] = [schedule["Properties"]["Target"]
+                for logical_id, schedule in resources_of_type(synthesized_template, "AWS::Scheduler::Schedule").items()
+                if strip_trailing_logical_id_hash(logical_id) == "OrgCanarySchedule"]
+    canary_input = json.loads(render_intrinsic_as_text(target["Input"]))  # the table name's Ref renders inside a JSON string
+    item = canary_input["Item"]
+    assert (item["PK"]["S"], item["SK"]["S"], item["writtenAt"]["S"]) == (
+        CANARY_PARTITION_KEY, org_events.CANARY_SORT_KEY, SCHEDULED_TIME_PLACEHOLDER)
+
+
+def test_org_roles_may_write_the_partitions_their_code_writes(synthesized_template):
+    for role, writes in WRITES_BY_ROLE.items():
+        statements = collect_role_allow_statements(synthesized_template, role)
+        for partition_key, action in writes:
+            granting_patterns = [pattern for statement in statements if statement_grants(statement, action)
+                                 for pattern in as_list(statement["Condition"]["ForAllValues:StringLike"]["dynamodb:LeadingKeys"])]
+            assert any(fnmatch.fnmatchcase(partition_key, pattern) for pattern in granting_patterns), (role, partition_key, action)

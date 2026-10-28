@@ -1,7 +1,8 @@
 // An org admin's screen (ORG_ADMIN): the office's "Was this you?" cards on the contact screen, then the home under its own
 // name: when the projection last ran (amber when stale), the open items to follow up (one Resolved button each), four coverage
-// counts, every member with tags and safety state, and the members to call. Every name, tag and key comes from the server:
-// textContent only. Resolved sends org_resolve; success has no reply, the projection's org_changed re-sync (app.js) shows it.
+// counts, every member with tags and safety state, and the members to call; the Updated line is re-rendered every minute.
+// Every name, tag and key comes from the server: textContent only. Resolved sends org_resolve; success has no reply, the
+// projection's org_changed re-sync (app.js) shows it.
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
 import { CLIENT_ACTION, MEMBER_SAFETY_STATE } from "./constants.js";
 import { applyContactSyncState, showContactView } from "./contact-view.js";
@@ -26,6 +27,9 @@ const COVERAGE_LABELS = Object.freeze([
   ["visibilityChosen", "Chose sharing"],
   ["seenInLastSevenDays", "Seen in 7 days"],
 ]);
+// STALE_AFTER in lambda/shared/org_view.py (the server's isStale rule): keep the two equal.
+const PROJECTION_STALE_AFTER_MS = 15 * 60 * 1000;
+const UPDATED_LINE_REFRESH_INTERVAL_MS = 60 * 1000;
 
 const pageElements = {
   orgScreen: document.getElementById("org-screen"),
@@ -36,6 +40,8 @@ const pageElements = {
 const dashboardElements = buildDashboardElements();
 // A tapped Resolved stays aria-disabled until a re-sync no longer lists its item or the action is rejected.
 const sourceKeysWithResolveInFlight = new Set();
+let shownOrg = null; // the last valid org rendered, re-read by the Updated line refresh
+let updatedLineRefreshIntervalId = null;
 
 function buildSectionHeader(headerText) {
   return createElementWithText("h3", "section-header org-section-header", headerText);
@@ -185,16 +191,29 @@ function renderCallList(callListMembers) {
 }
 
 // The Updated text names the last projection time ("never" when there is none); amber only adds to it when stale.
-function renderUpdatedLine(org) {
+function renderUpdatedLine(org, isStale) {
   const updatedTimeText = org.lastProjectedAt === null ? "never" : formatTimestampForDisplay(org.lastProjectedAt);
   dashboardElements.updatedLine.textContent = `Updated ${updatedTimeText}`;
-  dashboardElements.updatedLine.classList.toggle("is-stale", org.isStale);
+  dashboardElements.updatedLine.classList.toggle("is-stale", isStale);
+}
+
+// The server's rule (org_view.is_projection_stale) on this device's clock: never projected, or older than STALE_AFTER.
+function isProjectionStaleNow(lastProjectedAt) {
+  return lastProjectedAt === null || Date.now() - parseTimestampMilliseconds(lastProjectedAt) > PROJECTION_STALE_AFTER_MS;
+}
+
+// Between syncs the line ages: stale once the server said so or the stamp passes the limit; never turned fresh by this clock.
+function startUpdatedLineRefresh() {
+  if (updatedLineRefreshIntervalId !== null) return;
+  updatedLineRefreshIntervalId = setInterval(() => {
+    renderUpdatedLine(shownOrg, shownOrg.isStale || isProjectionStaleNow(shownOrg.lastProjectedAt));
+  }, UPDATED_LINE_REFRESH_INTERVAL_MS);
 }
 
 function renderOrg(org) {
   const members = keepValidRows(org.members, isValidOrgMember);
   pageElements.orgName.textContent = org.orgName;
-  renderUpdatedLine(org);
+  renderUpdatedLine(org, org.isStale);
   renderActionableList(keepValidRows(org.actionable, isValidActionableItem));
   dashboardElements.coverageValueElements.forEach((coverageValue, coverageKey) => {
     coverageValue.textContent = String(org.coverage[coverageKey]);
@@ -213,8 +232,10 @@ export function applyOrgAdminSyncState(pushMessage) {
     showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
     return;
   }
-  renderOrg(pushMessage.org);
+  shownOrg = pushMessage.org;
+  renderOrg(shownOrg);
   pageElements.orgScreen.hidden = false;
+  startUpdatedLineRefresh();
 }
 
 // A refused action (a Resolved already applied, not allowed or malformed): every Resolved in flight can be tapped again.
@@ -225,6 +246,10 @@ export function handleOrgActionRejected() {
   });
 }
 
+// The org screen is torn down (another role's sync_state): the Updated line refresh stops.
 export function hideOrgView() {
   pageElements.orgScreen.hidden = true;
+  clearInterval(updatedLineRefreshIntervalId);
+  updatedLineRefreshIntervalId = null;
+  shownOrg = null;
 }

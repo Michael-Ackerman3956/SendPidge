@@ -1,6 +1,6 @@
 """Enrolment: the resident's rows are written before the address is listed and deleted only after it is delisted, an unknown
-address is counted and raised, a contact's user id or an org's "org-" id never becomes a resident, and a token rotation keeps
-the role."""
+address is counted and raised, a contact's user id or an org's "org-" id never becomes a resident, an off-pattern org id is
+refused, and a token rotation keeps the role."""
 
 import json
 from dataclasses import replace
@@ -115,3 +115,12 @@ def test_org_prefixed_user_id_refused(aws):  # noqa: F811
     graph.get_table().put_item(Item=orgs.org_contact_row(BOB_ADDRESS, sunrise, graph.now_timestamp()))
     assert residents.mark_circle_contacts(BOB_ADDRESS) == []
     assert read_row("USER#org-sunrise") is None
+
+
+def test_org_id_off_pattern_refused(aws):  # noqa: F811
+    """An org id outside ORG_ID_PATTERN never reaches a profile: no rows are written and the address is never listed."""
+    client = RecordingMailManagerClient()
+    for org_id in ("Sunrise Commons", "../sunrise", "-sunrise", "sunrise_home", "s" * 41, ""):
+        with pytest.raises(ValueError):
+            residents.enrol_resident(client, ADDRESS_LIST_ID, replace(BOB_ENROLMENT, org_id=org_id))
+    assert (client.calls, read_row(f"RECEIVER#{BOB_ADDRESS}"), read_row("USER#bob")) == ([], None, None)

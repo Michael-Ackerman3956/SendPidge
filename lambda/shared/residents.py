@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 
 from shared import circle, graph, profiles
 from shared.enums import UserRole
-from shared.org_ids import is_org_contact_sort_key, is_org_user_id
+from shared.org_ids import is_org_contact_sort_key, is_org_user_id, org_user_id_for
 
 USER_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")  # used with fullmatch; it also names the .env.tokens.<userId> file
 
@@ -94,13 +94,14 @@ def validate_timezone(timezone) -> None:
 
 def validate_enrolment(resident: ResidentEnrolment) -> ResidentEnrolment:
     """The enrolment with its address parsed and normalized; raises ValueError on a malformed address, a user id outside
-    USER_ID_PATTERN or starting "org-", an empty name or org id, or a timezone that is not a loadable IANA name."""
+    USER_ID_PATTERN or starting "org-", an empty name, an org id outside org_ids.ORG_ID_PATTERN, or a timezone that is not a
+    loadable IANA name."""
     address = circle.parse_email_address(resident.receiver_address)
     if not is_enrollable_user_id(resident.receiver_user_id):
         raise ValueError("user id")
-    for field_name, value in (("resident name", resident.resident_name), ("org id", resident.org_id)):
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"{field_name} is empty")
+    if not isinstance(resident.resident_name, str) or not resident.resident_name.strip():
+        raise ValueError("resident name is empty")
+    org_user_id_for(resident.org_id)  # raises ValueError off ORG_ID_PATTERN
     validate_timezone(resident.timezone)
     return replace(resident, receiver_address=address)
 
