@@ -22,7 +22,7 @@ SVG sources and the three detail diagrams are in [`architecture/`](architecture/
 - People mistake a cloned voice for the real person about 80% of the time (Farid 2025).
 - About 13% of scams ever reach a federal agency (Gallup 2026).
 
-Spotting the fake gets harder every year. Asking the real person still works, but nobody does it for every message. SendPidge does, for each message that needs it: Grandma in the demo, and the same check for a finance clerk with a CEO's wire request or a business with a supplier's new bank details.
+Spotting the fake gets harder every year. Asking the real person still works, but nobody does it for every message. SendPidge does: for Grandma in the demo, and the same check for a CEO's wire request or a supplier's new bank details.
 
 ## What it does
 
@@ -39,15 +39,13 @@ Spotting the fake gets harder every year. Asking the real person still works, bu
 
 ### 1. Catch the email
 
-- **Amazon SES Mail Manager** keeps an address list of residents. A traffic policy refuses any other recipient during SMTP.
+- **Amazon SES Mail Manager** accepts mail only for enrolled residents (an address list plus a traffic policy) and checks SPF and DKIM.
 - A rule set writes the raw email to **S3** and invokes the Reader.
-- SPF and DKIM are checked at ingress.
 
 ### 2. Read, then decide in code
 
-- `pidge_reader` (**Lambda**) runs a **Strands** agent on **Bedrock** (Claude Haiku 4.5) with **no tools**.
-- It returns who the email claims to be, what it wants, and how sure it is.
-- Code checks the sender and the links: a known name from an unknown address, look-alike names and domains, hidden links, link text that names another domain, shorteners, scam-list senders.
+- `pidge_reader` (**Lambda**) runs a **Strands** agent on **Bedrock** (Claude Haiku 4.5) with **no tools**. It returns who the email claims to be, what it wants, and how sure it is.
+- Code checks the sender and links: a known name from an unknown address, look-alikes, hidden or disguised links, scam-list senders.
 - `lambda/shared/policy.py` picks HOLD, WARN or PASS.
 - An unknown-address hold gets a second opinion from Claude Opus 4.5. If the two name different people, the hold stays.
 
@@ -62,52 +60,43 @@ A HOLD writes a request row in **DynamoDB**, then asks in three places at once:
 ### 4. Call if nobody answers
 
 - After 10 minutes, **EventBridge Scheduler** fires the re-ask, which places an **Amazon Connect** call.
-- An **Amazon Q in Connect** agent asks. It knows four facts: whose name, what kind of message, what it asked for, how long ago.
-- It never shares amounts, senders, links or numbers.
+- An **Amazon Q in Connect** agent asks, knowing only whose name, what kind of message, what it asked for and how long ago; never amounts, senders, links or numbers.
 - Keypad fallback: 1 = yes, 2 = no. Code records the answer through a `RecordVerdict` tool.
 
 ### 5. Act on the answer
 
-- The verdict is pushed to Grandma's open screen.
-- **No:** the email stays held; one tap confirms and reports.
-- **Yes:** it opens after a ten-second undo.
-- The contact can take back a No for five minutes.
-- A Yes never counts on the channel the message came in on. A No counts from anywhere. Email can answer No only.
+- The verdict is pushed to Grandma's open screen. **No:** the email stays held; one tap confirms and reports. **Yes:** it opens after a ten-second undo.
+- The contact can take back a No for five minutes. A Yes never counts on the channel the message came in on; a No counts from anywhere; email can answer No only.
 
 ### 6. Recover a payment
 
 ![Act on the answer: three paths into the case agent](architecture/architecture-after-verdict.png)
 
-- "I already paid" asks the country and the payment method. Code opens the case.
-- The case agent on **Bedrock AgentCore** (Runtime plus Memory of the family) writes the note.
-- Code builds the pack from the rule book: steps with who to contact and a deadline, a call script, a dispute letter, a police report. It goes to the personal email she saves in Settings.
-- What it does not do: the case agent has no tool that sends. Nothing is filed with the bank, the police or any agency; Grandma reads the drafts and makes the calls herself.
-- Her questions go to a chat agent behind a **Bedrock Guardrail**.
+- "I already paid" asks the country and payment method; code opens the case and the case agent on **Bedrock AgentCore** (Runtime plus Memory) writes the note.
+- Code builds the pack from the rule book: steps with deadlines, a call script, a dispute letter, a police report, mailed to the personal email she saves in Settings.
+- The case agent has no tool that sends; Grandma makes the calls herself. Her questions go to a chat agent behind a **Bedrock Guardrail**.
 
 ### 7. The home's view
 
 ![Organisation oversight: the projection Lambda turns a resident's rows into a safety state through her privacy filter](architecture/architecture-stretch-org.png)
 
 - Each resident picks in her own app what the home sees: alerts only, alerts and cases, or nothing.
-- A projection Lambda turns her rows into one state per member: nothing open, held, held with no answer, confirmed "not me", warned, case open, contact unreachable, not shared.
-- The office signs in through **Amazon Cognito** managed login (a password, then a passkey added from the app) and sees a members table, follow-ups and a call list.
-- One in-app safety alert goes to every resident, at most 2 an hour per home. She answers "Got it" or "Need help".
+- A projection Lambda turns her rows into one safety state per member (held, confirmed "not me", case open, not shared, and so on).
+- The office signs in through **Amazon Cognito** managed login (password or passkey) and sees a members table and follow-ups.
+- One in-app safety alert goes to every resident, at most 2 an hour per home; she answers "Got it" or "Need help".
 
 ### The app
 
-- One static PWA on **S3 + CloudFront** (`app.sendpidge.com`).
-- Residents and contacts open it from a tokened link; the office signs in. The server names the role on every sync.
+One static PWA on **S3 + CloudFront** (`app.sendpidge.com`). Residents and contacts open it from a tokened link; the office signs in.
 
 ## Safety and privacy
 
 - **The model reads, code decides, the real person answers.** The Reader has no tools; code owns the hold, the ask, the release and every message that leaves.
 - **No agent text reaches a person with a link, an address, a messenger handle or a long number in it.** `lambda/shared/sanitize.py` refuses such case notes and chat replies and strips the Reader's summary.
-- **A Yes on the channel the message came in on is refused.** A No beats a Yes; a late Yes does not release.
-- **The call agent** never asks for codes, passwords or personal data, never talks about money, and never records a Yes because the callee claims authority.
+- **The call agent** never asks for codes or personal data and never talks about money.
 - **Caps fail closed:** 3 asks per contact per hour, 10 calls per hour, 2 alerts per home per hour, 180-second calls. Over a cap nothing is sent; a hold stays held.
-- **Drafts only.** SendPidge contacts no bank, police or agency; Grandma does.
 - **The office sees a state, never the mail.** The resident sets the filter.
-- Mail renders as text under a strict Content Security Policy; secrets live in Secrets Manager and a git-ignored `.env`; `gitleaks` runs on every commit.
+- Mail renders as text under a strict Content Security Policy; secrets live in Secrets Manager; `gitleaks` runs on every commit.
 
 ## Agents
 
@@ -134,14 +123,13 @@ Every tool-holding run stops at 8 model turns (`lambda/shared/agent_run.py`).
 | **Amazon Cognito** | The office's sign-in (managed login, password or passkey, PKCE) |
 | Everything else | AWS Lambda (one function per job), Amazon DynamoDB (one table), Amazon API Gateway WebSocket, Amazon EventBridge Scheduler, Amazon S3 + CloudFront, Amazon SQS + CloudWatch, AWS Secrets Manager |
 
-One AWS CDK stack (`infra/`). Set up outside it: the Amazon Connect instance and flow, the WhatsApp number and template, the SES domain and MX. Built but off: RCS (`rcsEnabled: false`; the RCS agent exists in testing registration, which delivers only to approved tester numbers in launch countries and refuses Korean numbers) and SMS (`smsEnabled: false`; no SMS number is provisioned); neither has run live and the live public scam-list feeds (`liveFeedsEnabled: false`; seeded samples answer). Not deployed: the rules keeper, which runs from a laptop on mock pages (`scripts/run_rules_keeper.py`).
+One AWS CDK stack (`infra/`). Set up outside it: the Amazon Connect instance and flow, the WhatsApp number and template, the SES domain and MX. Built but off (see Limitations): RCS, SMS and the live scam-list feeds. Not deployed: the rules keeper (`scripts/run_rules_keeper.py`, runs from a laptop on mock pages).
 
 ## Judge sandbox
 
-The demo video, and how to try the live app yourself with no setup.
+Try the live app yourself, with no setup. The [demo video](https://youtu.be/rCe4ztLSmQ4) shows the same flow.
 
-- **Video:** https://youtu.be/rCe4ztLSmQ4
-- **Try it (judges):** open the judge sandbox at https://app.sendpidge.com/?token=REDACTED . No setup or code needed; everything is in the app. You are the protected resident, `judge@sendpidge.com`. The three emails already in the inbox are built-in samples.
+- **Try it (judges):** open the judge link under "Try it out" on the Devpost page (sandbox access, rate-limited, revoked after judging; kept out of the repo per the credentials rule). No setup or code needed; everything is in the app. You are the protected resident, `judge@sendpidge.com`. The three emails already in the inbox are built-in samples.
   1. **Circle → Add someone.** Name: your own first name. Add your WhatsApp number and a second email address of yours (not the one you will send from). Press **Add to my circle**.
   2. The next screen shows a note to your contact with a code. Press **Copy**, open the link from the note in a private window: that is your contact's screen. Then press **Demo: `<name>` replies `<code>`** to verify the contact (nothing is sent).
   3. From your own mailbox, email `judge@sendpidge.com`, signed with that first name, asking for money.
@@ -185,7 +173,7 @@ One sample email through the Reader (one Bedrock call):
 AWS_PROFILE=<your profile> READER_MODEL=haiku-4.5 .venv/bin/python scripts/read_eml.py samples/fake-jimin.eml --known-address jimin@example.com
 ```
 
-A full deploy needs a bootstrapped account in `us-east-1`, a domain verified in SES with its MX at a Mail Manager ingress endpoint, a Meta-approved WhatsApp Business number and template in End User Messaging Social, an Amazon Connect instance with a claimed number, the `pidge-ask` flow and a Q in Connect assistant, and Bedrock model access plus AgentCore in the region. Fill `.env` from [`.env.example`](.env.example) and the context of `infra/cdk.json` (domains, mailboxes, WhatsApp and Connect identifiers, the feature flags and caps), then:
+A full deploy needs, in `us-east-1`: an SES-verified domain with its MX at a Mail Manager ingress endpoint, a Meta-approved WhatsApp number and template in End User Messaging Social, an Amazon Connect instance with the `pidge-ask` flow and a Q in Connect assistant, and Bedrock plus AgentCore access. Fill `.env` from [`.env.example`](.env.example) and the context of `infra/cdk.json`, then:
 
 ```
 bash infra/scripts/build_layer.sh
@@ -200,20 +188,19 @@ Seed the rule book and the sample lists with `scripts/seed_rows.py`, and a famil
 | Criterion | Where to look |
 |---|---|
 | Technical execution | Mail Manager, EUM Social, SES and Cognito wired to Bedrock, AgentCore and Strands in one CDK stack (`infra/`), plus the Amazon Connect call; the tests and stack assertions in `lambda/tests/` |
-| Functionality | The judge inbox (Devpost testing instructions); the Evidence table |
+| Functionality | The judge sandbox; the Evidence table |
 | Potential value / impact | The problem numbers; families now, homes and organisations next |
 | Creativity | The check asks the impersonated person instead of scoring the message |
 | Demo presentation | The video; this README |
 
 ## Limitations
 
-- One phone plays every party in the demo; the moments marked staged are staged.
-- RCS and SMS are built but off and have never run live: the RCS agent is in testing registration (tester numbers only, Korea refused) and no SMS origination number is provisioned. SMS carries texts in and replies out only; the ask never goes by SMS.
-- Recovery is drafts only. The rule book (`infra/seed/refund_rules*.json`) has live rows for the US (card, Zelle, wire, gift card), the UK, Canada, Australia, Germany, France, Japan, Korea and Singapore (mostly card and wire); a country and method with no live row gets a pack with no steps, never invented ones.
+- RCS and SMS are built but off and have never run live (the RCS agent is tester-only and refuses Korean numbers; no SMS number is provisioned).
+- Recovery is drafts only. The rule book (`infra/seed/refund_rules*.json`) covers the US, UK, Canada, Australia, Germany, France, Japan, Korea and Singapore, mostly card and wire; with no matching row the pack has no steps, never invented ones.
 - Scam lists are sample data; the KISA and AMF feed sync is off.
-- The judge inbox is shared by every judge, and a circle holds 10 contacts.
+- The judge sandbox is one inbox shared by every judge, and a circle holds 10 contacts.
 - The office sees one home; outreach by WhatsApp or email, events and reminders are not built.
-- Not checked live yet: WhatsApp texts into Grandma's inbox and her replies from the composer; the home's safety alert and its "Got it" / "Need help" answers; signing in with a passkey. The "warned" and "contact unreachable" states have no writer yet, so the dashboard never shows them.
+- Not checked live yet: WhatsApp texts into Grandma's inbox and her replies; the home's safety alert; passkey sign-in; the personal email code in Settings.
 <!-- founder: update after the live checks -->
 
 ## Roadmap
