@@ -17,6 +17,16 @@ export function buildThreadKey(channel, address) {
   return `${channel}#${channel === CHANNEL.EMAIL ? address.toLowerCase() : address}`;
 }
 
+// The thread keys whose hold also holds this thread: an SMS thread and the RCS thread to the same number hold each other
+// (one number serves both; mirrors lambda/shared/messenger_send.py is_thread_held), any other thread only itself.
+export function listThreadKeysSharingHolds(threadKey) {
+  const separatorIndex = threadKey.indexOf("#");
+  const channel = threadKey.slice(0, separatorIndex);
+  if (channel !== CHANNEL.SMS && channel !== CHANNEL.RCS) return [threadKey];
+  const number = threadKey.slice(separatorIndex + 1);
+  return [buildThreadKey(CHANNEL.SMS, number), buildThreadKey(CHANNEL.RCS, number)];
+}
+
 // The chip on Grandma's own sent row: where its send stands.
 export function buildProviderStatusChipElement(providerStatus) {
   const chipClassName = providerStatus === PROVIDER_STATUS.FAILED ? "status-chip is-warn" : "status-chip";

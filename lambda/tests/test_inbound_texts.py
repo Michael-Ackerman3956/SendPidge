@@ -83,7 +83,7 @@ def test_sender_without_from_uses_the_business_scoped_id():
                             "type": "text", "text": {"body": "hi"}}
     [received] = parse_whatsapp_record(whatsapp_sns_message(change_value_with(
         business_scoped_text, contacts=[{"profile": {"name": "Jimin"}, "user_id": "US.13491208655302741918"}])))
-    assert (received.sender_address, received.sender_profile_name) == ("US.13491208655302741918", "")
+    assert (received.sender_address, received.sender_profile_name) == ("US.13491208655302741918", "Jimin")  # matched on user_id
     sender_less_text = {key: value for key, value in business_scoped_text.items() if key != "from_user_id"}
     with pytest.raises(ValueError):
         parse_whatsapp_record(whatsapp_sns_message(change_value_with(sender_less_text)))

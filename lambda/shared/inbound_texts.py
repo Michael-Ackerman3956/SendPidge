@@ -103,7 +103,8 @@ def received_text_of_message(message: dict, change_value: dict) -> ReceivedText 
         return None
     sender_address, sender_digits = whatsapp_sender_of(message)
     sent_at = graph.iso_timestamp(datetime.fromtimestamp(int(message["timestamp"]), timezone.utc))
-    return ReceivedText(Channel.WHATSAPP, message_id, sender_address, profile_name_of(change_value, sender_digits), text, sent_at)
+    sender_profile_name = profile_name_of(change_value, sender_digits, sender_address)
+    return ReceivedText(Channel.WHATSAPP, message_id, sender_address, sender_profile_name, text, sent_at)
 
 
 def whatsapp_sender_of(message: dict) -> tuple[str, str | None]:
@@ -119,11 +120,14 @@ def whatsapp_sender_of(message: dict) -> tuple[str, str | None]:
     raise ValueError("WhatsApp message has neither from nor from_user_id")
 
 
-def profile_name_of(change_value: dict, sender_digits: str | None) -> str:
-    """The profile.name of the contacts[] entry whose wa_id is the sender's `from`; "" when there is no such entry."""
-    if sender_digits is None or "contacts" not in change_value:
+def profile_name_of(change_value: dict, sender_digits: str | None, sender_address: str) -> str:
+    """The profile.name of the sender's contacts[] entry: wa_id equal to `from`, or user_id equal to `from_user_id` for a
+    sender without `from` (so a username-only sender still meets gate 1); "" when there is no such entry."""
+    if "contacts" not in change_value:
         return ""
+    sender_id_field, sender_id = ("wa_id", sender_digits) if sender_digits is not None else ("user_id", sender_address)
     for contact in change_value["contacts"]:
-        if "wa_id" in contact and contact["wa_id"] == sender_digits and "profile" in contact and "name" in contact["profile"]:
+        is_sender_entry = sender_id_field in contact and contact[sender_id_field] == sender_id
+        if is_sender_entry and "profile" in contact and "name" in contact["profile"]:
             return require_body_text(contact["profile"], "name")
     return ""

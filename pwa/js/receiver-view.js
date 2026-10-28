@@ -22,7 +22,7 @@ import { isSplitReadingPane, renderPaneTools, renderReaderBar } from "./reading-
 import {
   closeComposer, findReplyTarget, handleComposerOutMessage, isComposerShown, openComposer, refreshComposerSendState,
 } from "./compose-view.js";
-import { buildProviderStatusChipElement, buildThreadElement } from "./thread-view.js";
+import { buildProviderStatusChipElement, buildThreadElement, listThreadKeysSharingHolds } from "./thread-view.js";
 
 const ROW_KIND_LABELS = Object.freeze({
   [ROW_KIND.EMAIL]: "Email",
@@ -134,7 +134,8 @@ function isPendingHold(row) {
 }
 
 function isThreadKeyHeld(threadKey) {
-  return [...emailsById.values()].some((row) => row.threadKey === threadKey && isPendingHold(row));
+  const holdingThreadKeys = listThreadKeysSharingHolds(threadKey);
+  return [...emailsById.values()].some((row) => holdingThreadKeys.includes(row.threadKey) && isPendingHold(row));
 }
 
 // The open row's conversation (thread-view.js), or null for a row outside any thread (a mock row, a row older than slice 16).
@@ -147,7 +148,7 @@ function buildOpenRowThreadElement(email) {
     openRowId: email.emailId,
     hasNotFromThemRow: displayStates.some((displayState) => displayState === EMAIL_DISPLAY_STATE.DENIED
       || displayState === EMAIL_DISPLAY_STATE.QUARANTINED),
-    isHeld: threadRows.some(isPendingHold),
+    isHeld: isThreadKeyHeld(email.threadKey),
     replyTarget: findReplyTarget(email.threadKey, email.channel),
     formatTime: formatRelativeReceivedTime,
     onReplyTapped: openComposeScreen,

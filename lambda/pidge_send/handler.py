@@ -46,13 +46,19 @@ def handle(event, context):
 
 def handle_send_message(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
     """BAD_MESSAGE for a malformed body; otherwise messenger_send.send_message. A stored row (sent or failed) is pushed to
-    her; any outcome but RECORDED is answered on this socket."""
+    her; any outcome but RECORDED is answered on this socket. An exception inside the send (a table write, say) is answered
+    SEND_FAILED so the composer stops waiting, then raised for the Lambda Errors metric."""
     try:
         send_request = messenger_send.parse_send_request(body)
     except ValueError:
         channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
         return
-    result = messenger_send.send_message(resident, send_request, datetime.now(timezone.utc))
+    try:
+        result = messenger_send.send_message(resident, send_request, datetime.now(timezone.utc))
+    except Exception:
+        logger.error("send for %s raised; answered send_failed", resident.receiver_user_id)
+        channels.reject_action(connection_id, None, ActionOutcome.SEND_FAILED)
+        raise
     if result.message_row is not None:
         channels.push_to_user(resident.receiver_user_id, payloads.message_state_message(result.message_row, None, None, None),
                               should_remove_gone_connections=False)

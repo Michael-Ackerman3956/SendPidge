@@ -157,6 +157,18 @@ def test_profile_name_from_unknown_whatsapp_number_is_gate_1(inbound_handler):
     assert graph.get_request(row["requestId"])["inboundChannel"] == "whatsapp"
 
 
+def test_profile_name_from_business_scoped_id_is_gate_1(inbound_handler):
+    seed_grandma_and_jimin()
+    inbound_handler.use_reader_scripts({HELLO_TEXT: [verdict_step(NO_ASK_FROM_JIMIN)]})
+    username_only_text = {"from_user_id": "US.13491208655302741918", "id": "wamid.B1", "timestamp": SENT_AT_EPOCH_SECONDS,
+                          "type": "text", "text": {"body": HELLO_TEXT}}
+    inbound_handler.handle(WHATSAPP_TOPIC_ARN, whatsapp_sns_message(change_value_with(
+        username_only_text, contacts=[{"profile": {"name": "Jimin"}, "user_id": "US.13491208655302741918"}])))
+    row = message_row(Channel.WHATSAPP, "wamid.B1")
+    assert (row["state"], row["reasons"], row["senderName"]) == ("hold", ["unknown_address"], "")
+    assert inbound_handler.decided_gates == [GateFired.GATE_1]
+
+
 def test_jimins_checked_number_is_not_gate_1(inbound_handler):
     seed_grandma_and_jimin()
     inbound_handler.use_reader_scripts({HELLO_TEXT: [verdict_step(NO_ASK_FROM_JIMIN), verdict_step(NO_ASK_FROM_JIMIN)]})

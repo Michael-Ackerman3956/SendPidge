@@ -1,5 +1,6 @@
-"""Per-hour counters that fail closed: the ask cap per contact, per resident for an org contact (pidge-reader), and the
-question cap (chat). One conditional increment per slot; a write failure counts as the cap being reached, never as a free pass."""
+"""Per-hour counters that fail closed: the ask cap per contact, per resident for an org contact (pidge-reader), the
+question cap (chat) and the send cap per resident (pidge-send). One conditional increment per slot; a write failure counts as
+the cap being reached, never as a free pass."""
 
 import logging
 from datetime import datetime, timezone

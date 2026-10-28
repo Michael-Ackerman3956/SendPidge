@@ -12,7 +12,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from pidge_send import handler as send_handler
-from shared import channels, circle, graph, hourly_counters, verdict
+from shared import channels, circle, graph, hourly_counters, inbox_rows, verdict
 from shared.enums import ActionOutcome, Channel, Relationship, VerdictAnswer
 from tests.helpers.profiles import seed_resident
 from tests.helpers.scripted_model import verdict_step
@@ -45,10 +45,12 @@ class RecordingProviders:
     """SES, EUM Social and EUM SMS/RCS in one: every call recorded as (operation, arguments); when failing, it raises after."""
 
     calls: list[tuple[str, dict]] = field(default_factory=list)
+    out_row_statuses_at_call: list[list[str]] = field(default_factory=list)  # providerStatus of every out row when a call starts
     is_failing: bool = False
 
     def record(self, operation_name: str, arguments: dict, response: dict) -> dict:
         self.calls.append((operation_name, arguments))
+        self.out_row_statuses_at_call.append([row["providerStatus"] for row in out_rows()])
         if self.is_failing:
             raise ClientError({"Error": {"Code": "ServiceUnavailableException", "Message": "injected"}}, operation_name)
         return response
@@ -198,6 +200,7 @@ def test_held_thread_refused_until_answered(sender, monkeypatch):
     assert whatsapp_hold["state"] == "hold"
     sender.send(GRANDMA_USER_ID, Channel.WHATSAPP, JIMIN_NUMBER)
     assert sender.rejection_reasons() == ["thread_held"] and sender.providers.calls == []
+    assert rows_with_partition_prefix("SENDRATE#") == []  # refused before the rate slot: a refusal costs no slot
     answer = verdict.record_answer(whatsapp_hold["requestId"], VerdictAnswer.NO, verdict.SenderIdentity(Channel.INAPP, "jimin"),
                                    "ws-no", graph.now_timestamp())
     assert answer.outcome is ActionOutcome.RECORDED
@@ -288,6 +291,7 @@ def test_successful_send_writes_sent_row_and_pushes_it(sender):
     receive_whatsapp_from_jimin(sender, "wamid.W1", HELLO_TEXT, SECONDS_PER_HOUR)
     sender.send(GRANDMA_USER_ID, Channel.WHATSAPP, JIMIN_NUMBER)
     assert sender.rejection_reasons() == []
+    assert sender.providers.out_row_statuses_at_call == [["sending"]]  # the row is written before the provider call (D11)
     [(operation_name, arguments)] = sender.providers.calls
     assert (operation_name, arguments["originationPhoneNumberId"], json.loads(arguments["message"])) == (
         "SendWhatsAppMessage", WHATSAPP_PHONE_NUMBER_ID,
@@ -303,3 +307,24 @@ def test_successful_send_writes_sent_row_and_pushes_it(sender):
     assert (pushed_message["messageId"], pushed_message["providerStatus"], pushed_message["threadKey"]) == (
         sent_row["PK"].removeprefix("MESSAGE#"), "sent", f"whatsapp#{JIMIN_NUMBER}")
     assert should_remove_gone_connections is False
+
+
+def test_confirmed_yes_still_holds_the_thread(sender):
+    sender.inbound.use_reader_scripts({NEW_PHONE_TEXT: [verdict_step(JIMIN_MONEY_ASK)]})
+    receive_whatsapp_from_jimin(sender, "wamid.C1", NEW_PHONE_TEXT, SECONDS_PER_HOUR)
+    answer = verdict.record_answer(message_row(Channel.WHATSAPP, "wamid.C1")["requestId"], VerdictAnswer.YES,
+                                   verdict.SenderIdentity(Channel.INAPP, "jimin"), "ws-yes", graph.now_timestamp())
+    assert answer.outcome is ActionOutcome.RECORDED
+    sender.send(GRANDMA_USER_ID, Channel.WHATSAPP, JIMIN_NUMBER)  # confirmed_pending until releaseAt: still held
+    assert sender.rejection_reasons() == ["thread_held"]
+    assert_nothing_sent(sender)
+
+
+def test_row_write_failure_answers_send_failed(sender, monkeypatch):
+    def put_out_message_failing(*_arguments, **_keyword_arguments):
+        raise ClientError({"Error": {"Code": "ProvisionedThroughputExceededException", "Message": "injected"}}, "PutItem")
+
+    monkeypatch.setattr(inbox_rows, "put_out_message", put_out_message_failing)
+    with pytest.raises(ClientError):
+        sender.send(GRANDMA_USER_ID, Channel.EMAIL, "jimin@example.com")
+    assert sender.rejection_reasons() == ["send_failed"] and sender.providers.calls == [] and out_rows() == []
