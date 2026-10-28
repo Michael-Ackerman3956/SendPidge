@@ -1,26 +1,46 @@
 /* An org admin's Home dashboard (js/org-view.js) and a resident's home on the Circle tab (js/org-preference-view.js); app.css is
    at its size limit, so every org rule lives here. */
-#org-screen { margin-top: 24px; }
-.org-name { font-size: 20px; font-weight: 800; margin: 0 4px 10px; overflow-wrap: anywhere; }
-.org-member-list { list-style: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); margin-bottom: 14px; }
-.org-member-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-.org-member-row:last-child { border-bottom: none; }
-.org-member-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
-.org-member-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
-.org-member-tag { font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 5px; background: var(--surface-3); color: var(--text-secondary); }
-.org-empty-message { padding: 12px 4px; font-size: 15px; color: var(--text-secondary); }
-.org-member-state { flex-shrink: 0; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
-.org-updated { margin: 0 4px 14px; font-size: 13px; color: var(--text-secondary); }
+/* The admin's Members dashboard, styled after docs/SENDPIDGE_ORG_PROTOTYPE.html: heading, stat tiles, cards, a table, chips. */
+.screen-body:has(#org-screen:not([hidden])) .contact-empty { display: none; } /* the contact's empty text is not the office's */
+.screen-body:has(#org-screen:not([hidden])) .contact-card-list:not(:empty) { margin-bottom: 20px; }
+.org-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 2px 2px 14px; font-size: 18px; font-weight: 700; }
+.org-heading-sub { font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
+.org-updated::before { content: " · "; }
 .org-updated.is-stale { color: var(--orange); font-weight: 700; }
-.org-actionable-details { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.org-actionable-state { font-size: 13px; color: var(--text-secondary); }
-.org-resolved-button { width: auto; flex-shrink: 0; min-height: 44px; padding: 0 16px; }
-.org-coverage { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; margin-bottom: 14px; }
-.org-coverage-item { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); }
-.org-coverage-value { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.org-coverage-label { font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
-/* With the home below it, the office's empty card list sits at the top instead of a fifth of the screen down. */
-.screen-body:has(#org-screen:not([hidden])) .contact-empty { margin-top: 24px; }
+.org-stats { list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+.org-stat { display: flex; flex-direction: column; gap: 2px; padding: 10px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; }
+.org-stat-value { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.org-stat-label { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.org-stat.is-good .org-stat-value { color: var(--green); }
+.org-stat.is-held .org-stat-value { color: var(--orange); }
+.org-stat.is-threat .org-stat-value { color: #fca5a5; }
+.org-stat.is-muted .org-stat-value { color: var(--text-secondary); }
+.org-card { padding: 14px; margin-bottom: 16px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); }
+.org-card-title { margin-bottom: 10px; font-size: 14px; font-weight: 700; }
+.org-log { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.org-log-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; font-size: 13px; }
+.org-log-time { min-width: 54px; font-family: var(--mono); font-size: 11px; color: var(--text-tertiary); }
+.org-log-who { min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+.org-resolved-button { width: auto; flex-shrink: 0; min-height: 40px; margin-left: auto; padding: 0 16px; border-radius: 20px; font-size: 13px; }
+.org-table { width: 100%; margin-bottom: 16px; border-collapse: separate; border-spacing: 0; overflow: hidden; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; font-size: 13px; }
+.org-table th { padding: 10px 12px; text-align: left; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.org-table td { padding: 10px 12px; vertical-align: middle; border-bottom: 1px solid var(--border); }
+.org-table tr:last-child td { border-bottom: none; }
+.org-table td:last-child, .org-table th:last-child { width: 1%; white-space: nowrap; }
+.org-person { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.org-avatar { width: 30px; height: 30px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--teal); color: var(--on-teal); font-size: 12px; font-weight: 800; }
+.org-person-names { display: flex; flex-direction: column; min-width: 0; }
+.org-person-name { font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
+.org-person-tags { font-size: 11px; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.org-chip { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em; white-space: nowrap; background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); }
+.org-chip.is-good { background: rgba(74, 222, 128, 0.10); color: var(--green); }
+.org-chip.is-held { background: rgba(245, 158, 11, 0.12); color: var(--orange); }
+.org-chip.is-threat { background: rgba(239, 68, 68, 0.12); color: #fca5a5; }
+.org-chip.is-case { background: rgba(239, 68, 68, 0.16); color: #fecaca; }
+.org-chip.is-warned { background: rgba(245, 158, 11, 0.10); color: #fcd34d; }
+.org-chip.is-neutral { background: rgba(255, 255, 255, 0.08); color: #c9c9c9; }
+.org-chip.is-muted { background: rgba(255, 255, 255, 0.04); color: var(--text-tertiary); }
+.org-empty-message { padding: 12px 4px; font-size: 15px; color: var(--text-secondary); }
 
 .org-preference { margin-top: 24px; }
 .org-visibility-group { border: none; min-width: 0; margin-bottom: 14px; }
@@ -33,5 +53,10 @@
 .org-contact-button[aria-disabled="true"], .org-resolved-button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
 
 @media (min-width: 900px) {
-  #org-screen, .org-preference { max-width: 520px; }
+  #org-screen { max-width: 1080px; }
+  .org-stats { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; } /* the five state tiles and three coverage tiles */
+  .org-stat { padding: 12px 14px; }
+  .org-stat-label { font-size: 11px; letter-spacing: 0.06em; }
+  .org-preference { max-width: 520px; }
+  .org-heading { margin-top: 4px; font-size: 20px; }
 }

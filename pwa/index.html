@@ -76,9 +76,21 @@
         </div>
       </section>
       <section id="org-screen" aria-label="Home" hidden>
-        <h2 id="org-name" class="org-name"></h2>
-        <ul id="org-member-list" class="org-member-list"></ul>
+        <h2 class="org-heading">Members<span class="org-heading-sub"><span id="org-resident-count"></span><span id="org-updated" class="org-updated"></span></span></h2>
+        <ul id="org-stats" class="org-stats" aria-label="Overview"></ul>
+        <section id="org-follow-up" class="org-card" aria-labelledby="org-follow-up-title" hidden>
+          <h3 id="org-follow-up-title" class="org-card-title">Follow up</h3>
+          <ul id="org-follow-up-list" class="org-log"></ul>
+        </section>
+        <table id="org-member-table" class="org-table">
+          <thead><tr><th scope="col">Resident</th><th scope="col">State</th></tr></thead>
+          <tbody id="org-member-rows"></tbody>
+        </table>
         <p id="org-empty-message" class="org-empty-message" hidden>No members</p>
+        <section id="org-call-list" class="org-card" aria-labelledby="org-call-list-title" hidden>
+          <h3 id="org-call-list-title" class="org-card-title">Call list</h3>
+          <ul id="org-call-list-rows" class="org-log"></ul>
+        </section>
       </section>
       <section id="circle-screen" aria-label="Circle" hidden>
         <h2 class="section-header">People Pidge can ask</h2>
