@@ -23,17 +23,17 @@
 </head>
 <body>
 <h1>SendPidge — app map</h1>
-<p class="muted">Snapshot of commit <code>7d33a7f</code> (2026-10-26). Code moves; paths and symbols below were checked against that commit and can drift.</p>
+<p class="muted">Snapshot of commit <code>9a25cd7</code> (2026-10-28), refreshed from the 2026-10-26 map at <code>7d33a7f</code> without repeating the tour. Code moves; paths and symbols below were checked against that commit and can drift.</p>
 
 <h2>What it is</h2>
-<p>An inbox that asks the real person. When an email to Grandma claims to be from someone in her circle and asks for money, a code or an urgent action, Pidge holds it and asks that person (Jimin) on a channel only he controls: the SendPidge app or WhatsApp. His answer, not a score, decides what Grandma sees.</p>
-<p>Four pieces: <strong>mail in</strong> (Amazon SES Mail Manager writes each email to S3), <strong>the Reader</strong> (a Lambda runs a tool-less Strands agent on Claude through Amazon Bedrock, then a policy written in code decides hold / warn / pass), <strong>the ask and the answer</strong> (DynamoDB rows, an API Gateway WebSocket to both PWAs, WhatsApp through AWS End User Messaging Social), and <strong>Pidge the case agent</strong> (Amazon Bedrock AgentCore, woken by a DynamoDB stream after a verdict to write the case note). Everything is declared in one AWS CDK stack.</p>
+<p>An inbox that asks the real person. When an email to Grandma claims to be from someone in her circle and asks for money, a code or an urgent action, Pidge holds it and asks that person (Jimin) on channels only he controls: the SendPidge app, WhatsApp and a one-tap No link by email, then an Amazon Connect phone call if nobody answers. His answer, not a score, decides what Grandma sees.</p>
+<p>Four pieces: <strong>mail in</strong> (Amazon SES Mail Manager writes each email to S3), <strong>the Reader</strong> (a Lambda runs a tool-less Strands agent on Claude through Amazon Bedrock, then a policy written in code decides hold / warn / pass), <strong>the ask and the answer</strong> (DynamoDB rows, an API Gateway WebSocket to both PWAs, WhatsApp through AWS End User Messaging Social, the No link through Amazon SES, the call through Amazon Connect after an EventBridge Scheduler delay), and <strong>Pidge the case agent</strong> (Amazon Bedrock AgentCore, woken by a DynamoDB stream after a verdict to write the case note and draft the recovery pack). One AWS CDK stack declares the AWS side; the Amazon Connect instance and flow, the WhatsApp number and template, and the SES domain and MX are set up outside it.</p>
 
 <h2>One action, followed through</h2>
 <p>The scam scene: a fake "Jimin" email arrives, Grandma sees a hold, Jimin taps No, Grandma sees "Not from Jimin".</p>
 <svg viewBox="0 0 860 150" role="img" aria-label="Email to S3, Reader Lambda decides HOLD and asks Jimin, verdict Lambda records No, both PWAs update">
   <rect x="8" y="40" width="150" height="56" rx="8"/><text x="83" y="63" text-anchor="middle">Email → S3</text><text x="83" y="80" text-anchor="middle" class="sub">SES Mail Manager</text>
-  <rect x="222" y="40" width="170" height="56" rx="8"/><text x="307" y="63" text-anchor="middle">Reader decides HOLD</text><text x="307" y="80" text-anchor="middle" class="sub">pidge_reader → policy.decide</text>
+  <rect x="222" y="40" width="170" height="56" rx="8"/><text x="307" y="63" text-anchor="middle">Reader decides HOLD</text><text x="307" y="80" text-anchor="middle" class="sub">pipeline.decide_inbound → policy.decide</text>
   <rect x="456" y="40" width="170" height="56" rx="8"/><text x="541" y="63" text-anchor="middle">Jimin taps No</text><text x="541" y="80" text-anchor="middle" class="sub">pidge_verdict → record_answer</text>
   <rect x="690" y="40" width="160" height="56" rx="8"/><text x="770" y="63" text-anchor="middle">Grandma's screen</text><text x="770" y="80" text-anchor="middle" class="sub">verdict-view.js</text>
   <path d="M158 68 H222"/><path d="M392 68 H456"/><path d="M626 68 H690"/>
@@ -44,8 +44,8 @@
 <h2>Route (reference, three stops)</h2>
 <p class="muted">Toured in chat on 2026-10-26 as one-sentence explanations of the files below, not by clicking through a running editor.</p>
 <ol>
-  <li><strong>Entry:</strong> <code>lambda/pidge_reader/handler.py</code>, function <code>process_email_object</code>. Reads the S3 object, runs the Reader, then <code>policy.decide</code> (in <code>lambda/shared/policy.py</code>) turns the Reader's verdict plus the contact lookup into HOLD, WARN or PASS. A HOLD calls <code>hold_and_ask</code>, which writes the request row and asks Jimin.</li>
-  <li><strong>Logic:</strong> <code>lambda/pidge_verdict/handler.py</code>, function <code>handle</code>. Every tap from either PWA (WebSocket) or from WhatsApp (SNS) lands here and is routed by the <code>ClientAction</code> enum to <code>record_answer</code> in <code>lambda/shared/verdict.py</code>. The user is taken from the connection row, never from the message body; the rules (No beats Yes, undo window, expected sender only) live in <code>verdict.py</code> and are proven by <code>lambda/tests/test_verdict.py</code>.</li>
+  <li><strong>Entry:</strong> <code>lambda/pidge_reader/handler.py</code>, function <code>process_inbound_delivery</code>. Finds the enrolled resident, reads the S3 object and hands it to <code>run_pipeline</code> in <code>lambda/shared/pipeline.py</code>. There <code>decide_inbound</code> collects the reasons written in code, runs the Reader, then <code>decide</code> (in <code>lambda/shared/policy.py</code>) turns the Reader's verdict plus the contact lookup into HOLD, WARN or PASS. A HOLD calls <code>hold_and_ask</code>, which writes the request row and asks Jimin.</li>
+  <li><strong>Logic:</strong> <code>lambda/pidge_verdict/handler.py</code>, function <code>handle</code>. Every tap from either PWA (WebSocket) lands here, is routed by the <code>ClientAction</code> enum (in <code>lambda/shared/enums.py</code>) to <code>handle_answer</code>, and a WhatsApp button lands in <code>handle_sns_records</code>; both call <code>record_answer</code> in <code>lambda/shared/verdict.py</code>, as do the email No link (<code>lambda/pidge_ask_link/handler.py</code>) and the keypad answer on the call (<code>lambda/pidge_verdict/voice_answers.py</code>). The user is taken from the connection row, never from the message body; the rules (No beats Yes, undo window, expected sender only) live in <code>verdict.py</code> and are proven by <code>lambda/tests/test_verdict.py</code>.</li>
   <li><strong>Result:</strong> <code>pwa/js/verdict-view.js</code>, functions <code>deriveEmailDisplayState</code> and <code>buildRowStatusChipElement</code>. The pushed request state becomes the chip Grandma reads ("Held · checking with Jimin", "Not from Jimin", "Jimin confirmed") and <code>showDeniedVerdictOverlay</code> is the press-and-hold Confirm sheet.</li>
 </ol>
 
@@ -57,19 +57,21 @@
   <tr><td>Who may answer, undo window, release delay</td><td><code>lambda/shared/verdict.py</code> → <code>is_expected_sender</code>, <code>answer_condition</code>, <code>release_time_for</code></td></tr>
   <tr><td>What Pidge writes after a verdict</td><td><code>agent/pidge_case/main.py</code> (the AgentCore agent) and <code>lambda/pidge_dispatch/handler.py</code> (what wakes it)</td></tr>
   <tr><td>An AWS resource, flag or env var</td><td><code>infra/lib/sendpidge-stack.ts</code> (order of pieces) → the builder file it names; flags in <code>infra/cdk.json</code></td></tr>
-  <tr><td>The kept tiny edit from the wrap-up</td><td>One comment line at the top of <code>infra/lib/sendpidge-stack.ts</code> saying it is the CDK stack, added because the file read as "a deployment script" on first open</td></tr>
+  <tr><td>The kept tiny edit from the wrap-up</td><td>One comment line in <code>infra/lib/sendpidge-stack.ts</code> (after the imports) saying it is the CDK stack, added because the file read as "a deployment script" on first open</td></tr>
 </table>
 
 <h2>A practice to reuse</h2>
-<p>State the expected outcome of a check before running it, in a form the run itself can judge. <code>scripts/swarm.py</code> asserts, per email, "held or warned" versus "wrongly held" against the deployed pipeline. Its first live run (2026-10-25, run <code>b7bffe</code>) reported a false FAIL on the gift control: a hold past the ask cap is stored as <code>warn ask_capped</code>, and the checker had not been told that a capped hold is still a hold. The fix was in the checker (<code>lambda/tests/test_swarm.py</code>, <code>test_a_capped_hold_is_stored_as_warn_ask_capped_and_still_counts_as_a_hold</code>), and the second run passed 8 of 8 attacks held or warned, 0 of 2 controls wrongly held. The same move works on any project: write the sentence the result must satisfy, make the run print pass or fail against it, and treat a surprising FAIL as a question about either the code or the sentence, not as noise.</p>
+<p>State the expected outcome of a check before running it, in a form the run itself can judge. <code>scripts/swarm.py</code> asserts, per email, "held or warned" versus "wrongly held" against the deployed pipeline. Its first live run (2026-10-25, run <code>b7bffe</code>) reported a false FAIL on the gift control: a hold past the ask cap is stored as <code>warn ask_capped</code>, and the checker had not been told that a capped hold is still a hold. The fix was in the checker (<code>lambda/tests/test_swarm.py</code>, <code>test_judge_calls_unreadable_a_failure_and_the_fourth_hold_must_not_send</code>, which judges a capped hold as a pass), and the second run passed 8 of 8 attacks held or warned, 0 of 2 controls wrongly held. The same move works on any project: write the sentence the result must satisfy, make the run print pass or fail against it, and treat a surprising FAIL as a question about either the code or the sentence, not as noise.</p>
 
 <h2>Run it again</h2>
-<pre>cd lambda &amp;&amp; ../.venv/bin/python -m pytest -q          # 206 tests at 7d33a7f
-bash infra/scripts/build_case_agent.sh &amp;&amp; cd infra &amp;&amp; npx cdk deploy --require-approval never
-# then send an email to the receiver address in infra/cdk.json and open the PWA URL printed by the deploy</pre>
+<pre>bash scripts/run_tests.sh                      # pytest + tsc; 826 passed, 6 expected failures on 2026-10-28
+bash infra/scripts/build_layer.sh &amp;&amp; bash infra/scripts/build_case_agent.sh
+cd infra &amp;&amp; npx cdk deploy --require-approval never
+# seed the rule book and sample lists with scripts/seed_rows.py, a family with scripts/enrol_resident.py,
+# then send an email to the resident's address and open the PWA URL printed by the deploy</pre>
 <details><summary>Flags that change the demo</summary>
 <ul>
-  <li><code>whatsappEnabled</code>, <code>rcsEnabled</code> (RCS is a stub, untested on a phone), <code>escalationEnabled</code>, <code>chatEnabled</code>, <code>contactVerificationMock</code>, <code>asksPerContactPerHour</code>, all in <code>infra/cdk.json</code>.</li>
+  <li><code>whatsappEnabled</code>, <code>emailAskEnabled</code>, <code>voiceEnabled</code>, <code>escalationEnabled</code>, <code>chatEnabled</code>, <code>orgEnabled</code>, <code>contactVerificationMock</code> in <code>infra/cdk.json</code> (<code>rcsEnabled</code> and <code>smsEnabled</code> are false: not built live); <code>asksPerContactPerHour</code> defaults to 3 in <code>infra/lib/stack-settings.ts</code>.</li>
 </ul>
 </details>
 <p class="muted">Reopen: <code>open devpost/app-map.html</code> from the repo root, or double-click the file. No scripts, no network.</p>

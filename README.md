@@ -79,6 +79,7 @@ A HOLD writes a request row in **DynamoDB**, then asks in three places at once:
 - "I already paid" asks the country and the payment method. Code opens the case.
 - The case agent on **Bedrock AgentCore** (Runtime plus Memory of the family) writes the note.
 - Code builds the pack from the rule book: steps with who to contact and a deadline, a call script, a dispute letter, a police report. It goes to her own mailbox.
+- What it does not do: the case agent has no tool that sends. Nothing is filed with the bank, the police or any agency; Grandma reads the drafts and makes the calls herself.
 - Her questions go to a chat agent behind a **Bedrock Guardrail**.
 
 ### 7. The home's view
@@ -131,7 +132,7 @@ Every tool-holding run stops at 8 model turns (`lambda/shared/agent_run.py`).
 | **Amazon Cognito** | The office's sign-in (managed login, password or passkey, PKCE) |
 | Everything else | AWS Lambda (one function per job), Amazon DynamoDB (one table), Amazon API Gateway WebSocket, Amazon EventBridge Scheduler, Amazon S3 + CloudFront, Amazon SQS + CloudWatch, AWS Secrets Manager |
 
-One AWS CDK stack (`infra/`). Set up outside it: the Amazon Connect instance and flow, the WhatsApp number and template, the SES domain and MX. Built but off: RCS (`rcsEnabled: false`) and the live public scam-list feeds (`liveFeedsEnabled: false`; seeded samples answer).
+One AWS CDK stack (`infra/`). Set up outside it: the Amazon Connect instance and flow, the WhatsApp number and template, the SES domain and MX. Built but off: RCS (`rcsEnabled: false`; the RCS agent exists in testing registration, which delivers only to approved tester numbers in launch countries and refuses Korean numbers) and SMS (`smsEnabled: false`; no SMS number is provisioned); neither has run live and the live public scam-list feeds (`liveFeedsEnabled: false`; seeded samples answer). Not deployed: the rules keeper, which runs from a laptop on mock pages (`scripts/run_rules_keeper.py`).
 
 ## Demo
 
@@ -194,7 +195,7 @@ Seed the rule book and the sample lists with `scripts/seed_rows.py`, and a famil
 ## Limitations
 
 - One phone plays every party in the demo; the moments marked staged are staged.
-- RCS is built but off; SMS needs an origination number and is not built end to end.
+- RCS and SMS are built but off and have never run live: the RCS agent is in testing registration (tester numbers only, Korea refused) and no SMS origination number is provisioned. SMS carries texts in and replies out only; the ask never goes by SMS.
 - Recovery is drafts only. The rule book (`infra/seed/refund_rules*.json`) has live rows for the US (card, Zelle, wire, gift card), the UK, Canada, Australia, Germany, France, Japan, Korea and Singapore (mostly card and wire); a country and method with no live row gets a pack with no steps, never invented ones.
 - Scam lists are sample data; the KISA and AMF feed sync is off.
 - The judge inbox is shared by every judge, and a circle holds 10 contacts.
