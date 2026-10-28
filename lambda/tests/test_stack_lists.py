@@ -15,7 +15,7 @@ FORBIDDEN_ACTION_PREFIXES = ("bedrock:", "secretsmanager:", "s3:")
 TABLE_RESOURCES = {"${Table.Arn}", "${Table.Arn}/index/*"}
 
 
-def test_list_dispatch_syncs_hourly_with_table_access_only(synthesized_template):
+def test_list_dispatch_is_hourly_but_off_with_table_access_only(synthesized_template):
     function_logical_id, list_dispatch_function = find_function_by_handler(synthesized_template, "pidge_list_dispatch.handler.handle")
     function_properties = list_dispatch_function["Properties"]
     assert (function_properties["Timeout"], function_properties["ReservedConcurrentExecutions"]) == (300, 1)
@@ -25,7 +25,9 @@ def test_list_dispatch_syncs_hourly_with_table_access_only(synthesized_template)
     [(schedule_logical_id, schedule)] = [(logical_id, rule["Properties"])
                                          for logical_id, rule in resources_of_type(synthesized_template, "AWS::Events::Rule").items()
                                          if strip_trailing_logical_id_hash(logical_id) == "ListSyncSchedule"]
-    assert (schedule["ScheduleExpression"], schedule["State"]) == ("rate(1 hour)", "ENABLED")
+    assert (schedule["ScheduleExpression"], schedule["State"]) == ("rate(1 hour)", "DISABLED")  # cdk.json liveFeedsEnabled false
+    _, reader_function = find_function_by_handler(synthesized_template, "pidge_reader.handler.handle")
+    assert reader_function["Properties"]["Environment"]["Variables"]["LIVE_FEEDS_ENABLED"] == "false"
     [target] = schedule["Targets"]
     assert target["Arn"] == {"Fn::GetAtt": [function_logical_id, "Arn"]}
     assert json.loads(render_intrinsic_as_text(target["Input"])) == {"trigger": str(ListDispatchTrigger.SYNC)}

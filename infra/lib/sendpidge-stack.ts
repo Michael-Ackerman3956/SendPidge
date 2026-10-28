@@ -135,7 +135,7 @@ export class SendPidgeStack extends Stack {
     const caseAgent = buildCaseAgent(this, settings, table);
     const guardrail = buildChatGuardrail(this);
     buildDispatchFunction(this, settings, shared, caseAgent, guardrail, vapidSecret);
-    buildListDispatch(this, shared);
+    buildListDispatch(this, shared, settings.liveFeedsEnabled);
     buildOrgFunctions(this, settings, shared);
     buildSendMessageFunction(this, settings, shared);
 

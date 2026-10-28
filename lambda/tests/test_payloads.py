@@ -79,6 +79,7 @@ def put_amf_listed_domain(domain: str, now: str) -> str:
 
 
 def test_scam_list_coverage_reaches_the_email_state(aws, monkeypatch):  # noqa: F811
+    monkeypatch.setenv("LIVE_FEEDS_ENABLED", "true")
     seed_grandma_and_jimin_for_the_reader()
     loaded = load_reader_handler(monkeypatch, is_escalation_enabled=False)
     loaded.handler.pipeline.reader.model = ScriptedModel(EmailVerdict, reader_scripts_for((FAMILY_HELLO, NEWSLETTER_LINK)))

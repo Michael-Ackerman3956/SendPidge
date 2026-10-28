@@ -10,6 +10,7 @@ interpreted, except mapping.url, the https address a live-fetch source is downlo
 import csv
 import io
 import logging
+import os
 from dataclasses import dataclass
 from enum import StrEnum
 from urllib.parse import urlsplit
@@ -334,15 +335,18 @@ def dry_run_mapping(mapping: dict, indicator_kind: IndicatorKind, sample_bytes: 
 
 
 def check_against_live_sources(indicators: list[Indicator], now: str) -> CheckResult:
-    """lists.check over the production table and the live registry. Only live-fetch sources count toward staleness (a
-    snapshot is bounded by its rows' expiresAt). A registry read or row that fails is logged, counted as ListCheckFailed
-    and answered UNAVAILABLE. Each public-feed hit is counted as ScamListHit by source."""
-    try:
-        live_fetch_sources = [source for source in list_newest_live_sources() if source.feed_parser is not None]
-    except (ClientError, KeyError, ValueError) as error:
-        logger.error("source registry read failed: %s", error)
-        emit_count_metric(LIST_CHECK_FAILED_METRIC_NAME)
-        return lists.unavailable_check_result(now)
+    """lists.check over the production table and the live registry. Only live-fetch sources count toward staleness, and only
+    with LIVE_FEEDS_ENABLED (off, the hourly fetch is off too, so the seeded rows answer alone; a snapshot is bounded by its
+    rows' expiresAt). A registry read or row that fails is logged, counted as ListCheckFailed and answered UNAVAILABLE.
+    Each public-feed hit is counted as ScamListHit by source."""
+    live_fetch_sources: list[SourceRow] = []
+    if os.environ.get("LIVE_FEEDS_ENABLED") == "true":
+        try:
+            live_fetch_sources = [source for source in list_newest_live_sources() if source.feed_parser is not None]
+        except (ClientError, KeyError, ValueError) as error:
+            logger.error("source registry read failed: %s", error)
+            emit_count_metric(LIST_CHECK_FAILED_METRIC_NAME)
+            return lists.unavailable_check_result(now)
     result = lists.check(lists.DynamoListStore(), indicators, live_fetch_sources, now)
     for hit in result.hits:
         if hit.source is ListSource.PUBLIC_FEED:

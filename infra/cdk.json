@@ -45,6 +45,7 @@
     "callReminderTomorrowDelaySeconds": 79200,
     "cognitoDomainPrefix": "",
     "orgEnabled": true,
-    "orgId": "home-demo"
+    "orgId": "home-demo",
+    "liveFeedsEnabled": false
   }
 }

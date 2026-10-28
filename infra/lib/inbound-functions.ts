@@ -64,6 +64,7 @@ function buildPipelineEnvironment(
     TABLE_NAME: shared.table.tableName,
     READER_MODEL: settings.readerModel,
     ASKS_PER_CONTACT_PER_HOUR: String(settings.asksPerContactPerHour),
+    LIVE_FEEDS_ENABLED: flagEnvironmentValue(settings.liveFeedsEnabled),
     ESCALATION_ENABLED: flagEnvironmentValue(settings.escalationEnabled),
     ESCALATION_MODEL: settings.escalationModel,
     RETRY_SCHEDULER_ENABLED: flagEnvironmentValue(settings.retrySchedulerEnabled),

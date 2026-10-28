@@ -23,7 +23,7 @@ from shared.budget import BudgetLedger, BudgetLine, KeeperSessionOutcome, Keeper
 from shared.enums import IndicatorKind, ListStrength, ProposedBy, ReaderModelChoice
 from shared.list_enums import FeedFetchOutcome, ScamListCoverageState
 from shared.list_keeper import ListKeeperSession, SourceProposal, build_list_keeper_agent, run_list_keeper_session, run_prompt
-from shared.lists import Indicator
+from shared.lists import Indicator, list_row_from_seed
 from shared.sources import (
     LicenceRefused, LicenceTag, SourceState, approve_source, check_against_live_sources, list_newest_live_sources,
     list_source_versions, parse_source_row, source_row_from_seed,
@@ -46,6 +46,7 @@ KISA_FEED = (FEEDS_FIXTURE_DIRECTORY / "kisa_5rows.csv").read_bytes()
 OVER_THE_CAP = 52428801
 AMF_SYNCED = {"sourceId": AMF, "outcome": "fetched", "generation": 1, "written": 4, "deleted": 0, "skipped": 1}
 PUBLIC_SNAPSHOT = json.loads(list_sync.PUBLIC_SNAPSHOT_FILE.read_text(), parse_float=Decimal)
+SAMPLE_LISTS_PATH = list_sync.PUBLIC_SNAPSHOT_FILE.parent / "lists.sample.json"
 PROPOSAL = {
     "has_source": True, "name": "Phishing.Database active domains", "indicator_kind": "domain",
     "mapping": {"format": "text", "encoding": "utf-8"}, "ttl_days": 180, "sync_interval_minutes": 1440,
@@ -164,6 +165,7 @@ def parcel_fee_row(index: int) -> dict | None:
 
 
 def test_a_fetched_feed_and_a_snapshot_seed_rows_that_check_returns_with_attribution(feeds_mock, monkeypatch):
+    monkeypatch.setenv("LIVE_FEEDS_ENABLED", "true")
     put_source(seed_source(PHISHING_DATABASE))
     put_source(seed_source(AMF))
     install_opener(monkeypatch, [FakeFeedResponse(AMF_FEED)])
@@ -189,7 +191,20 @@ def test_a_fetched_feed_and_a_snapshot_seed_rows_that_check_returns_with_attribu
     assert handle_sync_at(monkeypatch, "2026-10-27T16:00:00Z", "sync") == []  # not due, so the opener is never asked
 
 
+def test_with_live_feeds_off_a_never_synced_feed_leaves_the_sample_rows_answering_complete(aws, monkeypatch):  # noqa: F811
+    monkeypatch.delenv("LIVE_FEEDS_ENABLED", raising=False)
+    put_source(seed_source(AMF))  # live, with a feedParser, never synced
+    sample_seed = next(seed for seed in json.loads(SAMPLE_LISTS_PATH.read_text()) if seed["value"] == "kakaobank-secure-pay.example")
+    graph.get_table().put_item(Item=list_row_from_seed(sample_seed))
+    indicators = [Indicator(IndicatorKind.DOMAIN, "kakaobank-secure-pay.example"), Indicator(IndicatorKind.DOMAIN, "example.org")]
+    result = check_against_live_sources(indicators, NOW)
+    assert ([hit.strength for hit in result.hits], result.coverage) == ([ListStrength.LISTED], ScamListCoverageState.COMPLETE)
+    monkeypatch.setenv("LIVE_FEEDS_ENABLED", "true")
+    assert check_against_live_sources(indicators, NOW).coverage is ScamListCoverageState.UNAVAILABLE
+
+
 def test_http_failure_marks_the_source_unavailable_never_clean(aws, monkeypatch, capsys):  # noqa: F811
+    monkeypatch.setenv("LIVE_FEEDS_ENABLED", "true")
     put_source(seed_source(AMF))
     install_opener(monkeypatch, [FakeFeedResponse(AMF_FEED), http_error(503), http_error(503)])
     assert handle_sync_at(monkeypatch, NOW) == [AMF_SYNCED]
@@ -308,6 +323,7 @@ def test_no_derivatives_and_share_alike_sources_never_sync(aws):  # noqa: F811
 
 
 def test_stale_after_three_intervals_reads_unavailable(aws, monkeypatch):  # noqa: F811
+    monkeypatch.setenv("LIVE_FEEDS_ENABLED", "true")
     zelle = [Indicator(IndicatorKind.DOMAIN, "zelle-pay-help.example")]
     put_source({**seed_source(PHISHING_DATABASE), "lastSyncAt": "2026-01-01T00:00:00Z", "lastGeneration": 0})
     assert check_against_live_sources(zelle, NOW).coverage is ScamListCoverageState.COMPLETE  # a stale snapshot alone

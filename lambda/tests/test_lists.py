@@ -322,7 +322,8 @@ def test_a_listed_url_marks_its_link_with_the_asked_indicator():
     assert marked[0].as_row()["listedBy"] == "KISA 피싱사이트 URL"
 
 
-def test_scam_list_coverage_unavailable_when_any_live_source_is_stale(aws, capsys):  # noqa: F811
+def test_scam_list_coverage_unavailable_when_any_live_source_is_stale(aws, capsys, monkeypatch):  # noqa: F811
+    monkeypatch.setenv("LIVE_FEEDS_ENABLED", "true")
     sender_only = [Indicator(IndicatorKind.DOMAIN, "gardenweekly.example")]
     put_source({**seed_source(AMF), "lastSyncAt": NOW, "lastGeneration": 1})
     put_source({**seed_source(KISA_2024), "lastSyncAt": "2026-10-01T00:00:00Z", "lastGeneration": 1})  # over 3 weekly intervals

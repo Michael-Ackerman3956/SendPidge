@@ -13,10 +13,10 @@ const LIST_SYNC_INTERVAL = Duration.hours(1);
 const LAMBDA_METRIC_NAMESPACE = "SendPidge";
 const FEED_STALE_METRIC_NAME = "FeedStale";
 
-// pidge-list-dispatch on an hourly EventBridge rule (no IAM role; the founder pauses it with disable-rule): it syncs the live
+// pidge-list-dispatch on an hourly EventBridge rule, disabled unless liveFeedsEnabled (no IAM role): it syncs the live
 // scam-list feeds into LIST# rows. Reserved concurrency 1 keeps a sync_now and the schedule from racing the BUCKETS
 // read-modify-write. The list keeper is off and LIST_FEEDS_MOCK is never set (infra/seed is not in the Lambda asset).
-export function buildListDispatch(stack: Stack, shared: SharedResources): void {
+export function buildListDispatch(stack: Stack, shared: SharedResources, isScheduleEnabled: boolean): void {
   const listDispatchFunction = buildPythonFunction(stack, "ListDispatch", shared.lambdaCode, {
     handler: "pidge_list_dispatch.handler.handle",
     layers: [shared.dependencyLayer],  // the handler imports the list keeper (strands, pydantic)
@@ -32,6 +32,7 @@ export function buildListDispatch(stack: Stack, shared: SharedResources): void {
   const listSyncSchedule = new Rule(stack, "ListSyncSchedule", {
     description: "SendPidge: sync the live scam-list feeds that are due",
     schedule: Schedule.rate(LIST_SYNC_INTERVAL),
+    enabled: isScheduleEnabled,  // liveFeedsEnabled
     targets: [new LambdaFunction(listDispatchFunction, { event: RuleTargetInput.fromObject({ trigger: SCHEDULED_SYNC_TRIGGER }) })],
   });
   new Alarm(stack, "FeedStaleAlarm", {

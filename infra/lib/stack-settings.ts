@@ -71,6 +71,8 @@ export interface StackSettings {
   orgEnabled: boolean;
   // The one home whose ORG#<orgId>/CANARY row the canary writes; "" when orgEnabled is off.
   orgId: string;
+  // The hourly live-feed fetch (KISA, AMF) and their staleness in coverage; off, only the seeded list rows answer.
+  liveFeedsEnabled: boolean;
 }
 
 const MAXIMUM_CALL_REMINDER_DELAY_SECONDS = 82800;
@@ -180,6 +182,7 @@ export function readStackSettings(stack: Stack): StackSettings {
     pwaCallbackUrl: `https://${pwaDomain}/`,
     orgEnabled,
     orgId: readOrgId(stack, orgEnabled),
+    liveFeedsEnabled: stack.node.tryGetContext("liveFeedsEnabled") === true,
   };
 }
 
