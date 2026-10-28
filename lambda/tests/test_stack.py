@@ -570,11 +570,17 @@ def test_passkey_sign_in_is_choice_based_with_user_verification(synthesized_temp
     assert user_pool_properties["UserPoolTier"] == "ESSENTIALS"
     assert user_pool_properties["WebAuthnUserVerification"] == "required"
     assert user_pool_properties["AdminCreateUserConfig"]["AllowAdminCreateUserOnly"] is True
+    invitation = user_pool_properties["AdminCreateUserConfig"]["InviteMessageTemplate"]
+    assert invitation["EmailSubject"] == "SendPidge sign-in"
+    assert invitation["EmailMessage"] == (
+        "Email: {username}<br>Temporary password: {####}<br>Sign in at https://app.sendpidge.com/")  # nothing after the password
+    assert "EmailConfiguration" not in user_pool_properties  # Cognito's default sender, no SES
     [(app_client_logical_id, app_client)] = resources_of_type(synthesized_template, "AWS::Cognito::UserPoolClient").items()
     app_client_properties = app_client["Properties"]
     assert app_client_properties["GenerateSecret"] is False
     assert "ALLOW_USER_AUTH" in app_client_properties["ExplicitAuthFlows"]
     assert app_client_properties["AllowedOAuthFlows"] == ["code"]
+    assert sorted(app_client_properties["AllowedOAuthScopes"]) == ["aws.cognito.signin.user.admin", "email", "openid"]
     [domain] = resources_of_type(synthesized_template, "AWS::Cognito::UserPoolDomain").values()
     assert domain["Properties"]["ManagedLoginVersion"] == 2
     _connect_logical_id, connect_function = find_function_by_handler(synthesized_template, "ws_connect.handler.handle")
@@ -582,3 +588,11 @@ def test_passkey_sign_in_is_choice_based_with_user_verification(synthesized_temp
     assert render_intrinsic_as_text(connect_environment[ISSUER_ENVIRONMENT_NAME]) == (
         "https://cognito-idp.us-east-1.amazonaws.com/${%s}" % user_pool_logical_id)
     assert connect_environment[APP_CLIENT_ID_ENVIRONMENT_NAME] == {"Ref": app_client_logical_id}
+
+
+def test_every_site_file_is_served_no_cache(synthesized_template):
+    """A browser revalidates every PWA and landing file, so it never runs an old js/app.js beside a new index.html."""
+    deployments = resources_of_type(synthesized_template, "Custom::CDKBucketDeployment")
+    assert len(deployments) == 2
+    for deployment in deployments.values():
+        assert deployment["Properties"]["SystemMetadata"] == {"cache-control": "no-cache"}

@@ -1,14 +1,20 @@
-// An org admin's screen (ORG_ADMIN): the office's "Was this you?" cards on the contact screen, then the home's Members
-// dashboard under the home's name in the top bar: resident count and when the projection last ran (amber when stale), tiles
+// An org admin's screen (ORG_ADMIN): the side panel (the receiver's rail, with Members and Messages in place of her four tabs,
+// and "Admin" as the signed-in name), and the Members tab: the office's "Was this you?" cards on the contact screen, then the
+// home's dashboard under the home's name in the top bar: resident count and when the projection last ran (amber when stale), tiles
 // counting members by safety state and the coverage counts, the open items to follow up (one Resolved button each), every
-// member with tags and a state chip, and the members to call; the Updated text is re-rendered every minute.
+// member with tags, what they share, their last event and a state chip, and the members to call; the Updated text is
+// re-rendered every minute. The Messages tab is org-messages-view.js.
 // Every name, tag and key comes from the server: textContent only. Resolved sends org_resolve; success has no reply, the
 // projection's org_changed re-sync (app.js) shows it.
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
-import { CLIENT_ACTION, MEMBER_SAFETY_STATE } from "./constants.js";
-import { applyContactSyncState, showContactView } from "./contact-view.js";
-import { createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
+import { CLIENT_ACTION, MEMBER_SAFETY_STATE, ORG_VISIBILITY } from "./constants.js";
+import { applyContactSyncState, hideContactView, showContactView } from "./contact-view.js";
+import { createElementWithText, formatTimestampForDisplay, parseTimestampMilliseconds } from "./dom-helpers.js";
+import { applyOrgBroadcastState, isValidBroadcast, resetOrgMessagesView, startOrgMessagesView } from "./org-messages-view.js";
 import { sendClientAction } from "./websocket.js";
+
+const ORG_TAB = Object.freeze({ MEMBERS: "members", MESSAGES: "messages" });
+const ADMIN_DISPLAY_NAME = "Admin"; // no admin row holds a name
 
 // Each state's chip: its label and the tone class org.css colours it with.
 const MEMBER_SAFETY_STATE_DISPLAY = Object.freeze({
@@ -22,6 +28,14 @@ const MEMBER_SAFETY_STATE_DISPLAY = Object.freeze({
   [MEMBER_SAFETY_STATE.CONTACT_UNREACHABLE]: { label: "Can't reach contact", toneClass: "is-neutral" },
 });
 const KNOWN_MEMBER_SAFETY_STATES = new Set(Object.values(MEMBER_SAFETY_STATE));
+// The Shares cell: what the member's MEMBER# coverage fact lets the office see.
+const ORG_VISIBILITY_LABELS = Object.freeze({
+  [ORG_VISIBILITY.NONE]: "Nothing",
+  [ORG_VISIBILITY.ALERTS_ONLY]: "Alerts",
+  [ORG_VISIBILITY.ALERTS_AND_CASES]: "Alerts and cases",
+});
+const KNOWN_ORG_VISIBILITIES = new Set(Object.values(ORG_VISIBILITY));
+const NO_LAST_EVENT_TEXT = "—";
 // The first tiles count members[].state, in the prototype's order; Held also counts a hold nobody answered.
 const SAFETY_STATE_TILES = Object.freeze([
   { label: "Nothing open", toneClass: "is-good", states: [MEMBER_SAFETY_STATE.NOTHING_OPEN] },
@@ -43,6 +57,11 @@ const UPDATED_LINE_REFRESH_INTERVAL_MS = 60 * 1000;
 
 const pageElements = {
   topbarTitle: document.getElementById("topbar-title"),
+  sidePanel: document.getElementById("receiver-tabs"),
+  receiverTabButtons: ["tab-inbox", "tab-cases", "tab-circle", "tab-pidge"].map((buttonId) => document.getElementById(buttonId)),
+  railMeInitial: document.getElementById("rail-me-initial"),
+  railMeName: document.getElementById("rail-me-name"),
+  messagesScreen: document.getElementById("org-messages-screen"),
   orgScreen: document.getElementById("org-screen"),
   residentCount: document.getElementById("org-resident-count"),
   updatedLine: document.getElementById("org-updated"),
@@ -55,11 +74,16 @@ const pageElements = {
   callListSection: document.getElementById("org-call-list"),
   callListRows: document.getElementById("org-call-list-rows"),
 };
+const orgTabButtons = Object.freeze({
+  [ORG_TAB.MEMBERS]: document.getElementById("tab-org-members"),
+  [ORG_TAB.MESSAGES]: document.getElementById("tab-org-messages"),
+});
 const statValueElements = buildStatTiles();
 // A tapped Resolved stays aria-disabled until a re-sync no longer lists its item or the action is rejected.
 const sourceKeysWithResolveInFlight = new Set();
 let shownOrg = null; // the last valid org rendered, re-read by the Updated line refresh
 let updatedLineRefreshIntervalId = null;
+let activeOrgTab = ORG_TAB.MEMBERS;
 
 function buildStatTile(label, toneClass) {
   const statValue = createElementWithText("b", "org-stat-value");
@@ -88,7 +112,7 @@ function isValidCoverage(coverage) {
 // A missing isStale or lastProjectedAt refuses the whole payload: it never reads as fresh.
 function isValidOrg(org) {
   const isValid = org !== null && typeof org === "object" && typeof org.orgName === "string" && Array.isArray(org.members)
-    && Array.isArray(org.actionable) && Array.isArray(org.callList) && typeof org.isStale === "boolean"
+    && Array.isArray(org.actionable) && Array.isArray(org.callList) && Array.isArray(org.broadcasts) && typeof org.isStale === "boolean"
     && (org.lastProjectedAt === null || isTimestampText(org.lastProjectedAt)) && isValidCoverage(org.coverage);
   if (!isValid) console.error("SendPidge: org_admin sync_state has a missing or malformed org field", org);
   return isValid;
@@ -100,7 +124,8 @@ function isValidNamedMember(member) {
 
 function isValidOrgMember(member) {
   const isValid = isValidNamedMember(member) && Array.isArray(member.tags) && member.tags.every((tag) => typeof tag === "string")
-    && KNOWN_MEMBER_SAFETY_STATES.has(member.state);
+    && KNOWN_MEMBER_SAFETY_STATES.has(member.state) && KNOWN_ORG_VISIBILITIES.has(member.shares)
+    && (member.lastEventAt === null || isTimestampText(member.lastEventAt));
   if (!isValid) console.error("SendPidge: org member has a missing field or unknown state", member);
   return isValid;
 }
@@ -125,13 +150,6 @@ function keepValidRows(rows, isValidRow) {
   return validRows;
 }
 
-// Time only when it is today, else date and time.
-function formatTimestampForDisplay(isoText) {
-  const shownDate = new Date(parseTimestampMilliseconds(isoText));
-  const isToday = shownDate.toDateString() === new Date().toDateString();
-  return shownDate.toLocaleString([], isToday ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" });
-}
-
 // Called only with a validated state, so the lookup always finds its display.
 function buildStateChipElement(state) {
   const stateDisplay = MEMBER_SAFETY_STATE_DISPLAY[state];
@@ -154,9 +172,12 @@ function buildMemberRowElement(member) {
   const row = document.createElement("tr");
   const personCell = document.createElement("td");
   personCell.append(buildPersonElement(member.residentName, member.tags));
+  const sharesCell = createElementWithText("td", "org-member-detail", ORG_VISIBILITY_LABELS[member.shares]);
+  const lastEventText = member.lastEventAt === null ? NO_LAST_EVENT_TEXT : formatTimestampForDisplay(member.lastEventAt);
+  const lastEventCell = createElementWithText("td", "org-member-detail", lastEventText);
   const stateCell = document.createElement("td");
   stateCell.append(buildStateChipElement(member.state));
-  row.append(personCell, stateCell);
+  row.append(personCell, sharesCell, lastEventCell, stateCell);
   return row;
 }
 
@@ -253,17 +274,47 @@ function renderOrg(org) {
   renderCallList(keepValidRows(org.callList, isValidCallListMember));
 }
 
-// The admin's sync_state: requests are the cards asked of the org (shown as a contact's), org is the home's dashboard.
+// Members shows the office's cards and the dashboard; Messages shows the composer and the alert report.
+function showOrgTab(tab) {
+  activeOrgTab = tab;
+  Object.entries(orgTabButtons).forEach(([tabName, button]) => {
+    button.classList.toggle("is-active", tabName === tab);
+    button.setAttribute("aria-pressed", String(tabName === tab));
+  });
+  if (tab === ORG_TAB.MEMBERS) showContactView(); else hideContactView();
+  pageElements.topbarTitle.textContent = shownOrg.orgName; // after showContactView, which titles the screen "Pidge"
+  pageElements.orgScreen.hidden = tab !== ORG_TAB.MEMBERS;
+  pageElements.messagesScreen.hidden = tab !== ORG_TAB.MESSAGES;
+}
+
+// The side panel shows the two org tabs instead of the receiver's four.
+function showOrgSidePanel() {
+  pageElements.receiverTabButtons.forEach((button) => { button.hidden = true; });
+  Object.values(orgTabButtons).forEach((button) => { button.hidden = false; });
+  pageElements.railMeInitial.textContent = ADMIN_DISPLAY_NAME[0];
+  pageElements.railMeName.textContent = ADMIN_DISPLAY_NAME;
+  pageElements.sidePanel.hidden = false;
+}
+
+export function startOrgView() {
+  Object.entries(orgTabButtons).forEach(([tabName, button]) => button.addEventListener("click", () => showOrgTab(tabName)));
+  startOrgMessagesView();
+}
+
+// The admin's sync_state: requests are the cards asked of the org (shown as a contact's), org is the home's dashboard with
+// its alert report, adminRole decides whether the composer shows.
 export function applyOrgAdminSyncState(pushMessage) {
-  showContactView();
   applyContactSyncState(pushMessage.requests);
   if (!isValidOrg(pushMessage.org)) {
+    showContactView();
     showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
     return;
   }
   shownOrg = pushMessage.org;
   renderOrg(shownOrg);
-  pageElements.orgScreen.hidden = false;
+  applyOrgBroadcastState(keepValidRows(shownOrg.broadcasts, isValidBroadcast), pushMessage.adminRole);
+  showOrgSidePanel();
+  showOrgTab(activeOrgTab);
   startUpdatedLineRefresh();
 }
 
@@ -275,9 +326,15 @@ export function handleOrgActionRejected() {
   });
 }
 
-// The org screen is torn down (another role's sync_state): the Updated line refresh stops.
+// The org screens are torn down (another role's sync_state): the Updated line refresh stops and the side panel gets the
+// receiver's four tabs back, hidden until her own sync shows it.
 export function hideOrgView() {
   pageElements.orgScreen.hidden = true;
+  pageElements.messagesScreen.hidden = true;
+  Object.values(orgTabButtons).forEach((button) => { button.hidden = true; });
+  pageElements.receiverTabButtons.forEach((button) => { button.hidden = false; });
+  pageElements.sidePanel.hidden = true;
+  resetOrgMessagesView();
   clearInterval(updatedLineRefreshIntervalId);
   updatedLineRefreshIntervalId = null;
   shownOrg = null;

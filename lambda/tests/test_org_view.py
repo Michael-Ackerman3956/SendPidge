@@ -27,7 +27,7 @@ SUNRISE_PREFERENCE_KEY = {"PK": f"RECEIVER#{GRANDMA_ADDRESS}", "SK": f"ORGPREF#{
 CANARY_KEY = {"PK": f"ORG#{SUNRISE_ORG_ID}", "SK": CANARY_SORT_KEY}
 ORG_LOG_REQUEST_EVENT_FIELDS = {"PK", "SK", "memberRef", "event", "sourceKey", "at", "requestId", "ttlEpochSeconds"}
 CHANNEL_BY_EVENT = {"message_held": "email", "contact_confirmed_not_me": "inapp"}  # how it came in, how the answer came back
-DASHBOARD_FIELDS = {"orgId", "orgName", "lastProjectedAt", "isStale", "members", "actionable", "coverage", "callList"}
+DASHBOARD_FIELDS = {"orgId", "orgName", "lastProjectedAt", "isStale", "members", "actionable", "coverage", "callList", "broadcasts"}
 OFFICE_EMAIL_TEXTS = ("Invoice", "Asks to pay an invoice.", "billing@sunrise-help.example", "Sunrise Commons")
 EPISODE_SOURCE_KEY = "REQUEST#req-00000000-0000-4000-8000-000000000000"
 ACTIONABLE_FIELDS = {"memberRef", "residentName", "sourceKey", "state", "at"}
@@ -109,7 +109,8 @@ def test_projection_keys_are_enum_name_time_channel_only(sunrise):
     send_action(handler, "ann", {"action": "sync"})
     dashboard = pushed_messages[-1]["org"]
     assert set(dashboard) == DASHBOARD_FIELDS
-    assert dashboard["members"] == [{"memberRef": GRANDMA_ADDRESS, "residentName": "Grandma", "tags": [], "state": "confirmed_not_me"}]
+    assert dashboard["members"] == [{"memberRef": GRANDMA_ADDRESS, "residentName": "Grandma", "tags": [], "state": "confirmed_not_me",
+                                     "shares": "alerts_only", "lastEventAt": max(row["at"] for row in log_rows)}]
     assert all(set(actionable) == ACTIONABLE_FIELDS for actionable in dashboard["actionable"])
     actionable_by_source = {actionable["sourceKey"]: actionable for actionable in dashboard["actionable"]}
     assert {source_key: actionable["state"] for source_key, actionable in actionable_by_source.items()} == {
@@ -125,7 +126,8 @@ def test_zero_events_reads_nothing_open(sunrise):
     share_with_the_office(handler)
     now = datetime.now(timezone.utc)
     dashboard = sunrise_dashboard(now)
-    assert dashboard["members"] == [{"memberRef": GRANDMA_ADDRESS, "residentName": "Grandma", "tags": [], "state": "nothing_open"}]
+    assert dashboard["members"] == [{"memberRef": GRANDMA_ADDRESS, "residentName": "Grandma", "tags": [], "state": "nothing_open",
+                                     "shares": "alerts_only", "lastEventAt": None}]
     assert dashboard["actionable"] == []
     assert dashboard["coverage"] == {"enrolled": 1, "withVerifiedContact": 0, "visibilityChosen": 1, "seenInLastSevenDays": 0}
     assert dashboard["callList"] == [{"memberRef": GRANDMA_ADDRESS, "residentName": "Grandma"}]
@@ -157,7 +159,8 @@ def test_absent_visibility_reads_not_shared(sunrise):
     project_inserted(request_key(request_id))
     assert [row["event"] for row in read_org_log_rows()] == ["message_held"]
     dashboard = sunrise_dashboard(datetime.now(timezone.utc))
-    assert dashboard["members"][0]["state"] == "not_shared"
+    assert (dashboard["members"][0]["state"], dashboard["members"][0]["shares"], dashboard["members"][0]["lastEventAt"]) == (
+        "not_shared", "none", None)  # her logged message_held is not shown while no coverage fact says she shares
     assert (dashboard["actionable"], dashboard["coverage"]["visibilityChosen"]) == ([], 0)
     preference_before = read_stored_row(SUNRISE_PREFERENCE_KEY)
     send_action(handler, "grandma", {"action": "set_org_visibility", "visibility": "alerts_only"})  # the migration re-pick

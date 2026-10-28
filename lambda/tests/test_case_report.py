@@ -69,15 +69,21 @@ def test_a_contact_cannot_send_and_a_second_send_is_not_applied(aws):
         assert cases.send_report(case_id, RECEIVER_USER_ID, grandma(), sent_client, SENDER, CASES_ADDRESS, MOCK_BANK).outcome is ActionOutcome.NOT_APPLIED
 
 
-def test_close_needs_a_reported_case_and_the_receiver(aws):
+def test_done_closes_an_open_case_for_the_receiver_only_and_once(aws):
     case_id = open_case()
-    assert cases.close_case(case_id, RECEIVER_USER_ID, grandma()).outcome is ActionOutcome.NOT_APPLIED  # still open
-    ses_client, _ = stubbed_ses(MOCK_BANK, CASES_ADDRESS)
-    cases.send_report(case_id, RECEIVER_USER_ID, grandma(), ses_client, SENDER, CASES_ADDRESS, MOCK_BANK)
     assert cases.close_case(case_id, "jimin", grandma()).outcome is ActionOutcome.NOT_ALLOWED
     closed = cases.close_case(case_id, RECEIVER_USER_ID, grandma())
     assert (closed.outcome, closed.case_row["status"]) == (ActionOutcome.RECORDED, "closed")
     assert closed.case_row["closedAt"]
+    assert cases.close_case(case_id, RECEIVER_USER_ID, grandma()).outcome is ActionOutcome.NOT_APPLIED
+
+
+def test_done_still_closes_a_legacy_reported_case(aws):
+    case_id = open_case()
+    ses_client, _ = stubbed_ses(MOCK_BANK, CASES_ADDRESS)
+    cases.send_report(case_id, RECEIVER_USER_ID, grandma(), ses_client, SENDER, CASES_ADDRESS, MOCK_BANK)
+    closed = cases.close_case(case_id, RECEIVER_USER_ID, grandma())
+    assert (closed.outcome, closed.case_row["status"]) == (ActionOutcome.RECORDED, "closed")
 
 
 def test_case_action_from_another_resident_not_allowed(aws):

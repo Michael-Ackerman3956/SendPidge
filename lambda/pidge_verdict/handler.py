@@ -1,8 +1,9 @@
 """WebSocket $default: sync (an org admin's in org_admin_handlers), the contact's Yes / No / Undo / Reverse, the receiver's
 Confirm, case actions and questions to Pidge, a browser's Web Push subscription, the receiver's Add-someone form and demo
-code reply (circle_handlers), the receiver's home visibility and office row (org_preference_handlers); SNS: phone-channel
-taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's reply to the ask by email; Amazon Connect:
-the AI agent's session facts and Jimin's keypad answer on Pidge's call (voice_answers).
+code reply (circle_handlers), the receiver's home visibility, office row and answer to her home's alert
+(org_preference_handlers); SNS: phone-channel taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's
+reply to the ask by email; Amazon Connect: the AI agent's session facts and Jimin's keypad answer on Pidge's call
+(voice_answers).
 
 The user comes from the connection row, never from the message body; their role and resident (or org) come from their own
 USER#<id>/PROFILE row, and an answer's resident from the REQUEST# row's receiverEmail.
@@ -12,15 +13,14 @@ import json
 import logging
 import os
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote_plus
 
 import boto3
 
 from pidge_verdict import circle_handlers, org_admin_handlers, org_preference_handlers, voice_answers
 from shared import (
-    cases, channels, chat, email_ask, graph, inbox_rows, org_preferences, orgs, payloads, profiles, push_subscriptions, rcs, schedules,
-    verdict, whatsapp,
+    cases, channels, chat, email_ask, graph, inbox_rows, org_broadcasts, org_preferences, orgs, payloads, profiles, push_subscriptions,
+    rcs, schedules, verdict, whatsapp,
 )
 from shared.enums import (
     ActionOutcome, CaseEvent, Channel, ChatCardKind, ChatVia, ClientAction, EmailedAnswerOutcome, PushMessageType, RequestState,
@@ -39,11 +39,6 @@ RCS_TOPIC_ARN = os.environ["RCS_TOPIC_ARN"]
 WHATSAPP_TOPIC_ARN = os.environ["WHATSAPP_TOPIC_ARN"]
 RELEASE_SCHEDULER_ENABLED = os.environ.get("RELEASE_SCHEDULER_ENABLED") == "true"
 RELEASE_FUNCTION_ARN = os.environ.get("RELEASE_FUNCTION_ARN", "")
-MOCK_BANK_MAILBOX = os.environ.get("MOCK_BANK_MAILBOX", "")  # the SIMULATED bank; empty → Send to my bank is refused
-CASES_ADDRESS = os.environ.get("CASES_ADDRESS", "")  # Reply-To on the report; Mail Manager stores replies under cases/
-BANK_FOLLOW_UP_ENABLED = os.environ.get("BANK_FOLLOW_UP_ENABLED") == "true"
-BANK_FOLLOW_UP_DELAY_SECONDS = int(os.environ.get("BANK_FOLLOW_UP_DELAY_SECONDS", "120"))
-CASE_FOLLOWUP_FUNCTION_ARN = os.environ.get("CASE_FOLLOWUP_FUNCTION_ARN", "")
 SYNC_CASE_LIMIT = 10
 SYNC_EMAIL_LIMIT = 20
 SYNC_MESSAGE_LIMIT = 20
@@ -167,7 +162,8 @@ def receiver_sync_message(resident: ReceiverProfile) -> dict:
             "messages": messages, "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages,
             "circle": circle_handlers.circle_entries(circle_settings, resident),
             "contactVerification": circle_handlers.verification_flags(circle_settings),
-            "orgPreference": org_preferences.org_preference_for_sync(resident)}
+            "orgPreference": org_preferences.org_preference_for_sync(resident),
+            "orgNotices": org_broadcasts.notices_for_resident(resident)}
 
 
 def contact_sync_message(user_id: str) -> dict:
@@ -390,29 +386,6 @@ def case_id_from(body: dict) -> str | None:
     return case_id if isinstance(case_id, str) and case_id else None
 
 
-def handle_send_report(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
-    """Send to my bank: code emails the SIMULATED bank mailbox and books the one reminder."""
-    case_id = case_id_from(body)
-    if case_id is None:
-        channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)
-        return
-    if not MOCK_BANK_MAILBOX or not CASES_ADDRESS:
-        logger.error("MOCK_BANK_MAILBOX / CASES_ADDRESS not configured; Send to my bank refused")
-        channels.reject_action(connection_id, case_id, ActionOutcome.NOT_ALLOWED)
-        return
-    result = cases.send_report(case_id, resident.receiver_user_id, resident, ses_client, RECEIPT_SENDER, CASES_ADDRESS, MOCK_BANK_MAILBOX)
-    if result.outcome is not ActionOutcome.RECORDED:
-        channels.reject_action(connection_id, case_id, result.outcome)
-        return
-    channels.push_to_user(resident.receiver_user_id, payloads.case_state_message(result.case_row, graph.list_case_replies(case_id), CaseEvent.REPORT_SENT))
-    if BANK_FOLLOW_UP_ENABLED:
-        try:
-            fire_at = datetime.now(timezone.utc) + timedelta(seconds=BANK_FOLLOW_UP_DELAY_SECONDS)
-            schedules.schedule_one_time_invocation(f"followup-{case_id}", fire_at, CASE_FOLLOWUP_FUNCTION_ARN, {"caseId": case_id})
-        except Exception:
-            logger.exception("follow-up schedule for %s failed; no reminder will be sent", case_id)
-
-
 def handle_close_case(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
     case_id = case_id_from(body)
     if case_id is None:
@@ -466,7 +439,6 @@ def route_save_push_subscription(connection_id: str, user_id: str, body: dict, _
 RESIDENT_ACTION_HANDLERS = {  # each acts for the caller's own resident, resolved first by route_resident_action
     ClientAction.CONFIRM: handle_confirm,
     ClientAction.REPORT_PAYMENT: handle_report_payment,
-    ClientAction.SEND_REPORT: handle_send_report,
     ClientAction.CLOSE_CASE: handle_close_case,
     ClientAction.ASK_PIDGE: handle_ask_pidge,
     ClientAction.ADD_CONTACT: circle_handlers.handle_add_contact,
@@ -475,6 +447,7 @@ RESIDENT_ACTION_HANDLERS = {  # each acts for the caller's own resident, resolve
     ClientAction.SET_ORG_VISIBILITY: org_preference_handlers.handle_set_org_visibility,
     ClientAction.ADD_ORG_CONTACT: org_preference_handlers.handle_add_org_contact,
     ClientAction.REMOVE_ORG_CONTACT: org_preference_handlers.handle_remove_org_contact,
+    ClientAction.ORG_BROADCAST_ACK: org_preference_handlers.handle_org_broadcast_ack,
 }
 ACTION_ROUTES = {  # any role; the caller is the connection's user, never an id from the body
     ClientAction.SYNC: route_sync,

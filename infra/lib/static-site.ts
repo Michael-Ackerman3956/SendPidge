@@ -3,11 +3,12 @@ import { Certificate, CertificateValidation } from "aws-cdk-lib/aws-certificatem
 import { Distribution, ResponseHeadersPolicy, ViewerProtocolPolicy } from "aws-cdk-lib/aws-cloudfront";
 import { S3BucketOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
 import { BlockPublicAccess, Bucket, BucketEncryption } from "aws-cdk-lib/aws-s3";
-import { BucketDeployment, ISource } from "aws-cdk-lib/aws-s3-deployment";
+import { BucketDeployment, CacheControl, ISource } from "aws-cdk-lib/aws-s3-deployment";
 
 // One static site at https://<domainName>: private bucket, CloudFront with origin access control, our own certificate.
 // ACM validates by DNS with no Route 53 zone, so the first deploy pauses until the validation CNAME exists at Cloudflare.
-// Every deploy ships the sources, then invalidates the cache. Construct ids are <idPrefix>Bucket/Certificate/Distribution/Files.
+// Every deploy ships the sources with Cache-Control no-cache (a browser revalidates each file, so it never keeps an old
+// module beside a new one), then invalidates the cache. Construct ids are <idPrefix>Bucket/Certificate/Distribution/Files.
 export function buildStaticSite(stack: Stack, idPrefix: string, domainName: string, sources: ISource[]): Distribution {
   const bucket = new Bucket(stack, `${idPrefix}Bucket`, {
     blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
@@ -36,6 +37,7 @@ export function buildStaticSite(stack: Stack, idPrefix: string, domainName: stri
     destinationBucket: bucket,
     distribution,
     distributionPaths: ["/*"],
+    cacheControl: [CacheControl.noCache()],
   });
   return distribution;
 }

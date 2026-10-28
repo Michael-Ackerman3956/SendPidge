@@ -20,6 +20,13 @@ export function parseTimestampMilliseconds(isoText) {
   return Number.isNaN(timestampMilliseconds) ? null : timestampMilliseconds;
 }
 
+// Time only when it is today, else date and time.
+export function formatTimestampForDisplay(isoText) {
+  const shownDate = new Date(parseTimestampMilliseconds(isoText));
+  const isToday = shownDate.toDateString() === new Date().toDateString();
+  return shownDate.toLocaleString([], isToday ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" });
+}
+
 export function formatRemainingTimeAsMinutesSeconds(remainingMilliseconds) {
   const totalSeconds = Math.max(0, Math.ceil(remainingMilliseconds / 1000));
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");

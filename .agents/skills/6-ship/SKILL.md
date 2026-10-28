@@ -42,6 +42,7 @@ The organiser README and the Devpost rules add to the requirements above; the de
 - Secrets: no keys, tokens, `.pem` or `.env` in any commit; run `gitleaks` on the history before publishing; `.env.example` lists every variable with a placeholder.
 - Licence: an OSS licence the repo "About" box can detect. This project switches `LICENSE` and the README's License line from MIT to Apache 2.0 at publication.
 - Judge path: the testing-instructions field on Devpost holds the two per-person links and the steps; the README points there and never carries a token.
+- Staged demo: one real phone plays every party, so the demo is cut to a few moments and staged; the README says which moments are staged and which run live (`devpost/checklist.md > Submission Paperwork > Cut and stage the demo moments`).
 
 ## 1. Confirm It's Ready
 

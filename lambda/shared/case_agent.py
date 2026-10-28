@@ -83,8 +83,7 @@ def case_metadata(scope: CaseScope) -> dict:
     if case_row is not None:
         metadata["reportedPayment"] = {field: str(case_row.get(field)) for field in ("paymentRail", "jurisdiction", "bank", "amount", "currency", "paidAt", "status")}
         metadata["reportedPayment"]["reportedBy"] = "the receiver (you)"
-        metadata["reportedPayment"]["timeline"] = {field: case_row.get(field) for field in ("reportSentAt", "followUpSentAt", "bankRepliedAt", "closedAt")}
-        metadata["reportedPayment"]["bankReplyCount"] = int(case_row.get("replyCount", 0))  # the replies themselves are never shown to the agent
+        metadata["reportedPayment"]["timeline"] = {"closedAt": case_row.get("closedAt")}  # Pidge sends nothing to a bank
     return metadata
 
 
@@ -174,8 +173,10 @@ def run_prompt(scope: CaseScope) -> str:
     if scope.trigger is CaseTrigger.CASE:
         return "The receiver just reported that she already paid. Write the case note with the recovery steps."
     if scope.trigger is CaseTrigger.CASE_CLOSED:
-        return ("The receiver just closed the case. Write the closing note from the reportedPayment timeline and bankReplyCount: "
-                "what was done, in order, whether the bank ever replied, and that the case is closed. Do not repeat the recovery steps.")
+        return ("The receiver just closed the case. Write the closing note: Pidge gave her the recovery steps and the drafts (a call "
+                "script, a dispute letter and a police report), she made the calls and the reports herself, and the case is now "
+                "closed. Pidge sent nothing to any bank: never say anything was sent to a bank, or that a bank replied or did not. "
+                "Do not repeat the recovery steps.")
     return "A verdict just landed on this request. Write the case note."
 
 

@@ -1,7 +1,8 @@
-"""WebSocket route org_resolve (pidge-org, its own function and role, writes limited to ORG#*/ORGAUDIT#*): an org admin marks
-one member's open episode followed up. The admin comes from the connection's user -> orgs.require_org_admin, never the body;
-the body's memberRef and sourceKey are parsed, must name a MEMBER# of the admin's own org, and the episode must be in a
-RESOLVABLE state. ORG#<orgId>/RESOLVE#<sourceKey>#<at> and its ORGAUDIT# row are written in one transaction; the projection
+"""WebSocket routes org_resolve and org_broadcast_send (pidge-org, its own function and role, writes limited to
+ORG#*/ORGAUDIT#*/BROADCAST#* and the BROADCASTRATE#* counter): an org admin marks one member's open episode followed up,
+or a sender admin sends a safety alert (broadcast_handlers). The admin comes from the connection's user ->
+orgs.require_org_admin, never the body. For org_resolve the body's memberRef and sourceKey are parsed, must name a MEMBER# of
+the admin's own org, and the episode must be in a RESOLVABLE state. ORG#<orgId>/RESOLVE#<sourceKey>#<at> and its ORGAUDIT# row are written in one transaction; the projection
 turns the RESOLVE# row into org_resolved. Only a refusal is answered. Logs ids only (never a member's address)."""
 
 import json
@@ -10,6 +11,7 @@ import re
 
 from botocore.exceptions import ClientError
 
+from pidge_org import broadcast_handlers
 from shared import channels, circle, graph, org_audit, org_view, orgs
 from shared.enums import ActionOutcome, ClientAction
 from shared.org_enums import OrgAuditAction
@@ -110,4 +112,5 @@ def write_resolve(org_admin: OrgAdmin, member_ref: str, source_key: str) -> Acti
 
 ORG_ACTION_HANDLERS = {  # each acts for the caller's own OrgAdmin, resolved first by handle
     ClientAction.ORG_RESOLVE: handle_org_resolve,
+    ClientAction.ORG_BROADCAST_SEND: broadcast_handlers.handle_org_broadcast_send,
 }

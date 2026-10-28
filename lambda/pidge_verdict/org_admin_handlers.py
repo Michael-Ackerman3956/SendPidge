@@ -7,7 +7,7 @@ sent (fail closed)."""
 import hmac
 from datetime import datetime, timezone
 
-from shared import graph, org_audit, org_view, orgs, profiles
+from shared import graph, org_audit, org_broadcasts, org_view, orgs, profiles
 from shared.enums import PushMessageType, UserRole
 from shared.org_enums import OrgAuditAction
 from shared.org_ids import ORG_CONTACT_SORT_KEY_PREFIX, is_org_contact_sort_key, org_user_id_for
@@ -15,15 +15,16 @@ from shared.orgs import OrgAdmin
 
 
 def org_admin_sync_message(org_admin: OrgAdmin) -> dict | None:
-    """The admin's sync_state: the cards asked of org-<orgId> (never of the admin's own id) and the org dashboard, after
-    the member_view audit row (targetRef the org id) is written. None, auditing nothing, when the org has no PROFILE row
-    (org_view logs it)."""
+    """The admin's sync_state: their AdminRole, the cards asked of org-<orgId> (never of the admin's own id) and the org
+    dashboard with its newest safety alerts and each recipient's answer, after the member_view audit row (targetRef the org
+    id) is written. None, auditing nothing, when the org has no PROFILE row (org_view logs it)."""
     from pidge_verdict.handler import contact_cards_for  # at call time: handler imports this module
 
     dashboard = org_view.org_dashboard_for(org_admin, datetime.now(timezone.utc))
     if dashboard is None:
         return None
-    message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.ORG_ADMIN,
+    dashboard["broadcasts"] = org_broadcasts.broadcast_reports_for(org_admin.org_id)
+    message = {"type": PushMessageType.SYNC_STATE, "role": UserRole.ORG_ADMIN, "adminRole": org_admin.admin_role,
                "requests": contact_cards_for(org_user_id_for(org_admin.org_id)), "org": dashboard}
     org_audit.write_audit_row(org_admin, OrgAuditAction.MEMBER_VIEW, org_admin.org_id)
     return message

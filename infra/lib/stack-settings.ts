@@ -71,6 +71,8 @@ export interface StackSettings {
   orgEnabled: boolean;
   // The one home whose ORG#<orgId>/CANARY row the canary writes; "" when orgEnabled is off.
   orgId: string;
+  // How many safety alerts one org may send per hour (BROADCASTRATE#<orgId>); a whole number above 0.
+  broadcastsPerOrgPerHour: number;
   // The hourly live-feed fetch (KISA, AMF) and their staleness in coverage; off, only the seeded list rows answer.
   liveFeedsEnabled: boolean;
 }
@@ -182,6 +184,7 @@ export function readStackSettings(stack: Stack): StackSettings {
     pwaCallbackUrl: `https://${pwaDomain}/`,
     orgEnabled,
     orgId: readOrgId(stack, orgEnabled),
+    broadcastsPerOrgPerHour: readBroadcastsPerOrgPerHour(stack),
     liveFeedsEnabled: stack.node.tryGetContext("liveFeedsEnabled") === true,
   };
 }
@@ -193,6 +196,15 @@ function readOrgId(stack: Stack, orgEnabled: boolean): string {
     throw new Error("orgId must be 1-40 lower-case letters, digits and hyphens, starting with a letter or digit (lambda/shared/org_ids.py)");
   }
   return orgId;
+}
+
+// The org's hourly alert cap (cdk.json carries the spec's 2). Throws unless it is a whole number above 0, so absent throws too.
+function readBroadcastsPerOrgPerHour(stack: Stack): number {
+  const broadcastsPerOrgPerHour = Number(stack.node.tryGetContext("broadcastsPerOrgPerHour"));
+  if (!Number.isInteger(broadcastsPerOrgPerHour) || broadcastsPerOrgPerHour <= 0) {
+    throw new Error("broadcastsPerOrgPerHour must be a whole number above 0");
+  }
+  return broadcastsPerOrgPerHour;
 }
 
 // The managed-login domain prefix; absent or "" reads as "" (sign-in off). Throws when it is set but Cognito would refuse it.

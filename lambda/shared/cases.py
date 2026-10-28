@@ -1,4 +1,6 @@
-"""The mock-bank loop, all in code: Send to my bank → one follow-up → the bank's reply lands → Done. The agent never sends."""
+"""Case actions. The app sends only Done (close_case): Pidge drafts and Grandma reports to her bank herself (2026-10-28).
+send_report, send_follow_up and record_bank_reply are the retired mock-bank loop: no route calls send_report, so no reply
+token or follow-up is issued any more; pidge_case_inbound and pidge_case_followup stay deployed until they are removed."""
 
 import hmac
 import logging
@@ -170,15 +172,16 @@ def record_bank_reply(reply: InboundCaseReply) -> CaseActionResult:
 
 
 def close_case(case_id: str, caller_user_id: str, resident: ReceiverProfile) -> CaseActionResult:
-    """Done: reported → closed, by the case's own resident only."""
+    """Done: open (or a legacy reported case) → closed, by the case's own resident only."""
     refusal, case_row = read_residents_case(case_id, caller_user_id, resident)
     if refusal is not None:
         return refusal
     applied = graph.update_case(case_id, {
         "UpdateExpression": "SET #status = :closed, closedAt = :now",
-        "ConditionExpression": "#status = :reported",
+        "ConditionExpression": "#status IN (:open, :reported)",
         "ExpressionAttributeNames": {"#status": "status"},
-        "ExpressionAttributeValues": {":closed": str(CaseState.CLOSED), ":reported": str(CaseState.REPORTED), ":now": graph.now_timestamp()},
+        "ExpressionAttributeValues": {":closed": str(CaseState.CLOSED), ":open": str(CaseState.OPEN), ":reported": str(CaseState.REPORTED),
+                                      ":now": graph.now_timestamp()},
     })
     if not applied:
         return CaseActionResult(ActionOutcome.NOT_APPLIED, case_row)

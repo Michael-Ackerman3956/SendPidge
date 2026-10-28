@@ -265,11 +265,12 @@ class PushMessageType(StrEnum):
     CIRCLE_STATE = "circle_state"            # to the receiver: the circle changed (someone added, edited or verified)
     CONTACT_EDITED = "contact_edited"        # to her own socket once: the edit is saved; a note and code when it added a number
     ORG_CHANGED = "org_changed"              # to an org's admins: the projection wrote their org's rows (no data; the PWA re-syncs)
+    ORG_NOTICE = "org_notice"                # to a resident: her home's safety alert, or her answer to it
 
 
 class ClientAction(StrEnum):
-    """What a PWA may send on the WebSocket: every action on the $default route (pidge-verdict) but ORG_RESOLVE and
-    SEND_MESSAGE, which have their own routes (pidge-org, pidge-send). Mirrored in pwa/js/constants.js."""
+    """What a PWA may send on the WebSocket: every action on the $default route (pidge-verdict) but ORG_RESOLVE,
+    ORG_BROADCAST_SEND and SEND_MESSAGE, which have their own routes (pidge-org, pidge-send). Mirrored in pwa/js/constants.js."""
 
     SYNC = "sync"        # either user, right after connecting
     ANSWER = "answer"    # the contact: yes / no on a request
@@ -277,7 +278,6 @@ class ClientAction(StrEnum):
     REVERSE = "reverse"  # the contact: take back a No within the reverse window
     CONFIRM = "confirm"  # the receiver: quarantine an email the contact denied
     REPORT_PAYMENT = "report_payment"  # the receiver: "I already paid" → a CASE# row
-    SEND_REPORT = "send_report"        # the receiver: "Send to my bank" → code emails the SIMULATED bank
     CLOSE_CASE = "close_case"          # the receiver: "Done" → the case is closed
     SAVE_PUSH_SUBSCRIPTION = "save_push_subscription"  # either user: this browser may get Web Push notifications
     ASK_PIDGE = "ask_pidge"                            # the receiver: a question typed in the Pidge chat window
@@ -289,6 +289,8 @@ class ClientAction(StrEnum):
     REMOVE_ORG_CONTACT = "remove_org_contact"          # the receiver: the home's office row leaves the circle
     ORG_RESOLVE = "org_resolve"                        # an org admin: a member's open episode was followed up (org_resolve route)
     SEND_MESSAGE = "send_message"                      # the receiver: one message to someone in her circle (send_message route)
+    ORG_BROADCAST_SEND = "org_broadcast_send"          # a sender admin: one in-app safety alert to every member (its own route)
+    ORG_BROADCAST_ACK = "org_broadcast_ack"            # the receiver: Got it / Need help on her home's alert
 
 
 class PushNotice(StrEnum):
@@ -403,6 +405,7 @@ class ActionOutcome(StrEnum):
     CHANNEL_CLOSED = "channel_closed"  # send_message: no WhatsApp message from that number in the last 24 hours
     THREAD_HELD = "thread_held"        # send_message: a message on that conversation is held, waiting for an answer
     SEND_FAILED = "send_failed"        # send_message: the provider refused or failed; the row is kept as failed
+    TEXT_REFUSED = "text_refused"      # org_broadcast_send: a link, address, handle, long number or a character outside the allow-list
 
 
 class CaseState(StrEnum):

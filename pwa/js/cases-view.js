@@ -104,10 +104,13 @@ function buildPackElement(pack) {
   if (pack.ruleGap) return createElementWithText("p", "pidge-pack-gap", "Pidge has no steps for this country and payment yet.");
   const stepsList = createElementWithText("ol", "pidge-pack-steps");
   [...pack.steps].sort((first, second) => first.order - second.order).forEach((step) => {
-    const stepItem = createElementWithText("li", "", `${step.action} `);
-    stepItem.append(createElementWithText("span", "pidge-pack-contact", String(step.contact)));
+    // The action, then the contact (a number, an office or a website) and the deadline on their own line.
+    const stepItem = createElementWithText("li", "", step.action);
+    const stepDetail = createElementWithText("div", "");
+    stepDetail.append(createElementWithText("span", "pidge-pack-contact", String(step.contact)));
     const deadlineText = describeDeadline(step);
-    if (deadlineText) stepItem.append(" ", createElementWithText("span", "pidge-pack-deadline", deadlineText));
+    if (deadlineText) stepDetail.append(" · ", createElementWithText("span", "pidge-pack-deadline", deadlineText));
+    stepItem.append(stepDetail);
     stepsList.append(stepItem);
   });
   return stepsList;
@@ -156,40 +159,11 @@ function buildCaseButton(caseRow, labelText, className, clientAction) {
   return button;
 }
 
-function describeCaseStatus(caseRow) {
-  if (caseRow.status === CASE_STATUS.OPEN) return "Not sent yet.";
-  if (caseRow.status === CASE_STATUS.CLOSED) return "Closed.";
-  if (caseRow.replies.length > 0) return "Your bank replied.";
-  return caseRow.followUpSentAt ? "Reminder sent. Waiting for your bank." : "Sent. Waiting for your bank.";
-}
-
-// Display only: the bank's new words, without the quoted Pidge report that mail clients append ("On … wrote: > …").
-function stripQuotedHistory(replyText) {
-  const quoteStart = replyText.search(/\s*On [^\n]{5,200}?wrote:/);
-  const newText = (quoteStart >= 0 ? replyText.slice(0, quoteStart) : replyText).trim();
-  return newText || replyText;
-}
-
-function buildReplyElement(reply) {
-  const replyElement = createElementWithText("blockquote", "pidge-case-reply");
-  const headerElement = document.createElement("div");
-  headerElement.className = "pidge-case-reply-header";
-  headerElement.append(createElementWithText("span", "pidge-case-reply-sender", reply.from),
-    createElementWithText("span", "pidge-note-time", formatNoteTime(reply.receivedAt)));
-  replyElement.append(headerElement, createElementWithText("p", "pidge-case-reply-text", stripQuotedHistory(reply.textContent)));
-  return replyElement;
-}
-
 function buildCaseElement(caseRow) {
   const caseElement = createElementWithText("li", "pidge-case");
   const title = `${PAYMENT_RAIL_LABELS[caseRow.paymentRail] ?? caseRow.paymentRail} · ${caseRow.bank} · ${caseRow.amount} ${caseRow.currency}`;
-  caseElement.append(createElementWithText("p", "pidge-case-title", title), createElementWithText("p", "pidge-case-status", describeCaseStatus(caseRow)));
-  caseRow.replies.forEach((reply) => caseElement.append(buildReplyElement(reply)));
-  if (caseRow.status === CASE_STATUS.OPEN) {
-    caseElement.append(buildCaseButton(caseRow, "Send to my bank (simulated)", "pidge-report-button", CLIENT_ACTION.SEND_REPORT));
-  } else if (caseRow.status === CASE_STATUS.REPORTED) {
-    caseElement.append(buildCaseButton(caseRow, "Done", "pidge-case-done-button", CLIENT_ACTION.CLOSE_CASE));
-  }
+  caseElement.append(createElementWithText("p", "pidge-case-title", title));
+  if (caseRow.status !== CASE_STATUS.CLOSED) caseElement.append(buildCaseButton(caseRow, "Done", "pidge-case-done-button", CLIENT_ACTION.CLOSE_CASE));
   return caseElement;
 }
 

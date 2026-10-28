@@ -15,6 +15,7 @@ export const PUSH_MESSAGE_TYPE = Object.freeze({
   CIRCLE_STATE: "circle_state",
   CONTACT_EDITED: "contact_edited",
   ORG_CHANGED: "org_changed",
+  ORG_NOTICE: "org_notice",
 });
 
 export const CLIENT_ACTION = Object.freeze({
@@ -24,7 +25,6 @@ export const CLIENT_ACTION = Object.freeze({
   REVERSE: "reverse",
   CONFIRM: "confirm",
   REPORT_PAYMENT: "report_payment",
-  SEND_REPORT: "send_report",
   CLOSE_CASE: "close_case",
   SAVE_PUSH_SUBSCRIPTION: "save_push_subscription",
   ASK_PIDGE: "ask_pidge",
@@ -36,6 +36,8 @@ export const CLIENT_ACTION = Object.freeze({
   REMOVE_ORG_CONTACT: "remove_org_contact",
   ORG_RESOLVE: "org_resolve",
   SEND_MESSAGE: "send_message",
+  ORG_BROADCAST_SEND: "org_broadcast_send",
+  ORG_BROADCAST_ACK: "org_broadcast_ack",
 });
 
 // What the resident's home may see (orgPreference.visibility). Mirrors OrgVisibility in lambda/shared/org_enums.py.
@@ -43,6 +45,25 @@ export const ORG_VISIBILITY = Object.freeze({
   ALERTS_ONLY: "alerts_only",
   ALERTS_AND_CASES: "alerts_and_cases",
   NONE: "none",
+});
+
+// What an org admin may do (sync_state.adminRole): only a sender sees the alert composer. Mirrors AdminRole in
+// lambda/shared/org_enums.py.
+export const ADMIN_ROLE = Object.freeze({
+  VIEWER: "viewer",
+  SENDER: "sender",
+});
+
+// One member's copy of a safety alert (org.broadcasts[].recipients[].state). Mirrors DeliveryState in lambda/shared/org_enums.py.
+export const DELIVERY_STATE = Object.freeze({
+  SENT: "sent",
+  ACKNOWLEDGED: "acknowledged",
+});
+
+// A resident's answer to her home's safety alert. Mirrors AckAnswer in lambda/shared/org_enums.py.
+export const ACK_ANSWER = Object.freeze({
+  GOT_IT: "got_it",
+  NEED_HELP: "need_help",
 });
 
 // One member's row on the org admin's Home (members[].state, actionable[].state). Mirrors MemberSafetyState in
@@ -201,6 +222,7 @@ export const ACTION_REJECTED_REASON = Object.freeze({
   CHANNEL_CLOSED: "channel_closed",
   THREAD_HELD: "thread_held",
   SEND_FAILED: "send_failed",
+  TEXT_REFUSED: "text_refused",
 });
 
 export const POLICY_DECISION = Object.freeze({
@@ -297,6 +319,7 @@ export const CONNECTION_STATUS = Object.freeze({
   CONNECTED: "connected",
   RECONNECTING: "reconnecting",
   SIGNED_OUT: "signed_out", // no token to connect with (sign-in refresh failed); the socket stops reconnecting
+  REFUSED: "refused", // the socket closed before it opened (the server refused the token, or no network); reconnecting goes on
 });
 
 // PWA-only: how one inbox row and its detail look, derived from state, request.status, quarantined and local release.

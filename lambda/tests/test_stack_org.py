@@ -5,7 +5,7 @@ import fnmatch
 import json
 
 from pidge_org import handler as org_actions_handler
-from shared import org_audit, org_events, orgs
+from shared import org_audit, org_broadcasts, org_events, orgs
 from tests.test_stack import (
     as_list, collect_role_allow_statements, find_alarm_properties, find_function_by_handler, render_intrinsic_as_text, resources_of_type,
     run_synth_for_tests, statement_grants, strip_trailing_logical_id_hash,
@@ -31,6 +31,8 @@ WRITES_BY_ROLE = {
     "OrgActionsFunctionServiceRole": (
         (orgs.org_partition("sunrise"), "dynamodb:PutItem"),  # RESOLVE#
         (org_audit.audit_partition("sunrise"), "dynamodb:PutItem"),  # its ORGAUDIT# row, in the same transaction
+        (org_broadcasts.broadcast_partition("sunrise", "bc-1"), "dynamodb:PutItem"),  # an alert's META and RECIPIENT# rows
+        (f"{org_broadcasts.BROADCAST_RATE_PARTITION_PREFIX}sunrise", "dynamodb:UpdateItem"),  # the hourly alert counter
     ),
 }
 # (eventName, PK, SK) of rows the projection maps, and of rows it must never wake on (its own writes among them).
@@ -107,6 +109,12 @@ def test_org_enabled_requires_release_scheduler(tmp_path):
     completed = run_synth_for_tests(tmp_path, {"releaseSchedulerEnabled": False})
     assert completed.returncode != 0
     assert RELEASE_SCHEDULER_REFUSAL in completed.stderr
+
+
+def test_broadcast_cap_must_be_above_zero(tmp_path):
+    completed = run_synth_for_tests(tmp_path, {"broadcastsPerOrgPerHour": 0})
+    assert completed.returncode != 0
+    assert "broadcastsPerOrgPerHour must be a whole number above 0" in completed.stderr
 
 
 def test_org_canary_puts_the_canary_row(synthesized_template):

@@ -70,7 +70,11 @@ button:disabled { cursor: default; }
 .section-header { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); margin: 6px 4px 10px; }
 
 .token-error, .loading-state, .contact-empty-message { margin-top: 40vh; text-align: center; color: var(--text-secondary); font-size: 17px; }
-.sign-in-button { display: block; max-width: 300px; margin: 16px auto 0; }
+.sign-in-screen { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 28vh; }
+.sign-in-logo { width: 72px; height: 72px; border-radius: 50%; background: var(--surface-3); }
+.sign-in-name { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+.sign-in-button { max-width: 300px; margin-top: 12px; }
+.app-shell:has(#sign-in-screen:not([hidden])) .topbar { display: none; } /* the screen's own name replaces the top bar's */
 .action-status {
   margin-bottom: 12px; padding: 10px 14px; border-radius: var(--card-radius);
   background: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary); font-size: 16px; text-align: center;
@@ -157,10 +161,13 @@ button:disabled { cursor: default; }
 .link-chip {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 9px 12px; border-radius: 10px;
   background: var(--surface-2); border: 1px solid var(--border); font-size: 13.5px;
-  -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  -webkit-user-select: none; user-select: none; touch-action: manipulation; cursor: help;
 }
 .link-chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
-.link-text { font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.link-text { font-weight: 600; overflow-wrap: anywhere; }
+.link-text, .body-link { color: #8AB4F8; text-decoration: underline; text-underline-offset: 2px; cursor: help; } /* a link's blue, as in Gmail's dark theme; never clickable */
+.body-link.is-mismatch { color: var(--orange); }
+.detail-body.is-muted .body-link { color: inherit; }
 .link-domain { color: var(--text-tertiary); overflow-wrap: anywhere; }
 .link-chip.is-mismatch { border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.08); }
 .link-chip.is-mismatch .link-domain { color: var(--orange); font-weight: 700; }
@@ -375,11 +382,6 @@ button:disabled { cursor: default; }
 .pidge-report-send { background: var(--teal); color: var(--on-teal); }
 .pidge-report-cancel { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border) !important; }
 .pidge-case-title { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
-.pidge-case-status { font-size: 13.5px; color: var(--text-secondary); }
-.pidge-case-reply { margin: 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; }
-.pidge-case-reply-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.pidge-case-reply-sender { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); overflow-wrap: anywhere; }
-.pidge-case-reply-text { font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pidge-case-done-button { width: 100%; min-height: 46px; border: none; border-radius: 12px; background: var(--teal); color: var(--on-teal); font-size: 15px; font-weight: 700; }
 .pidge-case-done-button:disabled, .pidge-report-button:disabled { opacity: 0.6; }
 
@@ -460,7 +462,8 @@ button:disabled { cursor: default; }
   .hold-overlay { bottom: auto; top: 50%; transform: translate(-50%, -50%); left: calc(50% + 110px); width: 400px; border-radius: 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.09); padding: 22px 22px 26px; animation: fade-in 0.25s ease; }
   .sheet-grab { display: none; }
   .pidge-chat-composer { bottom: 0; }
-  .contact-card-list, .circle-list { max-width: 520px; }
+  .contact-card-list { max-width: 520px; }
+  #circle-screen { max-width: 1080px; } /* the Circle tab fills the column up to the dashboard's width */
   .onboarding-step { max-width: 520px; margin-inline: auto; } /* setup has no rail, so its column sits in the middle */
   /* As in the prototype: the chat fills the column; the column's bottom padding moves into the composer, so the composer
      sits on the window's bottom edge and a long thread never shows through under it. */

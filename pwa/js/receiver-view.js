@@ -16,7 +16,7 @@ import {
 } from "./receiver-payloads.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
-import { buildLinkReasonLineElements, buildLinkStripElement } from "./link-strip.js";
+import { buildEmailBodyElement, buildLinkReasonLineElements, buildLinkStripElement } from "./link-strip.js";
 import { buildScamListCoverageLineElement, buildSenderReasonLineElements } from "./reason-lines.js";
 import { isSplitReadingPane, renderPaneTools, renderReaderBar } from "./reading-pane.js";
 import {
@@ -207,7 +207,8 @@ function renderEmailDetail(email, shouldCelebrate = false) {
   const scamListCoverageLine = buildScamListCoverageLineElement(email); // shown on a PASS too, which has no banner
   if (scamListCoverageLine !== null) detailChildren.push(scamListCoverageLine);
   const subjectHeading = email.subject === "" ? null : createElementWithText("h2", "detail-subject", email.subject);
-  const bodyElement = createElementWithText("p", emailDisplayState === EMAIL_DISPLAY_STATE.QUARANTINED ? "detail-body is-muted" : "detail-body", email.textBody);
+  const bodyElement = buildEmailBodyElement(emailDisplayState === EMAIL_DISPLAY_STATE.QUARANTINED ? "detail-body is-muted" : "detail-body",
+    email.textBody, email.links);
   const focusTargetElement = subjectHeading === null ? bodyElement : subjectHeading; // a text has no subject: its body takes focus
   focusTargetElement.tabIndex = -1;
   if (subjectHeading !== null) detailChildren.push(subjectHeading);

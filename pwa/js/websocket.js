@@ -22,8 +22,8 @@ function parsePushMessageOrReportError(rawMessageText) {
 }
 
 // Opens the socket and keeps it open. resolveConnectionToken (async, a token or null) runs before every open; null stops
-// reconnecting and reports CONNECTION_STATUS.SIGNED_OUT. onPushMessage gets every parsed message; onConnectionStatusChange
-// gets CONNECTION_STATUS values.
+// reconnecting and reports CONNECTION_STATUS.SIGNED_OUT; a socket that closes before it opened reports REFUSED, then
+// reconnects. onPushMessage gets every parsed message; onConnectionStatusChange gets CONNECTION_STATUS values.
 export function connectToPushChannel({ resolveConnectionToken, onPushMessage, onConnectionStatusChange }) {
   let reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
 
@@ -60,7 +60,9 @@ export function connectToPushChannel({ resolveConnectionToken, onPushMessage, on
       scheduleReconnectWithBackoff();
       return;
     }
+    let hasOpened = false;
     socket.addEventListener("open", () => {
+      hasOpened = true;
       reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
       openSocketForActions = socket;
       onConnectionStatusChange(CONNECTION_STATUS.CONNECTED);
@@ -72,6 +74,7 @@ export function connectToPushChannel({ resolveConnectionToken, onPushMessage, on
       if (openSocketForActions === socket) {
         openSocketForActions = null;
       }
+      if (!hasOpened) onConnectionStatusChange(CONNECTION_STATUS.REFUSED);
       scheduleReconnectWithBackoff();
     });
   }

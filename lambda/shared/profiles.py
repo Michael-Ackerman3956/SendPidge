@@ -19,6 +19,7 @@ UNKNOWN_RECEIVER_METRIC_NAME = "UnknownReceiver"
 PROFILE_REJECTED_METRIC_NAME = "ProfileRejected"
 PROFILE_REJECTED_DIMENSION_NAME = "reason"
 RECEIVER_PROFILE_FIELDS = ("receiverUserId", "residentName", "orgId", "timezone")
+COGNITO_SUB_FIELD = "cognitoSub"  # on USER#<id>/PROFILE of a linked user: their opaque token no longer connects
 
 
 class ProfileRejectionReason(StrEnum):
@@ -64,6 +65,13 @@ def is_filled_text(row: dict, field_name: str) -> bool:
 def read_profile_row(partition_key: str) -> dict | None:
     response = graph.get_table().get_item(Key={"PK": partition_key, "SK": PROFILE_SORT_KEY})
     return response["Item"] if "Item" in response else None
+
+
+def is_linked_to_cognito(user_id: str) -> bool:
+    """Whether USER#<id>/PROFILE carries cognitoSub (scripts/seed_auth_users.py link): ws_connect then refuses the user's opaque
+    token, so they connect only with a Cognito ID token (passkey sign-in). No row reads as not linked."""
+    profile_row = read_profile_row(f"USER#{user_id}")
+    return profile_row is not None and COGNITO_SUB_FIELD in profile_row
 
 
 def reject_profile(user_id: str, reason: ProfileRejectionReason) -> None:

@@ -2,7 +2,9 @@
 // contact or org admin view (an org admin's cards are a contact's). The role is never stored: every sync_state names it again.
 import { ACTION_REJECTED_REASON, CLIENT_ACTION, CONNECTION_STATUS, MESSAGE_DIRECTION, PUSH_MESSAGE_TYPE, USER_ROLE } from "./constants.js";
 import { connectToPushChannel, sendClientAction } from "./websocket.js";
-import { completeSignInFromRedirect, hasSignInSession, readSignInConfig, resolveIdToken, startSignIn } from "./auth.js";
+import {
+  buildAddPasskeyUrl, completeSignInFromRedirect, hasRegisteredPasskey, hasSignInSession, readSignInConfig, resolveIdToken, startSignIn,
+} from "./auth.js";
 import { refreshPushSubscriptionAfterSync, startPushNotifications } from "./push-notifications.js";
 import { ACTION_STATUS_MESSAGE, showActionStatusMessage } from "./action-status.js";
 import {
@@ -24,7 +26,9 @@ import {
   hideOnboarding, startOnboarding,
 } from "./onboarding.js";
 import { startReadingPane } from "./reading-pane.js";
-import { applyOrgAdminSyncState, handleOrgActionRejected, hideOrgView } from "./org-view.js";
+import { applyOrgAdminSyncState, handleOrgActionRejected, hideOrgView, startOrgView } from "./org-view.js";
+import { handleOrgBroadcastActionRejected } from "./org-messages-view.js";
+import { applyOrgNoticeSyncState, handleOrgNoticeActionRejected, handleOrgNoticePush } from "./org-notice-view.js";
 import { applyOrgPreferenceState, handleOrgPreferenceActionRejected } from "./org-preference-view.js";
 
 const ACCESS_TOKEN_STORAGE_KEY = "sendpidge.accessToken";
@@ -39,11 +43,13 @@ const RECEIVER_TAB = Object.freeze({ INBOX: "inbox", CASES: "cases", CIRCLE: "ci
 let activeReceiverTab = RECEIVER_TAB.INBOX;
 let isOnboardingOpen = false;
 let hasUnseenHold = false;
+let hasConnectedThisVisit = false;
 
 const pageElements = {
   connectionDots: document.querySelectorAll(".connection-dot"), // one in the top bar (phone), one on the desktop rail
   connectionLabel: document.getElementById("connection-label"),
   tokenError: document.getElementById("token-error"),
+  signInScreen: document.getElementById("sign-in-screen"),
   signInButton: document.getElementById("sign-in-button"),
   loadingState: document.getElementById("loading-state"),
   receiverTabs: document.getElementById("receiver-tabs"),
@@ -51,6 +57,8 @@ const pageElements = {
   composeButton: document.getElementById("compose-button"),
   railMeInitial: document.getElementById("rail-me-initial"),
   railMeName: document.getElementById("rail-me-name"),
+  railMeAuthPill: document.getElementById("rail-me-auth-pill"),
+  railMePasskeyButton: document.getElementById("rail-me-passkey-button"),
 };
 const tabButtons = Object.freeze({
   [RECEIVER_TAB.INBOX]: document.getElementById("tab-inbox"),
@@ -153,6 +161,7 @@ function handleSyncStatePush(pushMessage) {
       showReceiverNameInRail(pushMessage.receiverName);
       applyCircleSyncState(pushMessage.circle, pushMessage.contactVerification);
       applyOrgPreferenceState(pushMessage.orgPreference);
+      applyOrgNoticeSyncState(pushMessage.orgNotices);
       applyReceiverSyncState(pushMessage.emails, pushMessage.messages);
       applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);
       applyChatSyncState(pushMessage.chat, pushMessage.chatEnabled);
@@ -195,12 +204,14 @@ function handleActionRejectedPush(pushMessage) {
   }
   if (activeUserRole === USER_ROLE.RECEIVER && handleOnboardingActionRejected(pushMessage.reason)) return; // the form shows why
   if (activeUserRole === USER_ROLE.RECEIVER && handleComposerActionRejected(pushMessage.reason)) return; // the composer shows why
+  if (activeUserRole === USER_ROLE.ORG_ADMIN && handleOrgBroadcastActionRejected(pushMessage.reason)) return; // the alert composer shows why
   const isAlreadyRecorded = pushMessage.reason === ACTION_REJECTED_REASON.NOT_APPLIED;
   showActionStatusMessage(isAlreadyRecorded ? ACTION_STATUS_MESSAGE.ALREADY_RECORDED : ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
   if (activeUserRole === USER_ROLE.RECEIVER) {
     handleReceiverActionRejected(requestId);
     handlePidgeActionRejected();
     handleOrgPreferenceActionRejected();
+    handleOrgNoticeActionRejected();
   } else {
     handleContactActionRejected(requestId);
     if (activeUserRole === USER_ROLE.ORG_ADMIN) handleOrgActionRejected();
@@ -232,6 +243,7 @@ const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.CONTACT_EDITED]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.CIRCLE_STATE]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.ORG_CHANGED]: [USER_ROLE.ORG_ADMIN],
+  [PUSH_MESSAGE_TYPE.ORG_NOTICE]: [USER_ROLE.RECEIVER],
 });
 
 function isPushForActiveRole(pushMessageType) {
@@ -295,6 +307,9 @@ function handlePushMessage(pushMessage) {
     case PUSH_MESSAGE_TYPE.ORG_CHANGED:
       scheduleOrgDashboardResync();
       break;
+    case PUSH_MESSAGE_TYPE.ORG_NOTICE:
+      handleOrgNoticePush(pushMessage.notice);
+      break;
     default:
       console.warn("SendPidge: ignoring push of unknown type", pushMessageType);
   }
@@ -306,27 +321,47 @@ function updateConnectionDot(connectionStatus) {
   pageElements.connectionLabel.textContent = isConnected ? "Connected" : "Reconnecting";
 }
 
-// No token to connect with: the token error, plus Sign in when sign-in is on.
-function showTokenErrorScreen(isSignInEnabled) {
+// No token to connect with: the sign-in screen (logo, name, Sign in) when sign-in is on, else the token error. Loading…
+// shows only while connecting, so it never shows with Sign in.
+function showNoTokenScreen(isSignInEnabled) {
   pageElements.loadingState.hidden = true;
-  pageElements.tokenError.hidden = false;
-  pageElements.signInButton.hidden = !isSignInEnabled;
+  pageElements.tokenError.hidden = isSignInEnabled;
+  pageElements.signInScreen.hidden = !isSignInEnabled;
 }
 
-// Sign in stays visible until the socket first connects; a signed-out socket (refresh failed) shows the token error again.
-function handleConnectionStatusChange(connectionStatus) {
+// A signed-out socket (the sign-in refresh was refused) shows the sign-in screen again. With sign-in on, so does a socket
+// refused before this visit ever connected (a token link the server no longer takes, for a user now linked to Cognito):
+// reconnecting goes on behind it, and a connect hides it.
+function handleConnectionStatusChange(connectionStatus, isSignInEnabled) {
   updateConnectionDot(connectionStatus);
-  if (connectionStatus === CONNECTION_STATUS.CONNECTED) {
-    pageElements.signInButton.hidden = true;
-  } else if (connectionStatus === CONNECTION_STATUS.SIGNED_OUT) {
-    showTokenErrorScreen(true);
+  if (connectionStatus === CONNECTION_STATUS.SIGNED_OUT) {
+    pageElements.railMeAuthPill.hidden = true;
+    pageElements.railMePasskeyButton.hidden = true;
+    showNoTokenScreen(true);
+  } else if (connectionStatus === CONNECTION_STATUS.REFUSED && isSignInEnabled && !hasConnectedThisVisit) {
+    showNoTokenScreen(true);
+  } else if (connectionStatus === CONNECTION_STATUS.CONNECTED) {
+    hasConnectedThisVisit = true;
+    pageElements.signInScreen.hidden = true;
   }
 }
 
-// The Cognito ID token when sign-in is on and a session exists, else the opaque access token as before; null when neither.
-function buildConnectionTokenResolver(signInConfig) {
+// Under the signed-in name on the desktop rail, for a Cognito session only: the Passkey pill once the account has a passkey,
+// else Set up passkey. Neither shows while the check runs or when it fails (the status line says so).
+async function showPasskeyStateInRail(signInConfig) {
+  const hasPasskey = await hasRegisteredPasskey(signInConfig);
+  if (hasPasskey === null) {
+    showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
+    return;
+  }
+  pageElements.railMeAuthPill.hidden = !hasPasskey;
+  pageElements.railMePasskeyButton.hidden = hasPasskey;
+}
+
+// The Cognito ID token for a Cognito session, else the opaque access token as before; null when neither.
+function buildConnectionTokenResolver(signInConfig, isCognitoSession) {
   const accessToken = resolveAccessToken(); // also strips ?token= from the address bar
-  if (signInConfig.isSignInEnabled && hasSignInSession()) {
+  if (isCognitoSession) {
     return () => resolveIdToken(signInConfig);
   }
   if (!accessToken) return null;
@@ -343,21 +378,26 @@ async function startApp() {
   });
   startReadingPane(() => { if (activeUserRole === USER_ROLE.RECEIVER && activeReceiverTab === RECEIVER_TAB.INBOX) applyReadingPaneLayout(); });
   startPidgeChat({ onReportPaymentRequested: () => { showReceiverTab(RECEIVER_TAB.CASES); openReportPaymentForm(); } });
+  startOrgView();
   const signInConfig = await readSignInConfig();
   if (signInConfig.isSignInEnabled) {
     pageElements.signInButton.addEventListener("click", () => startSignIn(signInConfig));
-    pageElements.signInButton.hidden = false;
+    pageElements.railMePasskeyButton.addEventListener("click", () => window.location.assign(buildAddPasskeyUrl(signInConfig)));
     await completeSignInFromRedirect(signInConfig);
   }
-  const resolveConnectionToken = buildConnectionTokenResolver(signInConfig);
+  const isCognitoSession = signInConfig.isSignInEnabled && hasSignInSession();
+  const resolveConnectionToken = buildConnectionTokenResolver(signInConfig, isCognitoSession);
   if (resolveConnectionToken === null) {
-    showTokenErrorScreen(signInConfig.isSignInEnabled);
+    showNoTokenScreen(signInConfig.isSignInEnabled);
     return;
   }
   pageElements.loadingState.hidden = false;
+  if (isCognitoSession) showPasskeyStateInRail(signInConfig);
   startPushNotifications();
   connectToPushChannel({
-    resolveConnectionToken, onPushMessage: handlePushMessage, onConnectionStatusChange: handleConnectionStatusChange,
+    resolveConnectionToken,
+    onPushMessage: handlePushMessage,
+    onConnectionStatusChange: (connectionStatus) => handleConnectionStatusChange(connectionStatus, signInConfig.isSignInEnabled),
   });
 }
 

@@ -69,15 +69,11 @@ def payment_body(request_id: str) -> dict:
 
 
 @pytest.fixture
-def mock_bank_configured(verdict_handler, monkeypatch):  # noqa: F811
-    """Send to my bank configured, so a refusal comes from the case check, not from a missing mailbox."""
-    handler, _pushed_messages = verdict_handler
-    monkeypatch.setattr(handler, "MOCK_BANK_MAILBOX", "bank-sim@founder.example")
-    monkeypatch.setattr(handler, "CASES_ADDRESS", "cases@sendpidge.example")
+def contact_verification_mocked(monkeypatch):
     monkeypatch.setenv("CONTACT_VERIFICATION_MOCK", "true")  # verify_contact reaches the contact lookup
 
 
-def test_another_resident_cannot_act_on_grandmas_rows(verdict_handler, mock_bank_configured):  # noqa: F811
+def test_another_resident_cannot_act_on_grandmas_rows(verdict_handler, contact_verification_mocked):  # noqa: F811
     handler, pushed_messages = verdict_handler
     case_id = open_case()
     enrol_bob()
@@ -88,14 +84,13 @@ def test_another_resident_cannot_act_on_grandmas_rows(verdict_handler, mock_bank
     pushed_messages.clear()
     send_action(handler, BOB_USER_ID, {"action": "confirm", "requestId": request_id})
     send_action(handler, BOB_USER_ID, payment_body(request_id))
-    send_action(handler, BOB_USER_ID, {"action": "send_report", "caseId": case_id})
     send_action(handler, BOB_USER_ID, {"action": "close_case", "caseId": case_id})
     send_action(handler, BOB_USER_ID, edit_form)
     send_action(handler, BOB_USER_ID, {"action": "verify_contact", "contactUserId": "jimin", "code": "123456"})
 
     assert pushed_messages == [
         rejection(request_id, ActionOutcome.NOT_ALLOWED), rejection(request_id, ActionOutcome.NOT_ALLOWED),
-        rejection(case_id, ActionOutcome.NOT_ALLOWED), rejection(case_id, ActionOutcome.NOT_ALLOWED),
+        rejection(case_id, ActionOutcome.NOT_ALLOWED),
         rejection(None, ActionOutcome.NOT_APPLIED), rejection(None, ActionOutcome.NOT_APPLIED),  # looked up under Bob's own circle
     ]
     assert read_grandmas_rows(case_id) == rows_before
@@ -110,7 +105,7 @@ def test_another_resident_cannot_act_on_grandmas_rows(verdict_handler, mock_bank
     assert read_grandmas_rows(case_id) == rows_before
 
 
-def test_a_profile_naming_grandmas_address_is_refused_as_receiver_mismatch(verdict_handler, mock_bank_configured, capsys):  # noqa: F811
+def test_a_profile_naming_grandmas_address_is_refused_as_receiver_mismatch(verdict_handler, contact_verification_mocked, capsys):  # noqa: F811
     """Only the constant-time receiverUserId compare stands between Mallory and Grandma's rows: without it her sync gets
     Grandma's state and her close_case closes Grandma's case."""
     handler, pushed_messages = verdict_handler

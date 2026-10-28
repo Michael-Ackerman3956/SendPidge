@@ -67,6 +67,28 @@ class OrgAuditAction(StrEnum):
     MEMBER_VIEW = "member_view"  # an admin sync: the dashboard was sent
     ANSWER = "answer"  # an in-app answer as the office
     ORG_RESOLVE = "org_resolve"
+    BROADCAST_SEND = "broadcast_send"  # a safety alert sent to every member
+
+
+class BroadcastKind(StrEnum):
+    """What a broadcast is, on BROADCAST#<orgId>#<id>/META.kind. Only the in-app safety alert is built."""
+
+    SAFETY_ALERT = "safety_alert"
+
+
+class DeliveryState(StrEnum):
+    """One member's copy of a broadcast, on BROADCAST#<orgId>#<id>/RECIPIENT#<receiverEmail>.state. Mirrored in
+    pwa/js/constants.js."""
+
+    SENT = "sent"  # written in-app, unanswered
+    ACKNOWLEDGED = "acknowledged"  # she answered: ackAnswer holds which
+
+
+class AckAnswer(StrEnum):
+    """A resident's answer to a safety alert, on RECIPIENT#.ackAnswer. Mirrored in pwa/js/constants.js."""
+
+    GOT_IT = "got_it"
+    NEED_HELP = "need_help"
 
 
 class StreamRecordEventName(StrEnum):

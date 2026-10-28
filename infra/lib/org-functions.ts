@@ -11,17 +11,20 @@ import { buildPythonFunction } from "./python-function.js";
 import { SharedResources } from "./realtime.js";
 import { StackSettings } from "./stack-settings.js";
 
-// lambda/shared/enums.py ClientAction.ORG_RESOLVE: the socket routes on $request.body.action, so this key reaches OrgActions only.
-const ORG_RESOLVE_ROUTE_KEY = "org_resolve";
+// lambda/shared/enums.py ClientAction.ORG_RESOLVE and ORG_BROADCAST_SEND: the socket routes on $request.body.action, so these
+// keys reach OrgActions only.
+const ORG_ACTION_ROUTE_KEYS = ["org_resolve", "org_broadcast_send"];
 export const TABLE_READ_ACTIONS = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:BatchGetItem"];
 // The projection is the only writer of ORGLOG#, ORGSTAT# and the MEMBER# coverage fact; it never writes another partition.
 const PROJECTION_WRITE_ACTIONS = [
   "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:BatchWriteItem", "dynamodb:ConditionCheckItem",
 ];
 const PROJECTION_LEADING_KEYS = ["ORG#*", "ORGLOG#*", "ORGSTAT#*"];
-// OrgActions only puts the RESOLVE# row and its ORGAUDIT# row, in one transaction.
+// OrgActions only puts rows, each in one transaction: a RESOLVE# row and its ORGAUDIT# row, or a safety alert's BROADCAST#
+// rows, its ORG# index item and its ORGAUDIT# row. Its one update is the org's hourly broadcast counter.
 const ORG_ACTIONS_WRITE_ACTIONS = ["dynamodb:PutItem", "dynamodb:ConditionCheckItem"];
-const ORG_ACTIONS_LEADING_KEYS = ["ORG#*", "ORGAUDIT#*"];
+const ORG_ACTIONS_LEADING_KEYS = ["ORG#*", "ORGAUDIT#*", "BROADCAST#*"];
+const BROADCAST_COUNTER_LEADING_KEYS = ["BROADCASTRATE#*"];
 const CANARY_SORT_KEY = "CANARY";
 const CANARY_INTERVAL = Duration.minutes(5);
 const INSERT_OR_MODIFY = FilterRule.or("INSERT", "MODIFY");
@@ -106,8 +109,9 @@ function buildOrgProjectionFunction(stack: Stack, shared: SharedResources): Func
   return orgProjectionFunction;
 }
 
-// pidge-org: the admin's write actions (today only org_resolve) on their own socket route, apart from pidge-verdict's $default.
-function buildOrgActionsFunction(stack: Stack, shared: SharedResources): Function {
+// pidge-org: the admin's write actions (org_resolve, org_broadcast_send) on their own socket routes, apart from pidge-verdict's
+// $default.
+function buildOrgActionsFunction(stack: Stack, settings: StackSettings, shared: SharedResources): Function {
   const orgActionsFunction = buildPythonFunction(stack, "OrgActions", shared.lambdaCode, {
     handler: "pidge_org.handler.handle",
     memorySize: 512,
@@ -115,13 +119,18 @@ function buildOrgActionsFunction(stack: Stack, shared: SharedResources): Functio
     environment: {
       TABLE_NAME: shared.table.tableName,
       WEBSOCKET_ENDPOINT: shared.webSocketStage.callbackUrl,
+      BROADCASTS_PER_ORG_PER_HOUR: String(settings.broadcastsPerOrgPerHour),
     },
   });
   grantOrgTableAccess(orgActionsFunction, shared, ORG_ACTIONS_WRITE_ACTIONS, ORG_ACTIONS_LEADING_KEYS);
+  orgActionsFunction.addToRolePolicy(
+    buildLeadingKeysWriteStatement(shared.table.tableArn, ["dynamodb:UpdateItem"], BROADCAST_COUNTER_LEADING_KEYS),
+  );
   shared.webSocketStage.grantManagementApiAccess(orgActionsFunction);
-  shared.webSocketApi.addRoute(ORG_RESOLVE_ROUTE_KEY, {
-    integration: new WebSocketLambdaIntegration("OrgActionsIntegration", orgActionsFunction),
-  });
+  const orgActionsIntegration = new WebSocketLambdaIntegration("OrgActionsIntegration", orgActionsFunction);
+  for (const routeKey of ORG_ACTION_ROUTE_KEYS) {
+    shared.webSocketApi.addRoute(routeKey, { integration: orgActionsIntegration });
+  }
   return orgActionsFunction;
 }
 
@@ -157,6 +166,6 @@ export function buildOrgFunctions(stack: Stack, settings: StackSettings, shared:
     return;
   }
   buildOrgProjectionFunction(stack, shared);
-  buildOrgActionsFunction(stack, shared);
+  buildOrgActionsFunction(stack, settings, shared);
   buildOrgCanary(stack, settings, shared);
 }

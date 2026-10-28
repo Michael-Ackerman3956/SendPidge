@@ -1,5 +1,6 @@
-/* An org admin's Home dashboard (js/org-view.js) and a resident's home on the Circle tab (js/org-preference-view.js); app.css is
-   at its size limit, so every org rule lives here. */
+/* An org admin's Home dashboard (js/org-view.js) and Messages tab (js/org-messages-view.js), and a resident's home on the Circle
+   tab (js/org-preference-view.js) and its alerts on the Pidge tab (js/org-notice-view.js); app.css is at its size limit, so
+   every org rule lives here. */
 /* The admin's Members dashboard, styled after docs/SENDPIDGE_ORG_PROTOTYPE.html: heading, stat tiles, cards, a table, chips. */
 .screen-body:has(#org-screen:not([hidden])) .contact-empty { display: none; } /* the contact's empty text is not the office's */
 .screen-body:has(#org-screen:not([hidden])) .contact-card-list:not(:empty) { margin-bottom: 20px; }
@@ -28,6 +29,7 @@
 .org-table tr:last-child td { border-bottom: none; }
 .org-table td:last-child, .org-table th:last-child { width: 1%; white-space: nowrap; }
 .org-person { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.org-member-detail { color: var(--text-secondary); }
 .org-avatar { width: 30px; height: 30px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--teal); color: var(--on-teal); font-size: 12px; font-weight: 800; }
 .org-person-names { display: flex; flex-direction: column; min-width: 0; }
 .org-person-name { font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
@@ -42,6 +44,28 @@
 .org-chip.is-muted { background: rgba(255, 255, 255, 0.04); color: var(--text-tertiary); }
 .org-empty-message { padding: 12px 4px; font-size: 15px; color: var(--text-secondary); }
 
+/* Messages: the safety alert composer and each alert's report */
+.org-broadcast-form { display: flex; flex-direction: column; gap: 10px; }
+.org-broadcast-text { min-height: 120px; resize: vertical; line-height: 1.45; background: var(--surface-2); border-color: rgba(255, 255, 255, 0.16); } /* the card is surface-1: the box needs its own edge */
+.org-broadcast-list { list-style: none; }
+.org-broadcast-message { font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.org-broadcast-sent { margin: 4px 0 10px; font-size: 12px; color: var(--text-tertiary); }
+.org-broadcast-chip { margin-left: auto; }
+/* The signed-in name on the desktop rail, with the Passkey pill or Set up passkey under it */
+.rail-me-names { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.rail-me-passkey-button { min-height: 32px; padding: 0 10px; border: 1px solid rgba(58, 166, 142, 0.3); border-radius: 8px; background: rgba(58, 166, 142, 0.08); color: var(--teal-light); font-size: 12px; font-weight: 700; }
+
+/* A resident's alerts from her home, above the Pidge chat */
+.org-notice-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.org-notice-list:empty { display: none; }
+.org-notice { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); }
+.org-notice-text { font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.org-notice-meta { margin-top: 4px; font-size: 12px; color: var(--text-tertiary); }
+.org-notice-answers { display: flex; gap: 8px; margin-top: 10px; }
+.org-notice-answer { flex: 1; min-height: 44px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface-3); color: var(--text-primary); font-size: 15px; font-weight: 700; }
+.org-notice-answer[aria-pressed="true"] { background: rgba(58, 166, 142, 0.16); border-color: rgba(58, 166, 142, 0.4); color: var(--teal-light); }
+.org-notice-answer:disabled:not([aria-pressed="true"]) { opacity: 0.45; }
+
 .org-preference { margin-top: 24px; }
 .org-visibility-group { border: none; min-width: 0; margin-bottom: 14px; }
 .org-visibility-legend { overflow-wrap: anywhere; }
@@ -53,10 +77,10 @@
 .org-contact-button[aria-disabled="true"], .org-resolved-button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
 
 @media (min-width: 900px) {
-  #org-screen { max-width: 1080px; }
-  .org-stats { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; } /* the five state tiles and three coverage tiles */
+  #org-screen, #org-messages-screen { max-width: 1080px; } /* the dashboard and Messages fill the column to one width */
+  #org-broadcast-send { align-self: flex-end; width: auto; min-width: 140px; min-height: 44px; padding: 0 28px; border-radius: 12px; }
+  .org-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; } /* two rows of four: the five state tiles and three coverage tiles */
   .org-stat { padding: 12px 14px; }
-  .org-stat-label { font-size: 11px; letter-spacing: 0.06em; }
-  .org-preference { max-width: 520px; }
+  .org-stat-label { font-size: 11px; letter-spacing: 0.06em; overflow-wrap: normal; } /* breaks only between words */
   .org-heading { margin-top: 4px; font-size: 20px; }
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src 'self' wss://caw0noryy3.execute-api.us-east-1.amazonaws.com https://*.auth.us-east-1.amazoncognito.com; style-src 'self'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src 'self' wss://caw0noryy3.execute-api.us-east-1.amazonaws.com https://*.auth.us-east-1.amazoncognito.com https://cognito-idp.us-east-1.amazonaws.com; style-src 'self'; script-src 'self'">
   <meta name="theme-color" content="#0e0e0e">
   <title>SendPidge</title>
   <link rel="manifest" href="manifest.json">
@@ -35,7 +35,15 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>
         <span>Pidge</span>
       </button>
-      <div class="rail-me"><span id="rail-me-initial" class="rail-me-avatar"></span><span id="rail-me-name"></span></div>
+      <button id="tab-org-members" class="receiver-tab is-active" type="button" aria-pressed="true" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Members</span>
+      </button>
+      <button id="tab-org-messages" class="receiver-tab" type="button" aria-pressed="false" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+        <span>Messages</span>
+      </button>
+      <div class="rail-me"><span id="rail-me-initial" class="rail-me-avatar"></span><span class="rail-me-names"><span id="rail-me-name"></span><span id="rail-me-auth-pill" class="org-chip is-good" hidden>Passkey</span><button id="rail-me-passkey-button" class="rail-me-passkey-button" type="button" hidden>Set up passkey</button></span></div>
     </nav>
     <header class="topbar">
       <button id="back-button" class="topbar-back-button" type="button" aria-label="Back" hidden>
@@ -53,7 +61,11 @@
     <main class="screen-body">
       <p id="token-error" class="token-error" role="alert" hidden>Open the link with your access token.</p>
       <p id="loading-state" class="loading-state" role="status" hidden>Loading…</p>
-      <button id="sign-in-button" class="contact-secondary-button sign-in-button" type="button" hidden>Sign in</button>
+      <div id="sign-in-screen" class="sign-in-screen" hidden>
+        <img class="sign-in-logo" src="assets/pidge-icon.png" alt="">
+        <p class="sign-in-name">SendPidge</p>
+        <button id="sign-in-button" class="contact-secondary-button sign-in-button" type="button">Sign in</button>
+      </div>
       <p id="action-status" class="action-status" aria-live="polite"></p>
       <div id="reading-pane" class="reading-pane">
         <section id="inbox-screen" class="inbox-screen" aria-label="Inbox" hidden>
@@ -84,7 +96,7 @@
           <ul id="org-follow-up-list" class="org-log"></ul>
         </section>
         <table id="org-member-table" class="org-table">
-          <thead><tr><th scope="col">Resident</th><th scope="col">State</th></tr></thead>
+          <thead><tr><th scope="col">Resident</th><th scope="col">Shares</th><th scope="col">Last event</th><th scope="col">State</th></tr></thead>
           <tbody id="org-member-rows"></tbody>
         </table>
         <p id="org-empty-message" class="org-empty-message" hidden>No members</p>
@@ -92,6 +104,17 @@
           <h3 id="org-call-list-title" class="org-card-title">Call list</h3>
           <ul id="org-call-list-rows" class="org-log"></ul>
         </section>
+      </section>
+      <section id="org-messages-screen" aria-label="Messages" hidden>
+        <h2 class="org-heading">Messages</h2>
+        <form id="org-broadcast-form" class="org-card org-broadcast-form" hidden>
+          <label class="org-card-title" for="org-broadcast-text">Safety alert</label>
+          <textarea id="org-broadcast-text" class="onboarding-input org-broadcast-text" rows="3" maxlength="280"></textarea>
+          <p id="org-broadcast-error" class="onboarding-form-error" role="alert" hidden></p>
+          <button id="org-broadcast-send" class="onboarding-primary-button" type="submit">Send</button>
+        </form>
+        <ul id="org-broadcast-list" class="org-broadcast-list"></ul>
+        <p id="org-broadcast-empty" class="org-empty-message" hidden>No alerts sent</p>
       </section>
       <section id="circle-screen" aria-label="Circle" hidden>
         <h2 class="section-header">People Pidge can ask</h2>
@@ -102,6 +125,7 @@
       <section id="onboarding-screen" class="onboarding-screen" aria-label="Set up" hidden></section>
       <section id="pidge-screen" aria-label="Pidge" hidden>
         <button id="enable-notifications-button" class="contact-secondary-button enable-notifications-button" type="button" hidden>Turn on notifications</button>
+        <ul id="org-notice-list" class="org-notice-list" aria-label="From your home"></ul>
         <section class="pidge-chat" aria-label="Ask Pidge">
           <ol id="pidge-chat-thread" class="pidge-chat-thread" aria-live="polite"></ol>
           <form id="pidge-chat-form" class="pidge-chat-composer">

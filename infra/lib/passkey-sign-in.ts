@@ -12,8 +12,9 @@ export interface PasskeySignIn {
 }
 
 // Passkey sign-in for the PWA (slice 13): a user pool with choice-based first factors (password, passkey with user
-// verification), a public app client for Authorization Code + PKCE, and a Cognito-prefix managed-login domain whose RP ID
-// stays at that domain's default. Undefined when cognitoDomainPrefix is "" (sign-in off: nothing is built).
+// verification) whose invitation puts the temporary password on its own line, a public app client for Authorization Code
+// + PKCE (its access token may list the user's own passkeys), and a Cognito-prefix managed-login domain whose RP ID stays
+// at that domain's default. Undefined when cognitoDomainPrefix is "" (sign-in off: nothing is built).
 export function buildPasskeySignIn(stack: Stack, settings: StackSettings): PasskeySignIn | undefined {
   if (settings.cognitoDomainPrefix === "") {
     return undefined;
@@ -25,6 +26,11 @@ export function buildPasskeySignIn(stack: Stack, settings: StackSettings): Passk
     selfSignUpEnabled: false,  // users exist only through scripts/seed_auth_users.py
     signInAliases: { email: true },
     accountRecovery: AccountRecovery.EMAIL_ONLY,
+    // Sent as HTML by Cognito's default sender: one line each, nothing after the password.
+    userInvitation: {
+      emailSubject: "SendPidge sign-in",
+      emailBody: `Email: {username}<br>Temporary password: {####}<br>Sign in at ${settings.pwaCallbackUrl}`,
+    },
     removalPolicy: RemovalPolicy.DESTROY,
   });
   const appClient = new UserPoolClient(stack, "UserPoolClient", {
@@ -33,7 +39,7 @@ export function buildPasskeySignIn(stack: Stack, settings: StackSettings): Passk
     authFlows: { user: true },
     oAuth: {
       flows: { authorizationCodeGrant: true },
-      scopes: [OAuthScope.OPENID, OAuthScope.EMAIL],
+      scopes: [OAuthScope.OPENID, OAuthScope.EMAIL, OAuthScope.COGNITO_ADMIN],  // the last: ListWebAuthnCredentials in pwa/js/auth.js
       callbackUrls: [settings.pwaCallbackUrl],
       logoutUrls: [settings.pwaCallbackUrl],
     },
@@ -58,8 +64,8 @@ export function buildPasskeySignIn(stack: Stack, settings: StackSettings): Passk
   return { userPool, appClient, domain };
 }
 
-// The PWA's /auth-config.json (pwa/js/auth.js): sign-in on with the managed-login base URL, app client and callback, else off.
-// The client id and domain resolve at deploy time.
+// The PWA's /auth-config.json (pwa/js/auth.js): sign-in on with the managed-login base URL, app client, callback and the
+// Cognito API endpoint the PWA lists passkeys at, else off. The client id and domain resolve at deploy time.
 export function buildPwaSignInConfig(settings: StackSettings, passkeySignIn: PasskeySignIn | undefined): Record<string, unknown> {
   if (passkeySignIn === undefined) {
     return { isSignInEnabled: false };
@@ -69,5 +75,6 @@ export function buildPwaSignInConfig(settings: StackSettings, passkeySignIn: Pas
     hostedUiBaseUrl: passkeySignIn.domain.baseUrl(),
     appClientId: passkeySignIn.appClient.userPoolClientId,
     redirectUrl: settings.pwaCallbackUrl,
+    identityProviderUrl: `https://cognito-idp.${Stack.of(passkeySignIn.userPool).region}.amazonaws.com/`,
   };
 }

@@ -83,6 +83,7 @@ def test_get_case_never_returns_reply_rows(aws):
     cases.record_bank_reply(reply(case_row))
     scope = case_agent.CaseScope(RECEIVER_USER_ID, case_row["requestId"], CaseTrigger.CASE_CLOSED, case_id)
     metadata = case_agent.case_metadata(scope)
-    assert metadata["reportedPayment"]["bankReplyCount"] == 1
+    assert metadata["reportedPayment"]["timeline"] == {"closedAt": None}  # no bank loop: the agent never hears of a reply
+    assert "bankReplyCount" not in metadata["reportedPayment"]
     assert "4471" not in str(metadata) and REPLY_TEXT not in str(metadata)
     assert "replyToken" not in str(metadata) and case_row["replyToken"] not in str(metadata)

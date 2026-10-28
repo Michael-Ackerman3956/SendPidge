@@ -44,6 +44,8 @@ class MemberOverview:
     tags: list[str]
     state: MemberSafetyState
     open_episodes: tuple[OpenEpisode, ...]  # empty when the member does not share
+    shares: OrgVisibility  # the MEMBER# coverage fact; NONE when the projection never wrote one
+    last_event_at: str | None  # the newest ORGLOG# at of a sharing member; None when they share nothing or have no event
     is_sharing: bool
     has_verified_contact: bool
     is_seen_recently: bool
@@ -71,7 +73,8 @@ def org_dashboard_for(org_admin: OrgAdmin, now: datetime) -> dict | None:
         "orgId": org_profile.org_id, "orgName": org_profile.org_name, "lastProjectedAt": last_projected_at,
         "isStale": is_projection_stale(last_projected_at, now),
         "members": [{"memberRef": overview.member_ref, "residentName": overview.resident_name, "tags": overview.tags,
-                     "state": str(overview.state)} for overview in overviews],
+                     "state": str(overview.state), "shares": str(overview.shares), "lastEventAt": overview.last_event_at}
+                    for overview in overviews],
         "actionable": [{"memberRef": overview.member_ref, "residentName": overview.resident_name, "sourceKey": episode.source_key,
                         "state": str(episode.state), "at": episode.at}
                        for overview in overviews for episode in overview.open_episodes if episode.state in ACTIONABLE_STATES],
@@ -100,18 +103,21 @@ def resident_of_member(org_id: str, member_ref: str) -> ReceiverProfile | None:
 def member_overview_for(org_id: str, member_row: dict, events_by_member: dict[str, list[ProjectedEvent]],
                         today: date) -> MemberOverview | None:
     """One member read from the MEMBER# coverage fact and their ORGLOG# events. A member who has chosen no visibility, or
-    none, is NOT_SHARED whatever the log holds, and no episode of theirs is listed. Tags are absent on rows the seed did not
-    write; hasVerifiedContact and lastSeenDay are absent until the projection writes them."""
+    none, is NOT_SHARED whatever the log holds, and no episode or last event of theirs is listed. Tags are absent on rows the
+    seed did not write; hasVerifiedContact and lastSeenDay are absent until the projection writes them."""
     member_ref = member_row["SK"].removeprefix(orgs.MEMBER_SORT_KEY_PREFIX)
     resident = resident_of_member(org_id, member_ref)
     if resident is None:
         return None
-    is_sharing = "coverageVisibility" in member_row and OrgVisibility(member_row["coverageVisibility"]) in SHARING_VISIBILITIES
-    open_episodes = open_episodes_of(events_by_member[member_ref]) if is_sharing and member_ref in events_by_member else ()
+    shares = OrgVisibility(member_row["coverageVisibility"]) if "coverageVisibility" in member_row else OrgVisibility.NONE
+    is_sharing = shares in SHARING_VISIBILITIES
+    member_events = events_by_member[member_ref] if is_sharing and member_ref in events_by_member else []
+    open_episodes = open_episodes_of(member_events) if member_events else ()
     return MemberOverview(
         member_ref=member_ref, resident_name=resident.resident_name,
         tags=list(member_row["tags"]) if "tags" in member_row else [],
-        state=member_state_of(is_sharing, open_episodes), open_episodes=open_episodes, is_sharing=is_sharing,
+        state=member_state_of(is_sharing, open_episodes), open_episodes=open_episodes, shares=shares,
+        last_event_at=max(member_event.at for member_event in member_events) if member_events else None, is_sharing=is_sharing,
         has_verified_contact="hasVerifiedContact" in member_row and member_row["hasVerifiedContact"] is True,
         is_seen_recently=("lastSeenDay" in member_row
                           and date.fromisoformat(member_row["lastSeenDay"]) > today - timedelta(days=SEEN_WINDOW_DAYS)),

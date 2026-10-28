@@ -25,7 +25,8 @@ CONNECTION_RETENTION_SECONDS = 24 * 3600
 CONDITIONAL_CHECK_FAILED = "ConditionalCheckFailedException"
 logger = logging.getLogger(__name__)
 METADATA_SORT_KEY = "META"
-# UserIndex (GSI): "<userId>#EMAIL", "#REQUEST", "#NOTE" or "#CASE" → rows newest first, for the PWA's sync.
+# UserIndex (GSI): "<userId>#EMAIL", "#REQUEST", "#NOTE", "#CASE" or "#ORGNOTICE" (shared/org_broadcasts.py) → rows newest
+# first, for the PWA's sync.
 USER_INDEX_NAME = "UserIndex"
 USER_INDEX_PARTITION_KEY = "userIndexPK"
 USER_INDEX_SORT_KEY = "userIndexSK"
@@ -276,7 +277,8 @@ def get_contact_row(receiver_address: str, contact_key: str) -> dict | None:
 
 
 def list_recent_rows(user_id: str, row_kind: str, limit: int) -> list[dict]:
-    """Newest-first rows of one kind (EMAIL, REQUEST, NOTE or CASE) that belong to one PWA user (via UserIndex), then the full rows."""
+    """Newest-first rows of one kind (EMAIL, REQUEST, NOTE, CASE or ORGNOTICE) that belong to one PWA user (via UserIndex), then
+    the full rows."""
     response = get_table().query(
         IndexName=USER_INDEX_NAME,
         KeyConditionExpression=Key(USER_INDEX_PARTITION_KEY).eq(user_index_partition(user_id, row_kind)),

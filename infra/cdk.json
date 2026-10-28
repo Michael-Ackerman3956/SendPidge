@@ -43,9 +43,10 @@
     "callNudgesPerContactPerHour": 1,
     "callReminderTodayDelaySeconds": 14400,
     "callReminderTomorrowDelaySeconds": 79200,
-    "cognitoDomainPrefix": "",
+    "cognitoDomainPrefix": "sendpidge-office-demo",
     "orgEnabled": true,
     "orgId": "home-demo",
+    "broadcastsPerOrgPerHour": 2,
     "liveFeedsEnabled": false
   }
 }

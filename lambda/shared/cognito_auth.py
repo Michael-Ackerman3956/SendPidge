@@ -12,6 +12,7 @@ from jwt import PyJWK, PyJWKClient
 from jwt.exceptions import PyJWTError
 
 from shared import graph
+from shared.profiles import COGNITO_SUB_FIELD  # noqa: F401  (read here by ws_connect and scripts/seed_auth_users.py)
 
 ISSUER_ENVIRONMENT_NAME = "COGNITO_ISSUER"
 APP_CLIENT_ID_ENVIRONMENT_NAME = "COGNITO_APP_CLIENT_ID"
@@ -21,7 +22,6 @@ SIGNING_ALGORITHMS = ["RS256"]
 REQUIRED_CLAIMS = ["exp", "iat", "iss", "aud", "sub", "token_use"]
 ID_TOKEN_USE = "id"
 SUB_PARTITION_PREFIX = "SUB#"  # SUB#<sub>/META {userId}, written by scripts/seed_auth_users.py
-COGNITO_SUB_FIELD = "cognitoSub"  # on USER#<id>/PROFILE of a linked user: their opaque token no longer connects
 # Three base64url segments, the signature possibly empty (an unsigned token is still routed here and refused). An opaque
 # TOKEN# value (circle.new_access_token: secrets.token_urlsafe) has no "." and never matches.
 JWT_SHAPE_PATTERN = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")

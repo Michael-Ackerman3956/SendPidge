@@ -1,12 +1,14 @@
-// Passkey sign-in through Cognito managed login: Authorization Code + PKCE (S256), the code swapped for an ID token, which
-// is refreshed when it nears expiry. The config is the deployed /auth-config.json. Tokens are never logged.
+// Passkey sign-in through Cognito managed login: Authorization Code + PKCE (S256), the code swapped for ID and access
+// tokens, refreshed when they near expiry; the access token only lists the user's passkeys. The config is the deployed
+// /auth-config.json. Tokens are never logged.
 const SIGN_IN_CONFIG_PATH = "/auth-config.json";
 const SIGN_IN_SESSION_STORAGE_KEY = "sendpidge.cognitoSession";
 const CODE_VERIFIER_STORAGE_KEY = "sendpidge.signInCodeVerifier";
 const SIGN_IN_STATE_STORAGE_KEY = "sendpidge.signInState";
 const RANDOM_VALUE_BYTE_LENGTH = 32;
 const ID_TOKEN_REFRESH_MARGIN_SECONDS = 5 * 60;
-const OAUTH_SCOPE = "openid email";
+const OAUTH_SCOPE = "openid email aws.cognito.signin.user.admin"; // the last lets the access token list the user's passkeys
+const LIST_PASSKEYS_TARGET = "AWSCognitoIdentityProviderService.ListWebAuthnCredentials";
 // Query parameters managed login appends to the callback URL; all are stripped once read.
 const REDIRECT_QUERY_PARAMETERS = ["code", "state", "error", "error_description"];
 const SIGN_IN_OFF = Object.freeze({ isSignInEnabled: false });
@@ -40,6 +42,7 @@ export async function readSignInConfig() {
       hostedUiBaseUrl: requireFilledText(config.hostedUiBaseUrl, "hostedUiBaseUrl"),
       appClientId: requireFilledText(config.appClientId, "appClientId"),
       redirectUrl: requireFilledText(config.redirectUrl, "redirectUrl"),
+      identityProviderUrl: requireFilledText(config.identityProviderUrl, "identityProviderUrl"),
     });
   } catch (configError) {
     console.error("SendPidge: sign-in config unavailable; sign-in is off", describeFailure(configError));
@@ -107,7 +110,7 @@ function stripRedirectQueryFromAddressBar(pageUrl) {
   window.history.replaceState(null, "", pageUrl.pathname + pageUrl.search + pageUrl.hash);
 }
 
-// POSTs a form to the token endpoint; throws on any HTTP failure or a response without an id_token.
+// POSTs a form to the token endpoint; throws on any HTTP failure or a response without an id_token or access_token.
 async function requestTokens(signInConfig, formFields) {
   const response = await fetch(`${signInConfig.hostedUiBaseUrl}/oauth2/token`, {
     method: "POST",
@@ -119,6 +122,7 @@ async function requestTokens(signInConfig, formFields) {
   if (!response.ok) throw new SignInFailure(`token endpoint answered ${response.status}`);
   const tokenResponse = await response.json();
   requireFilledText(tokenResponse.id_token, "id_token");
+  requireFilledText(tokenResponse.access_token, "access_token");
   return tokenResponse;
 }
 
@@ -143,7 +147,11 @@ export async function completeSignInFromRedirect(signInConfig) {
       redirect_uri: signInConfig.redirectUrl,
       code_verifier: codeVerifier,
     });
-    saveSignInSession({ idToken: tokenResponse.id_token, refreshToken: requireFilledText(tokenResponse.refresh_token, "refresh_token") });
+    saveSignInSession({
+      idToken: tokenResponse.id_token,
+      accessToken: tokenResponse.access_token,
+      refreshToken: requireFilledText(tokenResponse.refresh_token, "refresh_token"),
+    });
     return true;
   } catch (tokenError) {
     console.error("SendPidge: sign-in code exchange failed", describeFailure(tokenError));
@@ -166,7 +174,8 @@ function readSignInSession() {
     const storedText = window.localStorage.getItem(SIGN_IN_SESSION_STORAGE_KEY);
     if (storedText === null) return null;
     const storedSession = JSON.parse(storedText);
-    if (typeof storedSession?.idToken !== "string" || typeof storedSession?.refreshToken !== "string") {
+    if (typeof storedSession?.idToken !== "string" || typeof storedSession?.accessToken !== "string"
+      || typeof storedSession?.refreshToken !== "string") {
       throw new SignInFailure("stored sign-in session is incomplete");
     }
     sessionForThisVisit = storedSession;
@@ -224,7 +233,7 @@ export async function resolveIdToken(signInConfig) {
     });
     // Cognito returns a new refresh token only when rotation is on; otherwise the stored one stays valid.
     const refreshToken = typeof tokenResponse.refresh_token === "string" ? tokenResponse.refresh_token : session.refreshToken;
-    saveSignInSession({ idToken: tokenResponse.id_token, refreshToken });
+    saveSignInSession({ idToken: tokenResponse.id_token, accessToken: tokenResponse.access_token, refreshToken });
     return tokenResponse.id_token;
   } catch (refreshError) {
     if (!(refreshError instanceof TokenGrantRejected)) {
@@ -235,4 +244,32 @@ export async function resolveIdToken(signInConfig) {
     clearSignInSession();
     return null;
   }
+}
+
+// Whether the signed-in user has a passkey (Cognito ListWebAuthnCredentials with the session's access token, refreshed first
+// like the ID token, which is issued with it). null when signed out or the call fails.
+export async function hasRegisteredPasskey(signInConfig) {
+  if (await resolveIdToken(signInConfig) === null) return null;
+  try {
+    const response = await fetch(signInConfig.identityProviderUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-amz-json-1.1", "X-Amz-Target": LIST_PASSKEYS_TARGET },
+      body: JSON.stringify({ AccessToken: readSignInSession().accessToken }),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new SignInFailure(`ListWebAuthnCredentials answered ${response.status}`);
+    const passkeyListing = await response.json();
+    if (!Array.isArray(passkeyListing.Credentials)) throw new SignInFailure("ListWebAuthnCredentials has no Credentials list");
+    return passkeyListing.Credentials.length > 0;
+  } catch (listError) {
+    console.error("SendPidge: could not list the user's passkeys", describeFailure(listError));
+    return null;
+  }
+}
+
+// Managed login's add-a-passkey page, which returns to the app's callback URL.
+export function buildAddPasskeyUrl(signInConfig) {
+  const addPasskeyUrl = new URL(`${signInConfig.hostedUiBaseUrl}/passkeys/add`);
+  addPasskeyUrl.search = new URLSearchParams({ client_id: signInConfig.appClientId, redirect_uri: signInConfig.redirectUrl }).toString();
+  return addPasskeyUrl.toString();
 }

@@ -172,7 +172,7 @@ Source: `scope.md > The Unique Kernel`.
 - **Production-grade multi-channel integration** — demo mocks non-email channels.
 - **No model releases a gate-1 hold** (known name, unknown address); only Jimin's answer or Grandma's tap moves it. (`spec.md > Policy in code`)
 - **The Reader never holds a tool; the agent that holds tools never reads the email.** (`spec.md > Rule of Two`)
-- **Pidge never contacts a real bank, police or court** — the demo bank mailbox is SIMULATED and labelled so. (`spec.md > Decisions > mock-bank loop`)
+- **Pidge never contacts a bank, police or court, real or simulated** — it drafts and gives the steps; Grandma calls her card issuer and files with the FTC, police and IC3 herself. (`spec.md > Decisions > 2026-10-28, drafts only`)
 - **Copy never says "safe"** — it quotes the person: "Jimin says he sent this." (`spec.md > Build-time hardening`)
 
 ## Open Questions
