@@ -15,7 +15,7 @@ SVG sources and the three detail diagrams are in [`architecture/`](architecture/
 ## The problem
 
 <!-- founder: confirm the four numbers and add the source links -->
-- Reported losses to internet crime: $6.9B in 2021, $20.9B in 2025 (FBI IC3).
+- Reported losses to internet crime tripled, from $7 billion in 2021 to $21 billion in 2025 (FBI IC3).
 - One person can run twelve scam calls an hour with a cloned voice that costs about a dollar (Heiding et al. 2026).
 - People mistake a cloned voice for the real person about 80% of the time (Farid 2025).
 - About 13% of scams ever reach a federal agency (Gallup 2026).
@@ -32,6 +32,8 @@ Spotting the fake gets harder every year. Asking the real person still works, bu
 - Gives a senior home's office one safety state per resident, only what she chose to share, and an in-app safety alert to every resident.
 
 ## How it works
+
+![Fraud prevention: the hold-and-ask pipeline with WhatsApp texts in, the Amazon Connect call, the composer out, and the office's Cognito sign-in](architecture/architecture-stretch.png)
 
 ### 1. Catch the email
 
