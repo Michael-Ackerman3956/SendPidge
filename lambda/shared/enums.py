@@ -191,6 +191,7 @@ class Channel(StrEnum):
     WHATSAPP = "whatsapp"
     INAPP = "inapp"
     EMAIL = "email"  # the ask goes out through SES; only a No may come back this way (verdict.record_answer)
+    SMS = "sms"  # inbound only (pidge-inbound), never an ask channel; its number is the contact's RCS point (reach_channel_of)
 
 
 class AskLinkOutcome(StrEnum):
@@ -248,6 +249,7 @@ class PushMessageType(StrEnum):
     """Kinds of message the backend pushes to a PWA over the WebSocket. Mirrored in pwa/js/constants.js."""
 
     EMAIL_STATE = "email_state"              # to the receiver: one email row and its hold / warn / pass state
+    MESSAGE_STATE = "message_state"          # to the receiver: one WhatsApp / RCS / SMS row and its hold / warn / pass state
     VERIFICATION_CARD = "verification_card"  # to the contact: "Was this you?"
     REQUEST_STATE = "request_state"          # to both: a request's status changed (answered, quarantined)
     SYNC_STATE = "sync_state"                # reply to ClientAction.SYNC: the user's role and current rows
@@ -383,7 +385,7 @@ class ActionOutcome(StrEnum):
     RECORDED = "recorded"
     UNKNOWN_REQUEST = "unknown_request"
     WRONG_SENDER = "wrong_sender"  # the reply did not come from the contact's own channel
-    WRONG_CHANNEL = "wrong_channel"  # a Yes on the channel the suspicious message arrived on (a hijacked mailbox could send it)
+    WRONG_CHANNEL = "wrong_channel"  # a Yes by email, or on the held message's own reach channel (verdict.is_yes_refused_on)
     NOT_APPLIED = "not_applied"    # duplicate, redelivered, or a Yes after the hold or after a No
     NOT_ALLOWED = "not_allowed"    # this user may not do this action
     BAD_MESSAGE = "bad_message"    # unparseable or missing fields

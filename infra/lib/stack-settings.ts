@@ -5,6 +5,14 @@ export interface StackSettings {
   receiverDomain: string;
   // The one resident bound to receiverMailbox (emailed questions, the mailed recovery pack); "" when none.
   mailboxResidentAddress: string;
+  // The one resident whose inbox gets every text to Pidge's WhatsApp, RCS and SMS numbers (pidge-inbound); "" → no pidge-inbound.
+  messengerResidentAddress: string;
+  // Two-way SMS into that inbox (SmsInboundTopic); on needs smsOriginationNumber, smsPhoneNumberArn and messengerResidentAddress.
+  smsEnabled: boolean;
+  // Pidge's SMS number in E.164: pidge-inbound refuses an SMS record addressed to any other number.
+  smsOriginationNumber: string;
+  // That number's End User Messaging ARN; required with smsEnabled.
+  smsPhoneNumberArn: string;
   readerModel: string;
   receiptSender: string;
   sendingDomain: string;
@@ -57,6 +65,7 @@ const COGNITO_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const COGNITO_DOMAIN_PREFIX_RESERVED_WORDS = ["aws", "amazon", "cognito"];
 // lambda/shared/org_ids.py ORG_ID_PATTERN (fullmatch).
 const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const E164_PHONE_NUMBER_PATTERN = /^\+[1-9][0-9]{1,14}$/;
 
 export function readStackSettings(stack: Stack): StackSettings {
   const receiverDomain: string = stack.node.getContext("receiverDomain");
@@ -88,7 +97,8 @@ export function readStackSettings(stack: Stack): StackSettings {
   if (chatEnabled && !receiverMailbox.includes("@")) {
     throw new Error("chatEnabled needs RECEIVER_MAILBOX in ../.env (Grandma's real mailbox for pidge@)");
   }
-  const mailboxResidentAddress = readMailboxResidentAddress(stack, receiverDomain);
+  const mailboxResidentAddress = readResidentAddressContext(stack, "mailboxResidentAddress", receiverDomain);
+  const messengerResidentAddress = readResidentAddressContext(stack, "messengerResidentAddress", receiverDomain);
   if ((chatEnabled || receiverMailbox !== "") && mailboxResidentAddress === "") {
     throw new Error("chatEnabled or RECEIVER_MAILBOX needs mailboxResidentAddress: the resident that mailbox belongs to");
   }
@@ -101,6 +111,8 @@ export function readStackSettings(stack: Stack): StackSettings {
   return {
     receiverDomain,
     mailboxResidentAddress,
+    messengerResidentAddress,
+    ...readSmsSettings(stack, messengerResidentAddress),
     readerModel,
     receiptSender,
     sendingDomain,
@@ -172,13 +184,27 @@ function readCognitoDomainPrefix(stack: Stack): string {
   return cognitoDomainPrefix;
 }
 
-// The mailbox resident's address, lower-cased; absent reads as "". Throws when it is set but not on receiverDomain.
-function readMailboxResidentAddress(stack: Stack, receiverDomain: string): string {
-  const mailboxResidentAddress = readOptionalTextContext(stack, "mailboxResidentAddress").toLowerCase();
-  if (mailboxResidentAddress !== "" && !mailboxResidentAddress.endsWith(`@${receiverDomain}`)) {
-    throw new Error(`mailboxResidentAddress must be an address @${receiverDomain}`);
+// A resident's address from contextKey, lower-cased; absent reads as "". Throws when it is set but not on receiverDomain.
+function readResidentAddressContext(stack: Stack, contextKey: string, receiverDomain: string): string {
+  const residentAddress = readOptionalTextContext(stack, contextKey).toLowerCase();
+  if (residentAddress !== "" && !residentAddress.endsWith(`@${receiverDomain}`)) {
+    throw new Error(`${contextKey} must be an address @${receiverDomain}`);
   }
-  return mailboxResidentAddress;
+  return residentAddress;
+}
+
+// The two-way SMS settings; absent values read as "". Throws when smsEnabled is on without an E.164 number, the phone number's
+// ARN or the messenger resident whose inbox the texts go to.
+function readSmsSettings(
+  stack: Stack, messengerResidentAddress: string,
+): Pick<StackSettings, "smsEnabled" | "smsOriginationNumber" | "smsPhoneNumberArn"> {
+  const smsEnabled = stack.node.tryGetContext("smsEnabled") === true;
+  const smsOriginationNumber = readOptionalTextContext(stack, "smsOriginationNumber");
+  const smsPhoneNumberArn = readOptionalTextContext(stack, "smsPhoneNumberArn");
+  if (smsEnabled && (!E164_PHONE_NUMBER_PATTERN.test(smsOriginationNumber) || smsPhoneNumberArn === "" || messengerResidentAddress === "")) {
+    throw new Error("smsEnabled needs smsOriginationNumber (E.164), smsPhoneNumberArn and messengerResidentAddress");
+  }
+  return { smsEnabled, smsOriginationNumber, smsPhoneNumberArn };
 }
 
 // An optional text context key: absent reads as "" (the feature it configures then reports itself off), never a guess.

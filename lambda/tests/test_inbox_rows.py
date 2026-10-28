@@ -14,12 +14,16 @@ def put_inbound_row(partition_key: str) -> None:
 
 def test_held_row_resolves_by_inbound_channel(aws):  # noqa: F811
     message_id = inbox_rows.message_item_id(Channel.WHATSAPP, "m1")
+    sms_message_id = inbox_rows.message_item_id(Channel.SMS, "m1")
     put_inbound_row("EMAIL#inbox/a")
     put_inbound_row(f"MESSAGE#{message_id}")
-    assert message_id == "whatsapp#m1"
+    put_inbound_row(f"MESSAGE#{sms_message_id}")
+    assert (message_id, sms_message_id) == ("whatsapp#m1", "sms#m1")
     assert inbox_rows.get_held_row({"PK": "REQUEST#req-email", "inboundChannel": "email", "emailId": "inbox/a"})["PK"] == "EMAIL#inbox/a"
     assert inbox_rows.get_held_row({"PK": "REQUEST#req-text", "inboundChannel": "whatsapp", "emailId": message_id})["PK"] == (
         "MESSAGE#whatsapp#m1")
+    assert inbox_rows.get_held_row({"PK": "REQUEST#req-sms", "inboundChannel": "sms", "emailId": sms_message_id})["PK"] == (
+        "MESSAGE#sms#m1")
     assert inbox_rows.get_held_row({"PK": "REQUEST#req-old", "emailId": "inbox/a"})["PK"] == "EMAIL#inbox/a"
     text_request_naming_an_email = {"PK": "REQUEST#req-mixed", "inboundChannel": "whatsapp", "emailId": "inbox/a"}
     assert inbox_rows.get_held_row(text_request_naming_an_email) is None  # a set inboundChannel never falls back to EMAIL#

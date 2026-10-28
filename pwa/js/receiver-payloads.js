@@ -1,6 +1,6 @@
-// Grandma's incoming data: the five static mock rows (email, SMS, app notice) and validation of every EMAIL / request_state payload.
-// Mock rows carry rowKind; a live row is always ROW_KIND.EMAIL (other channels come in at slice 15).
-import { CALL_PROMISE, CHANNEL, POLICY_DECISION, REQUEST_STATUS, ROW_KIND, SCAM_LIST_COVERAGE } from "./constants.js";
+// Grandma's incoming data: the three static email mock rows and validation of every email_state, message_state and request_state
+// payload. A text (a MESSAGE# row) becomes the same row shape as an email, with rowKind from its channel.
+import { CALL_PROMISE, CHANNEL, MESSAGE_DIRECTION, POLICY_DECISION, REQUEST_STATUS, ROW_KIND, SCAM_LIST_COVERAGE } from "./constants.js";
 
 const MILLISECONDS_PER_HOUR = 3600000;
 const KNOWN_POLICY_DECISIONS = new Set(Object.values(POLICY_DECISION));
@@ -8,24 +8,26 @@ const KNOWN_REQUEST_STATUSES = new Set(Object.values(REQUEST_STATUS));
 const KNOWN_CALL_PROMISES = new Set(Object.values(CALL_PROMISE));
 const KNOWN_CHANNELS = new Set(Object.values(CHANNEL));
 const KNOWN_SCAM_LIST_COVERAGES = new Set(Object.values(SCAM_LIST_COVERAGE));
+// The channels a text comes in on and the row kind each shows as; a message on any other channel is dropped, never shown as email.
+const MESSAGE_ROW_KINDS = Object.freeze({
+  [CHANNEL.SMS]: ROW_KIND.SMS,
+  [CHANNEL.WHATSAPP]: ROW_KIND.WHATSAPP,
+  [CHANNEL.RCS]: ROW_KIND.RCS,
+});
 
 export function buildMockFamilyEmails() {
   const now = Date.now();
   const receivedHoursAgo = (hours) => new Date(now - hours * MILLISECONDS_PER_HOUR).toISOString();
-  const mockRow = (rowKind, emailId, senderName, senderAddress, subject, hoursAgo, textBody) => ({
-    emailId, rowKind, senderName, senderAddress, subject, receivedAt: receivedHoursAgo(hoursAgo), textBody,
+  const mockRow = (emailId, senderName, senderAddress, subject, hoursAgo, textBody) => ({
+    emailId, rowKind: ROW_KIND.EMAIL, senderName, senderAddress, subject, receivedAt: receivedHoursAgo(hoursAgo), textBody,
     state: POLICY_DECISION.PASS, warnReason: null, reasons: [], links: [], request: null, quarantined: false,
   });
   return [
-    mockRow(ROW_KIND.EMAIL, "mock-sunday-lunch", "Minsoo", "minsoo@example.com", "Sunday lunch", 2,
+    mockRow("mock-sunday-lunch", "Minsoo", "minsoo@example.com", "Sunday lunch", 2,
       "Hi Mom, we'll come by around noon on Sunday. I'll bring the kimchi jjigae you like. See you then!"),
-    mockRow(ROW_KIND.SMS, "mock-pharmacy", "Haneul Pharmacy", "+82 2-734-··12", "Prescription ready", 3,
-      "Your prescription is ready for pickup until 7 pm today."),
-    mockRow(ROW_KIND.EMAIL, "mock-garden-photos", "Young-hee", "younghee@example.com", "Your tomatoes!", 27,
+    mockRow("mock-garden-photos", "Young-hee", "younghee@example.com", "Your tomatoes!", 27,
       "The tomatoes from your garden were so sweet. Can you show me how you grow them next time?"),
-    mockRow(ROW_KIND.APP, "mock-bank-statement", "Kakao Bank", "App notification", "October statement is ready", 51,
-      "Your October statement is ready to view in the app."),
-    mockRow(ROW_KIND.EMAIL, "mock-church-picnic", "Pastor Kim", "pastor.kim@example.com", "Picnic next Saturday", 75,
+    mockRow("mock-church-picnic", "Pastor Kim", "pastor.kim@example.com", "Picnic next Saturday", 75,
       "Just a reminder that the church picnic is next Saturday at the park. Hope to see you there."),
   ];
 }
@@ -41,18 +43,41 @@ function isValidQuarantinedField(quarantined) {
   return quarantined === undefined || typeof quarantined === "boolean";
 }
 
+// state, request and quarantined: the verdict fields every inbox row carries, email or text.
+function hasValidVerdictFields(row) {
+  return (row.state === null || KNOWN_POLICY_DECISIONS.has(row.state))
+    && isValidEmailRequest(row.request) && isValidQuarantinedField(row.quarantined);
+}
+
+function reportHoldWithoutRequest(row, rowId) {
+  if (row.state === POLICY_DECISION.HOLD && (row.request === null || row.request === undefined)) {
+    console.error("SendPidge: HOLD push arrived without a request; showing the row flagged without the overlay", rowId);
+  }
+}
+
 function isValidEmailPayload(email) {
   const hasRequiredFields = email !== null && typeof email === "object" && typeof email.emailId === "string"
     && typeof email.senderName === "string" && typeof email.subject === "string" && typeof email.textBody === "string";
-  const isKnownState = hasRequiredFields && (email.state === null || KNOWN_POLICY_DECISIONS.has(email.state));
-  if (!hasRequiredFields || !isKnownState
-    || !isValidEmailRequest(email.request) || !isValidQuarantinedField(email.quarantined)) {
+  if (!hasRequiredFields || !hasValidVerdictFields(email)) {
     console.error("SendPidge: email push has a missing field, unknown state or unknown request status", email);
     return false;
   }
-  if (email.state === POLICY_DECISION.HOLD && (email.request === null || email.request === undefined)) {
-    console.error("SendPidge: HOLD push arrived without a request; showing the row flagged without the overlay", email.emailId);
+  reportHoldWithoutRequest(email, email.emailId);
+  return true;
+}
+
+// Only incoming texts on a known text channel are listed; any other channel or direction is logged and dropped.
+function isValidMessagePayload(message) {
+  const hasRequiredFields = message !== null && typeof message === "object" && typeof message.messageId === "string"
+    && typeof message.senderName === "string" && typeof message.senderAddress === "string" && typeof message.textBody === "string";
+  const isIncomingText = hasRequiredFields && Object.prototype.hasOwnProperty.call(MESSAGE_ROW_KINDS, message.channel)
+    && message.direction === MESSAGE_DIRECTION.IN;
+  if (!isIncomingText || !hasValidVerdictFields(message)) {
+    console.error("SendPidge: message push has a missing field, unknown channel or direction, unknown state or unknown request status",
+      message);
+    return false;
   }
+  reportHoldWithoutRequest(message, message.messageId);
   return true;
 }
 
@@ -114,6 +139,20 @@ export function normalizeEmailPayloadOrReportError(email) {
     ...email, rowKind: ROW_KIND.EMAIL, request: normalizeEmailRequest(email.request), quarantined: email.quarantined === true,
     textBody: isReading ? "" : email.textBody, links: isReading ? [] : normalizeEmailLinks(email),
     scamListCoverage: isReading ? null : normalizeScamListCoverage(email.scamListCoverage),
+  };
+}
+
+// Returns the text as an inbox row, or null (after logging) when the payload is invalid. The row is keyed by messageId as its
+// emailId (request_state names a held text by that id too) and has no subject, links or list coverage; senderName "" (not a
+// checked number of a contact) shows the sender's number. A reading row never carries a body on this side either.
+export function normalizeMessagePayloadOrReportError(message) {
+  if (!isValidMessagePayload(message)) return null;
+  return {
+    emailId: message.messageId, rowKind: MESSAGE_ROW_KINDS[message.channel],
+    senderName: message.senderName === "" ? message.senderAddress : message.senderName, senderAddress: message.senderAddress,
+    subject: "", receivedAt: message.receivedAt, textBody: message.state === null ? "" : message.textBody, links: [], scamListCoverage: null,
+    state: message.state, warnReason: message.warnReason, reasons: message.reasons,
+    request: normalizeEmailRequest(message.request), quarantined: message.quarantined === true,
   };
 }
 

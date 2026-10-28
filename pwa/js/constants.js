@@ -2,6 +2,7 @@
 
 export const PUSH_MESSAGE_TYPE = Object.freeze({
   EMAIL_STATE: "email_state",
+  MESSAGE_STATE: "message_state",
   VERIFICATION_CARD: "verification_card",
   REQUEST_STATE: "request_state",
   SYNC_STATE: "sync_state",
@@ -139,12 +140,20 @@ export const JURISDICTION = Object.freeze({
   DE: "DE",
 });
 
-// Where an ask goes out and where an answer comes back (request.repliedVia). Mirrors Channel in enums.py.
+// Where an ask goes out, where an answer comes back (request.repliedVia) and where a text came in (message.channel; SMS is
+// inbound only). Mirrors Channel in enums.py.
 export const CHANNEL = Object.freeze({
   RCS: "rcs",
   WHATSAPP: "whatsapp",
   INAPP: "inapp",
   EMAIL: "email",
+  SMS: "sms",
+});
+
+// Whether a MESSAGE# row came in or went out (message.direction). Mirrors MessageDirection in lambda/shared/messenger_enums.py.
+export const MESSAGE_DIRECTION = Object.freeze({
+  IN: "in",
+  OUT: "out",
 });
 
 export const USER_ROLE = Object.freeze({
@@ -291,11 +300,12 @@ export const EMAIL_DISPLAY_STATE = Object.freeze({
   PLAIN: "plain",
 });
 
-// PWA-only: which channel a mock inbox row came from (live rows are always email until slice 15).
+// PWA-only: which channel an inbox row came from (its tag and avatar tint): an email, or a text on SMS, WhatsApp or RCS.
 export const ROW_KIND = Object.freeze({
   EMAIL: "email",
   SMS: "sms",
-  APP: "app",
+  WHATSAPP: "whatsapp",
+  RCS: "rcs",
 });
 
 // PWA-only: Gmail's reading-pane choices on a wide screen; phones always read with no split.

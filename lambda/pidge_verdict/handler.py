@@ -10,6 +10,7 @@ USER#<id>/PROFILE row, and an answer's resident from the REQUEST# row's receiver
 import json
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote_plus
 
@@ -44,6 +45,7 @@ BANK_FOLLOW_UP_DELAY_SECONDS = int(os.environ.get("BANK_FOLLOW_UP_DELAY_SECONDS"
 CASE_FOLLOWUP_FUNCTION_ARN = os.environ.get("CASE_FOLLOWUP_FUNCTION_ARN", "")
 SYNC_CASE_LIMIT = 10
 SYNC_EMAIL_LIMIT = 20
+SYNC_MESSAGE_LIMIT = 20
 SYNC_REQUEST_LIMIT = 10
 SYNC_NOTE_LIMIT = 20
 SYNC_CHAT_LIMIT = 20
@@ -125,25 +127,38 @@ def build_sync_message(user_id: str) -> dict | None:
     return None  # no PROFILE or an unknown role: get_user_profile logged and counted it
 
 
+def inbox_payloads_for_sync(
+    user_id: str, row_kind: str, limit: int, reading_payload: Callable[[dict], dict],
+    decided_payload: Callable[[dict, dict | None, str | None, RequestState | None], dict], now: str,
+) -> list[dict]:
+    """The newest EMAIL# or MESSAGE# rows of one kind: a row still being read as its reading payload, a decided row with
+    the request it holds (if any), that request's contact name and effective status."""
+    inbox_payloads = []
+    for inbox_row in graph.list_recent_rows(user_id, row_kind, limit):
+        if "state" not in inbox_row:
+            inbox_payloads.append(reading_payload(inbox_row))  # the Reader is on it, or its retry will be
+            continue
+        request_row = graph.get_request(inbox_row["requestId"]) if inbox_row.get("requestId") else None
+        contact_name = contact_name_for(request_row) if request_row else None
+        status = verdict.effective_status(request_row, now) if request_row else None
+        inbox_payloads.append(decided_payload(inbox_row, request_row, contact_name, status))
+    return inbox_payloads
+
+
 def receiver_sync_message(resident: ReceiverProfile) -> dict:
     now = graph.now_timestamp()
     user_id = resident.receiver_user_id
-    emails = []
-    for email_row in graph.list_recent_rows(user_id, graph.EMAIL_ROW_KIND, SYNC_EMAIL_LIMIT):
-        if "state" not in email_row:
-            emails.append(payloads.reading_email_for_receiver(email_row))  # the Reader is on it, or its retry will be
-            continue
-        request_row = graph.get_request(email_row["requestId"]) if email_row.get("requestId") else None
-        contact_name = contact_name_for(request_row) if request_row else None
-        status = verdict.effective_status(request_row, now) if request_row else None
-        emails.append(payloads.email_for_receiver(email_row, request_row, contact_name, status))
+    emails = inbox_payloads_for_sync(user_id, graph.EMAIL_ROW_KIND, SYNC_EMAIL_LIMIT, payloads.reading_email_for_receiver,
+                                     payloads.email_for_receiver, now)
+    messages = inbox_payloads_for_sync(user_id, inbox_rows.MESSAGE_ROW_KIND, SYNC_MESSAGE_LIMIT,
+                                       payloads.reading_message_for_receiver, payloads.message_for_receiver, now)
     notes = [payloads.note_for_receiver(note_row) for note_row in graph.list_recent_rows(user_id, graph.NOTE_ROW_KIND, SYNC_NOTE_LIMIT)]
     case_rows = graph.list_recent_rows(user_id, graph.CASE_ROW_KIND, SYNC_CASE_LIMIT)
     case_cards = [payloads.case_for_receiver(case_row, graph.list_case_replies(graph.case_id_of(case_row))) for case_row in case_rows]
     chat_messages = [chat.chat_message_for_sync(message_row) for message_row in chat.list_recent_messages(user_id, SYNC_CHAT_LIMIT)]
     circle_settings = circle_handlers.read_settings()
     return {"type": PushMessageType.SYNC_STATE, "role": UserRole.RECEIVER, "receiverName": resident.resident_name, "emails": emails,
-            "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages,
+            "messages": messages, "notes": notes, "cases": case_cards, "chatEnabled": chat.is_chat_enabled(), "chat": chat_messages,
             "circle": circle_handlers.circle_entries(circle_settings, resident),
             "contactVerification": circle_handlers.verification_flags(circle_settings),
             "orgPreference": org_preferences.org_preference_for_sync(resident)}
@@ -331,8 +346,8 @@ def handle_emailed_answer_object(bucket_name: str, object_key: str) -> None:
 
 
 def handle_confirm(connection_id: str, resident: ReceiverProfile, body: dict) -> None:
-    """After a No: the email is quarantined and both PWAs hear it (the resident alone, named after their current home, when
-    the office the request was held for is no longer reached: orgs.read_request_contact_row)."""
+    """After a No: the held email or text is quarantined and both PWAs hear it (the resident alone, named after their current
+    home, when the office the request was held for is no longer reached: orgs.read_request_contact_row)."""
     request_id = body.get("requestId")
     if not isinstance(request_id, str):
         channels.reject_action(connection_id, None, ActionOutcome.BAD_MESSAGE)

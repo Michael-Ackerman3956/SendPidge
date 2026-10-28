@@ -63,14 +63,18 @@ CLOUDFRONT_SERVICE = "cloudfront.amazonaws.com"
 TABLE_ROLES = (
     "WebSocketConnectFunctionServiceRole", "RetryFunctionServiceRole", "CaseFollowUpFunctionServiceRole", "CaseInboundFunctionServiceRole",
     "QuestionInboundFunctionServiceRole", "ReaderFunctionServiceRole", "ReleaseFunctionServiceRole", "VerdictFunctionServiceRole",
-    "AskLinkFunctionServiceRole", "DispatchFunctionServiceRole", "ListDispatchFunctionServiceRole",
+    "AskLinkFunctionServiceRole", "DispatchFunctionServiceRole", "ListDispatchFunctionServiceRole", "InboundMessageFunctionServiceRole",
 )
 SOCKET_PUSH_ROLES = tuple(role for role in TABLE_ROLES if role not in (
     "WebSocketConnectFunctionServiceRole", "QuestionInboundFunctionServiceRole", "ListDispatchFunctionServiceRole"))
 # The org functions (synth-for-tests.ts turns orgEnabled on) hold scoped table grants, never grantReadWriteData: not TABLE_ROLES.
 ORG_FUNCTION_ROLES = ("OrgProjectionFunctionServiceRole", "OrgActionsFunctionServiceRole")
-SCHEDULE_WRITING_ROLES = ("RetryFunctionServiceRole", "ReaderFunctionServiceRole", "VerdictFunctionServiceRole")
-MODEL_CALLING_ROLES = ("ReaderFunctionServiceRole", CASE_AGENT_RUNTIME_ROLE, "DispatchFunctionServiceRole")
+SCHEDULE_WRITING_ROLES = (
+    "RetryFunctionServiceRole", "ReaderFunctionServiceRole", "VerdictFunctionServiceRole", "InboundMessageFunctionServiceRole")
+MODEL_CALLING_ROLES = ("ReaderFunctionServiceRole", CASE_AGENT_RUNTIME_ROLE, "DispatchFunctionServiceRole", "InboundMessageFunctionServiceRole")
+# Every SNS topic the stack builds, by construct id; SmsInboundTopic only with smsEnabled (test_stack_messages.py turns it on).
+INBOUND_TOPICS_WITHOUT_SMS = ("WhatsAppInboundTopic", "RcsInboundTopic")
+INBOUND_TOPICS = INBOUND_TOPICS_WITHOUT_SMS + ("SmsInboundTopic",)
 MODEL_RESOURCES = (
     "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5*",  # region *: the US and global profiles route anywhere
     "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-5-5*",
@@ -393,24 +397,28 @@ def test_websocket_stage_is_throttled(synthesized_template):
         WEBSOCKET_THROTTLE_RATE_LIMIT, WEBSOCKET_THROTTLE_BURST_LIMIT)
 
 
-def test_each_inbound_topic_takes_publishes_only_from_this_account(synthesized_template):
-    """WhatsApp publishes through the topic policy; RCS assumes RcsTwoWayRole, so that role's trust policy carries the guard."""
-    topics = resources_of_type(synthesized_template, "AWS::SNS::Topic")
-    topic_policies = resources_of_type(synthesized_template, "AWS::SNS::TopicPolicy").values()
-    roles = resources_of_type(synthesized_template, "AWS::IAM::Role")
-    assert len(topics) == 2
+def assert_each_inbound_topic_takes_publishes_only_from_this_account(template: dict, expected_topics: tuple[str, ...]) -> None:
+    """WhatsApp publishes through the topic policy; RCS and SMS assume their two-way role, so that role's trust policy carries the guard."""
+    topics = resources_of_type(template, "AWS::SNS::Topic")
+    topic_policies = resources_of_type(template, "AWS::SNS::TopicPolicy").values()
+    roles = resources_of_type(template, "AWS::IAM::Role")
+    assert sorted(strip_trailing_logical_id_hash(logical_id) for logical_id in topics) == sorted(expected_topics)
     for topic_logical_id in topics:
         topic_policy_statements = [statement for policy in topic_policies if {"Ref": topic_logical_id} in policy["Properties"]["Topics"]
                                    for statement in policy["Properties"]["PolicyDocument"]["Statement"] if statement["Effect"] == "Allow"]
         publishing_role_trust_statements = [
             trust_statement for role_logical_id, role in roles.items()
             if any(statement_grants(statement, "sns:Publish") and {"Ref": topic_logical_id} in as_list(statement["Resource"])
-                   for statement in collect_role_allow_statements(synthesized_template, role_logical_id))
+                   for statement in collect_role_allow_statements(template, role_logical_id))
             for trust_statement in role["Properties"]["AssumeRolePolicyDocument"]["Statement"]
         ]
         publisher_statements = topic_policy_statements + publishing_role_trust_statements
         assert publisher_statements, f"{topic_logical_id} has no publisher"
         assert all(has_source_account_condition(statement) for statement in publisher_statements), topic_logical_id
+
+
+def test_each_inbound_topic_takes_publishes_only_from_this_account(synthesized_template):
+    assert_each_inbound_topic_takes_publishes_only_from_this_account(synthesized_template, INBOUND_TOPICS_WITHOUT_SMS)  # smsEnabled off
 
 
 def test_verdict_role_reads_only_ask_replies_and_has_no_bedrock(synthesized_template):

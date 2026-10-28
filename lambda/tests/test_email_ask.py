@@ -127,7 +127,7 @@ def test_a_mailed_yes_never_releases_and_a_stranger_cannot_deny(verdict_handler)
     assert status_of(request_id) == str(RequestState.PENDING)
 
 
-def test_the_cross_channel_rule_refuses_a_yes_only_on_the_inbound_channel(aws):  # noqa: F811
+def test_an_email_hold_refuses_a_yes_by_email_and_takes_one_in_app(aws):  # noqa: F811
     request_id = new_request()
     assert graph.get_request(request_id)["inboundChannel"] == "email"  # written at creation, not read from a default
     now = graph.now_timestamp()

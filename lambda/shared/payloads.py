@@ -2,9 +2,10 @@
 
 from dataclasses import dataclass
 
-from shared import graph, reach_points
-from shared.enums import CaseEvent, Channel, Friction, PushMessageType, Relationship, RequestState
+from shared import graph, inbox_rows, reach_points
+from shared.enums import CaseEvent, Channel, Friction, PolicyDecision, PushMessageType, Relationship, RequestState, WarnReason
 from shared.list_enums import ScamListCoverageState
+from shared.messenger_enums import MessageDirection
 
 EMAIL_FIELDS_FOR_PWA = ("senderName", "senderAddress", "subject", "receivedAt", "textBody")
 
@@ -73,6 +74,56 @@ def email_for_receiver(email_row: dict, request_row: dict | None, contact_name: 
 
 def email_state_message(email_row: dict, request_row: dict | None, contact_name: str | None, status: RequestState | None) -> dict:
     return {"type": PushMessageType.EMAIL_STATE, "email": email_for_receiver(email_row, request_row, contact_name, status)}
+
+
+def message_line_for_receiver(message_row: dict) -> dict:
+    """The fields of an inbound MESSAGE# row shown before and after the verdict; messageId is REQUEST#.emailId of its hold."""
+    channel = Channel(message_row["channel"])
+    return {
+        "messageId": inbox_rows.message_item_id(channel, message_row["providerMessageId"]),
+        "channel": str(channel),
+        "direction": str(MessageDirection(message_row["direction"])),
+        "threadKey": message_row["threadKey"],
+        "senderName": message_row["senderName"],  # "" unless the number is a contact's checked one
+        "senderAddress": message_row["senderAddress"],
+        "textBody": message_row["textBody"],
+        "receivedAt": message_row["receivedAt"],
+    }
+
+
+def reading_message_for_receiver(message_row: dict) -> dict:
+    """The text while the Reader is still on it: state None, no body; the message_state push after the policy run replaces it
+    (same messageId)."""
+    return {
+        **message_line_for_receiver(message_row),
+        "textBody": "",
+        "state": None,
+        "warnReason": None,
+        "reasons": [],
+        "quarantined": False,
+        "request": None,
+    }
+
+
+def message_reading_message(message_row: dict) -> dict:
+    return {"type": PushMessageType.MESSAGE_STATE, "message": reading_message_for_receiver(message_row)}
+
+
+def message_for_receiver(message_row: dict, request_row: dict | None, contact_name: str | None, status: RequestState | None) -> dict:
+    """An inbound text once the policy has run (state, warnReason and reasons are on the row); status is the request's
+    effective status."""
+    return {
+        **message_line_for_receiver(message_row),
+        "state": str(PolicyDecision(message_row["state"])),
+        "warnReason": optional_enum_value(WarnReason, message_row["warnReason"]),
+        "reasons": [str(reason) for reason in message_row["reasons"]],
+        "quarantined": bool(message_row["quarantined"]),
+        "request": request_for_receiver(request_row, contact_name, status) if request_row else None,
+    }
+
+
+def message_state_message(message_row: dict, request_row: dict | None, contact_name: str | None, status: RequestState | None) -> dict:
+    return {"type": PushMessageType.MESSAGE_STATE, "message": message_for_receiver(message_row, request_row, contact_name, status)}
 
 
 def card_for_contact(request_row: dict, email_row: dict | None, receiver_name: str, status: RequestState) -> dict:

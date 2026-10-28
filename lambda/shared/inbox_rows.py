@@ -1,5 +1,6 @@
 """DynamoDB access for inbound rows, keyed by (channel, item id): EMAIL#<id> for email, MESSAGE#<id> for a text channel. The
-pipeline claims and decides them; a request finds the row it holds through REQUEST#.inboundChannel and REQUEST#.emailId."""
+pipeline claims and decides them; a request finds the row it holds through REQUEST#.inboundChannel and REQUEST#.emailId. Also
+a conversation's THREAD# row (RECEIVER#<address>/THREAD#<threadKey>)."""
 
 from datetime import datetime, timezone
 
@@ -9,8 +10,9 @@ from shared import graph
 from shared.enums import Channel, PolicyDecision, ReasonCode, WarnReason
 
 MESSAGE_ROW_KIND = "MESSAGE"
-MESSAGE_ROW_CHANNELS = frozenset({Channel.WHATSAPP, Channel.RCS})  # the channels whose inbound rows are MESSAGE#
+MESSAGE_ROW_CHANNELS = frozenset({Channel.WHATSAPP, Channel.RCS, Channel.SMS})  # the channels whose inbound rows are MESSAGE#
 READER_RECLAIM_AFTER_SECONDS = 55  # just under pidge-reader's 60 s Lambda timeout; its first async retry comes a minute after a crash
+THREAD_SORT_KEY_PREFIX = "THREAD#"  # RECEIVER#<address>/THREAD#<threadKey>: one conversation's window
 
 
 def inbound_channel_of(request_row: dict) -> Channel:
@@ -115,6 +117,21 @@ def record_escalation(channel: Channel, item_id: str, escalation_fields: dict) -
         UpdateExpression="SET escalation = :escalation",
         ExpressionAttributeValues={":escalation": graph.decimal_fields(escalation_fields)},
     )
+
+
+def record_last_inbound(receiver_address: str, thread_key: str, inbound_at: str) -> None:
+    """Stamps the thread's newest inbound send time (Meta's 24-h reply window runs from it). A time no newer than the stored
+    one (a redelivery, or a record that arrives late) leaves the row as it is."""
+    try:
+        graph.get_table().update_item(
+            Key={"PK": f"RECEIVER#{receiver_address}", "SK": f"{THREAD_SORT_KEY_PREFIX}{thread_key}"},
+            UpdateExpression="SET lastInboundAt = :inboundAt",
+            ConditionExpression="attribute_not_exists(lastInboundAt) OR lastInboundAt < :inboundAt",
+            ExpressionAttributeValues={":inboundAt": inbound_at},
+        )
+    except ClientError as error:
+        if error.response["Error"]["Code"] != graph.CONDITIONAL_CHECK_FAILED:
+            raise
 
 
 def mark_quarantined(channel: Channel, item_id: str) -> bool:

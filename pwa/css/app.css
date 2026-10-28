@@ -92,7 +92,6 @@ button:disabled { cursor: default; }
   background: var(--teal); color: var(--on-teal); font-size: 16px; font-weight: 800;
 }
 .avatar-initial.is-sms { background: linear-gradient(135deg, #2f855a, #4ade80); color: #052e16; }
-.avatar-initial.is-app { background: linear-gradient(135deg, #3b4252, #6b7280); color: #f2f2f2; }
 .row-flag-mark, .row-verified-mark {
   position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--surface-1);

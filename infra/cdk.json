@@ -3,6 +3,7 @@
   "context": {
     "receiverDomain": "sendpidge.com",
     "mailboxResidentAddress": "grandma@sendpidge.com",
+    "messengerResidentAddress": "grandma@sendpidge.com",
     "readerModel": "haiku-4.5",
     "receiptSender": "pidge@sendpidge.com",
     "pwaDomain": "app.sendpidge.com",
@@ -10,6 +11,9 @@
     "rcsEnabled": false,
     "rcsAgentId": "",
     "rcsAgentArn": "",
+    "smsEnabled": false,
+    "smsOriginationNumber": "",
+    "smsPhoneNumberArn": "",
     "whatsappEnabled": true,
     "whatsappPhoneNumberId": "phone-number-id-8881930ce2b94d3299f402da53e01e86",
     "whatsappPhoneNumberArn": "arn:aws:social-messaging:us-east-1:358148451054:phone-number-id/8881930ce2b94d3299f402da53e01e86",

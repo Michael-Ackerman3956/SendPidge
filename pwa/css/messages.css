@@ -1,0 +1,8 @@
+/* Texts in Grandma's inbox (WhatsApp, RCS; SMS reuses app.css's is-sms rules): channel tag and avatar tint. app.css is at its
+   size limit, so every text rule lives here. */
+.channel-tag.is-whatsapp { background: rgba(37, 211, 102, 0.12); color: #25d366; }
+.channel-tag.is-rcs { background: rgba(167, 139, 250, 0.14); color: #c4b5fd; }
+.avatar-initial.is-whatsapp { background: linear-gradient(135deg, #1fa855, #25d366); color: #052e16; }
+.avatar-initial.is-rcs { background: linear-gradient(135deg, #4c1d95, #7c3aed); color: #f5f3ff; }
+/* A text has no subject, so its body takes the detail's programmatic focus (like .detail-subject). */
+.detail-body:focus { outline: none; }

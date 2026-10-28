@@ -316,7 +316,7 @@ def sender_reasons_or_lookup_failure(
     try:
         return lookup_sender_reasons(store, sender_address, sender_domain, sender_name, contacts)
     except ListLookupFailed as error:
-        logger.error("scam-list lookup failed for %s: %s", sender_address, error)
+        logger.error("scam-list lookup failed for the sender: %s", error)  # no address: it may be a phone number
         return [ReasonCode.LIST_LOOKUP_FAILED]
 
 

@@ -73,11 +73,13 @@ export interface InboundTopics {
   whatsappInboundTopic: Topic;
   rcsInboundTopic: Topic;
   rcsTwoWayRole: Role;
+  smsInboundTopic: Topic | undefined;  // undefined while smsEnabled is off
 }
 
-// Where the contact's answers arrive from the phone channels; pidge-verdict subscribes to both topics.
-export function buildInboundTopics(stack: Stack): InboundTopics {
-  // WhatsApp: the WABA's one event destination (button taps and delivery statuses) is this topic;
+// Where texts and the contact's answers arrive from the phone channels. pidge-verdict subscribes to WhatsApp and RCS (taps,
+// statuses, codes); pidge-inbound subscribes to every topic here (texts into the messenger resident's inbox).
+export function buildInboundTopics(stack: Stack, smsEnabled: boolean): InboundTopics {
+  // WhatsApp: the WABA's one event destination (texts, button taps and delivery statuses) is this topic;
   // End User Messaging Social publishes directly, so the topic policy, not a role, grants it.
   const whatsappInboundTopic = new Topic(stack, "WhatsAppInboundTopic");
   whatsappInboundTopic.addToResourcePolicy(
@@ -90,21 +92,33 @@ export function buildInboundTopics(stack: Stack): InboundTopics {
     }),
   );
 
-  // Two-way RCS: chip taps land on this topic; End User Messaging assumes the role to publish.
+  // Two-way RCS: chip taps and typed texts land on this topic; End User Messaging assumes the role to publish.
   const rcsInboundTopic = new Topic(stack, "RcsInboundTopic");
-  const rcsTwoWayRole = new Role(stack, "RcsTwoWayRole", {
+  const rcsTwoWayRole = buildTwoWayPublishRole(stack, "RcsTwoWayRole", rcsInboundTopic);
+  // Two-way SMS: texts to Pidge's SMS number land on this topic, published the same way as RCS.
+  let smsInboundTopic: Topic | undefined;
+  if (smsEnabled) {
+    smsInboundTopic = new Topic(stack, "SmsInboundTopic");
+    buildTwoWayPublishRole(stack, "SmsTwoWayRole", smsInboundTopic);
+  }
+  return { whatsappInboundTopic, rcsInboundTopic, rcsTwoWayRole, smsInboundTopic };
+}
+
+// The role End User Messaging (sms-voice) assumes, from this account only, to publish two-way records to one topic.
+function buildTwoWayPublishRole(stack: Stack, constructId: string, inboundTopic: Topic): Role {
+  const twoWayRole = new Role(stack, constructId, {
     assumedBy: new ServicePrincipal("sms-voice.amazonaws.com", {
       conditions: { StringEquals: { "aws:SourceAccount": stack.account } },
     }),
   });
-  rcsTwoWayRole.addToPolicy(
+  twoWayRole.addToPolicy(
     new PolicyStatement({
       actions: ["sns:Publish"],
-      resources: [rcsInboundTopic.topicArn],
+      resources: [inboundTopic.topicArn],
       conditions: { StringEquals: { "aws:ResourceAccount": stack.account } },
     }),
   );
-  return { whatsappInboundTopic, rcsInboundTopic, rcsTwoWayRole };
+  return twoWayRole;
 }
 
 // At releaseAt a Yes nobody undid becomes confirmed; with the scheduler off, the next read releases it instead.
@@ -172,8 +186,8 @@ export function buildAskLinkFunction(stack: Stack, settings: StackSettings, shar
   return askLinkFunction.addFunctionUrl({ authType: FunctionUrlAuthType.NONE });
 }
 
-// pidge-verdict: every client action on the socket ($default), every phone-channel answer (both topics) and every reply
-// to the ask by email (S3 asks/).
+// pidge-verdict: every client action on the socket ($default), every phone-channel answer (the WhatsApp and RCS topics) and
+// every reply to the ask by email (S3 asks/).
 export function buildVerdictFunction(stack: Stack, settings: StackSettings, shared: SharedResources, dependencies: VerdictDependencies): Function {
   const verdictFunction = buildPythonFunction(stack, "Verdict", shared.lambdaCode, {
     handler: "pidge_verdict.handler.handle",

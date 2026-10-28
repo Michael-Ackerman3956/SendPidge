@@ -9,7 +9,9 @@ import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { EmailIdentity, Identity } from "aws-cdk-lib/aws-ses";
 import { Construct } from "constructs";
 import { buildCaseAgent, buildChatGuardrail, buildDispatchFunction } from "./case-agent.js";
-import { buildCaseInboundFunction, buildQuestionInboundFunction, buildReaderFunction } from "./inbound-functions.js";
+import {
+  buildCaseInboundFunction, buildInboundMessageFunction, buildQuestionInboundFunction, buildReaderFunction,
+} from "./inbound-functions.js";
 import { buildListDispatch } from "./list-functions.js";
 import { buildEmailStore, buildInboundRouting } from "./mail-ingress.js";
 import { buildOrgFunctions } from "./org-functions.js";
@@ -107,11 +109,14 @@ export class SendPidgeStack extends Stack {
     const { readerFunction, readerDeadLetterQueue } = buildReaderFunction(this, settings, shared, retryFunction, askLinkSecret);
     // The rule set names the Reader's ARN, so the ingress is built after it (construct ids unchanged: no replacement, MX holds).
     const ingressPoint = buildInboundRouting(this, settings, emailStore, readerFunction);
-    const topics = buildInboundTopics(this);
+    const topics = buildInboundTopics(this, settings.smsEnabled);
     const releaseFunction = buildReleaseFunction(this, settings, shared);
     // pidge_call_reminder is call-nudge wave 2 and not written yet, so the function exists only once the nudge is switched on.
     const callReminderFunction = settings.callNudgeEnabled ? buildCallReminderFunction(this, settings, shared) : undefined;
     buildVerdictFunction(this, settings, shared, { topics, releaseFunction, caseFollowUpFunction, callReminderFunction });
+    // pidge-inbound exists only while a messenger resident is set: texts to Pidge's numbers become that resident's inbox rows.
+    const inboundMessage = settings.messengerResidentAddress === ""
+      ? undefined : buildInboundMessageFunction(this, settings, shared, retryFunction, askLinkSecret, topics);
     const askLinkUrl = buildAskLinkFunction(this, settings, shared, askLinkSecret);
     pwaDistribution.addBehavior(ASK_LINK_PATH_PATTERN, new FunctionUrlOrigin(askLinkUrl), {
       allowedMethods: AllowedMethods.ALLOW_ALL,  // the button is a POST
@@ -135,6 +140,16 @@ export class SendPidgeStack extends Stack {
       comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: TreatMissingData.NOT_BREACHING,
     });
+    if (inboundMessage !== undefined) {
+      new Alarm(this, "InboundMessageDeadLetterAlarm", {
+        alarmDescription: "pidge-inbound gave up on a WhatsApp, RCS or SMS record after retries",
+        metric: inboundMessage.inboundMessageDeadLetterQueue.metricApproximateNumberOfMessagesVisible({ period: Duration.minutes(1) }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: TreatMissingData.NOT_BREACHING,
+      });
+    }
     new Alarm(this, "UnknownReceiverAlarm", {
       alarmDescription: "mail or an action named an address with no complete RECEIVER# profile; it was dropped or refused",
       metric: new Metric({

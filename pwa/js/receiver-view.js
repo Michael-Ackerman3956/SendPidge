@@ -1,5 +1,6 @@
-// Grandma's screens (RECEIVER): inbox, email detail, hold overlay and verdict states, driven by sync_state, email_state and request_state.
-// Email fields and contactName are attacker-controlled: rendered only through textContent / createElement.
+// Grandma's screens (RECEIVER): inbox, email or text detail, hold overlay and verdict states, driven by sync_state, email_state,
+// message_state and request_state. A text is held in the same row shape as an email (receiver-payloads.js), keyed by emailId.
+// Email and text fields and contactName are attacker-controlled: rendered only through textContent / createElement.
 import { CLIENT_ACTION, EMAIL_DISPLAY_STATE, REQUEST_STATUS, ROW_KIND } from "./constants.js";
 import { createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { closeHoldOverlay, showHoldOverlay } from "./pidge-overlay.js";
@@ -8,7 +9,8 @@ import {
   hasReleaseTimePassed, showDeniedVerdictOverlay,
 } from "./verdict-view.js";
 import {
-  buildMockFamilyEmails, isValidRequestStateUpdate, keepsDecidedRow, normalizeCallPromise, normalizeEmailPayloadOrReportError, normalizeRepliedVia,
+  buildMockFamilyEmails, isValidRequestStateUpdate, keepsDecidedRow, normalizeCallPromise, normalizeEmailPayloadOrReportError,
+  normalizeMessagePayloadOrReportError, normalizeRepliedVia,
 } from "./receiver-payloads.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
@@ -19,7 +21,8 @@ import { isSplitReadingPane, renderPaneTools, renderReaderBar } from "./reading-
 const ROW_KIND_LABELS = Object.freeze({
   [ROW_KIND.EMAIL]: "Email",
   [ROW_KIND.SMS]: "SMS",
-  [ROW_KIND.APP]: "App",
+  [ROW_KIND.WHATSAPP]: "WhatsApp",
+  [ROW_KIND.RCS]: "RCS",
 });
 
 const MILLISECONDS_PER_MINUTE = 60000;
@@ -86,8 +89,9 @@ function buildInboxRowElement(email) {
   rowBottomLine.append(createElementWithText("span", `channel-tag is-${email.rowKind}`, ROW_KIND_LABELS[email.rowKind]));
   const statusChip = buildRowStatusChipElement(email, emailDisplayState);
   if (statusChip !== null) rowBottomLine.append(statusChip);
-  rowText.append(rowTopLine, createElementWithText("span", "row-subject", email.subject),
-    createElementWithText("span", "row-preview", email.textBody), rowBottomLine);
+  rowText.append(rowTopLine);
+  if (email.subject !== "") rowText.append(createElementWithText("span", "row-subject", email.subject)); // a text has no subject
+  rowText.append(createElementWithText("span", "row-preview", email.textBody), rowBottomLine);
   rowButton.append(buildAvatarElement(email, emailDisplayState), rowText);
   rowButton.addEventListener("click", () => openEmailDetail(email.emailId));
   listItem.append(rowButton);
@@ -117,8 +121,10 @@ function renderInbox() {
 function buildDetailHeaderElement(email) {
   const headerElement = createElementWithText("div", "detail-header");
   const senderBlock = createElementWithText("div", "detail-sender-block");
-  senderBlock.append(createElementWithText("p", "detail-sender-name", email.senderName),
-    createElementWithText("p", "detail-sender-address", email.senderAddress));
+  senderBlock.append(createElementWithText("p", "detail-sender-name", email.senderName));
+  if (email.senderAddress !== email.senderName) { // a text from an unknown number shows the number once
+    senderBlock.append(createElementWithText("p", "detail-sender-address", email.senderAddress));
+  }
   headerElement.append(buildAvatarElement(email, getEmailDisplayState(email)),
     senderBlock, createElementWithText("span", "row-time", formatRelativeReceivedTime(email.receivedAt)));
   return headerElement;
@@ -134,7 +140,7 @@ function showCelebration(email) {
   const existingCelebration = pageElements.detailScreen.querySelector(".celebration");
   if (existingCelebration !== null) existingCelebration.remove();
   pageElements.detailScreen.append(buildCelebrationElement(email.request.contactName, () => {
-    pageElements.detailContent.querySelector(".detail-subject")?.focus();
+    pageElements.detailContent.querySelector(".detail-subject, .detail-body")?.focus();
   }));
 }
 
@@ -163,10 +169,12 @@ function renderEmailDetail(email, shouldCelebrate = false) {
   }
   const scamListCoverageLine = buildScamListCoverageLineElement(email); // shown on a PASS too, which has no banner
   if (scamListCoverageLine !== null) detailChildren.push(scamListCoverageLine);
-  const subjectHeading = createElementWithText("h2", "detail-subject", email.subject);
-  subjectHeading.tabIndex = -1;
+  const subjectHeading = email.subject === "" ? null : createElementWithText("h2", "detail-subject", email.subject);
   const bodyElement = createElementWithText("p", emailDisplayState === EMAIL_DISPLAY_STATE.QUARANTINED ? "detail-body is-muted" : "detail-body", email.textBody);
-  detailChildren.push(subjectHeading, bodyElement);
+  const focusTargetElement = subjectHeading === null ? bodyElement : subjectHeading; // a text has no subject: its body takes focus
+  focusTargetElement.tabIndex = -1;
+  if (subjectHeading !== null) detailChildren.push(subjectHeading);
+  detailChildren.push(bodyElement);
   const linkStrip = buildLinkStripElement(email.links);
   if (linkStrip !== null) detailChildren.push(linkStrip);
   pageElements.detailContent.replaceChildren(...detailChildren);
@@ -178,7 +186,7 @@ function renderEmailDetail(email, shouldCelebrate = false) {
     showDeniedVerdictOverlay({ overlayHostElement: pageElements.detailScreen, email,
       isReporting: reportingRequestIds.has(email.request.requestId), onConfirmTapped: handleUserTappedConfirmReport });
   } else {
-    subjectHeading.focus();
+    focusTargetElement.focus();
   }
 }
 
@@ -189,7 +197,7 @@ function openEmailDetail(emailId) {
   pageElements.inboxScreen.hidden = !isSplit;
   pageElements.detailScreen.hidden = false;
   pageElements.backButton.hidden = isSplit;
-  pageElements.topbarTitle.textContent = isSplit ? "Inbox" : "Email";
+  pageElements.topbarTitle.textContent = isSplit ? "Inbox" : ROW_KIND_LABELS[emailsById.get(emailId).rowKind];
   document.body.classList.toggle("is-reading-email", !isSplit); // the phone's tab bar steps aside for the email and the Pidge sheet
   renderEmailDetail(emailsById.get(emailId));
   renderInbox();
@@ -262,16 +270,18 @@ function rerenderOpenEmailOrReturnToInbox() {
   }
 }
 
-// Replaces every live row with the snapshot (mock rows stay), then reopens the overlay only for the newest pending hold.
-export function applyReceiverSyncState(emails) {
-  if (!Array.isArray(emails)) {
-    console.error("SendPidge: receiver sync_state has no emails array", emails);
+// Replaces every live row with the snapshot's emails and texts (mock rows stay), then reopens the overlay only for the newest
+// pending hold. A snapshot missing either array is not applied: the rows already shown stay, with the failure line.
+export function applyReceiverSyncState(emails, messages) {
+  if (!Array.isArray(emails) || !Array.isArray(messages)) {
+    console.error("SendPidge: receiver sync_state has no emails or no messages array", emails, messages);
     showActionStatusMessage(ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
     return;
   }
   const decidedEmailsBeforeSync = new Map([...emailsById].filter(([emailId, email]) => !mockEmailIds.has(emailId) && email.state !== null));
   [...emailsById.keys()].filter((emailId) => !mockEmailIds.has(emailId)).forEach((emailId) => emailsById.delete(emailId));
-  emails.map(normalizeEmailPayloadOrReportError).filter((email) => email !== null)
+  [...emails.map(normalizeEmailPayloadOrReportError), ...messages.map(normalizeMessagePayloadOrReportError)]
+    .filter((email) => email !== null)
     .forEach((email) => { if (!keepsDecidedRow(decidedEmailsBeforeSync.get(email.emailId), email)) emailsById.set(email.emailId, email); });
   decidedEmailsBeforeSync.forEach((email, emailId) => { if (!emailsById.has(emailId)) emailsById.set(emailId, email); });
   renderInbox();
@@ -284,7 +294,15 @@ export function applyReceiverSyncState(emails) {
 }
 
 export function handleEmailStatePush(email) {
-  const normalizedEmail = normalizeEmailPayloadOrReportError(email);
+  applyInboxRowPush(normalizeEmailPayloadOrReportError(email));
+}
+
+export function handleMessageStatePush(message) {
+  applyInboxRowPush(normalizeMessagePayloadOrReportError(message));
+}
+
+// One pushed row (email or text, null when invalid): a hold awaiting its verdict opens itself; the open row re-renders.
+function applyInboxRowPush(normalizedEmail) {
   if (normalizedEmail === null || keepsDecidedRow(emailsById.get(normalizedEmail.emailId), normalizedEmail)) return;
   releasedByUserEmailIds.delete(normalizedEmail.emailId); // a newer server state replaces the local release
   emailsById.set(normalizedEmail.emailId, normalizedEmail);

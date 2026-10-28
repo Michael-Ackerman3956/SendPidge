@@ -6,8 +6,8 @@ import { completeSignInFromRedirect, hasSignInSession, readSignInConfig, resolve
 import { refreshPushSubscriptionAfterSync, startPushNotifications } from "./push-notifications.js";
 import { ACTION_STATUS_MESSAGE, showActionStatusMessage } from "./action-status.js";
 import {
-  applyReadingPaneLayout, applyReceiverSyncState, handleEmailStatePush, handleReceiverActionRejected, handleReceiverRequestStatePush,
-  hideReceiverView, setUnseenHoldListener, showReceiverView,
+  applyReadingPaneLayout, applyReceiverSyncState, handleEmailStatePush, handleMessageStatePush, handleReceiverActionRejected,
+  handleReceiverRequestStatePush, hideReceiverView, setUnseenHoldListener, showReceiverView,
 } from "./receiver-view.js";
 import {
   applyContactSyncState, handleContactActionRejected, handleContactRequestStatePush, handleVerificationCardPush,
@@ -151,7 +151,7 @@ function handleSyncStatePush(pushMessage) {
       showReceiverNameInRail(pushMessage.receiverName);
       applyCircleSyncState(pushMessage.circle, pushMessage.contactVerification);
       applyOrgPreferenceState(pushMessage.orgPreference);
-      applyReceiverSyncState(pushMessage.emails);
+      applyReceiverSyncState(pushMessage.emails, pushMessage.messages);
       applyPidgeSyncState(pushMessage.notes ?? [], pushMessage.cases ?? []);
       applyChatSyncState(pushMessage.chat, pushMessage.chatEnabled);
       handleCircleSyncDuringOnboarding();
@@ -217,6 +217,7 @@ function scheduleOrgDashboardResync() {
 // Which role each role-specific push belongs to; a push for the other role (or before sync_state) is ignored with a warning.
 const PUSH_MESSAGE_ROLES = Object.freeze({
   [PUSH_MESSAGE_TYPE.EMAIL_STATE]: [USER_ROLE.RECEIVER],
+  [PUSH_MESSAGE_TYPE.MESSAGE_STATE]: [USER_ROLE.RECEIVER],
   [PUSH_MESSAGE_TYPE.VERIFICATION_CARD]: [USER_ROLE.CONTACT, USER_ROLE.ORG_ADMIN],
   [PUSH_MESSAGE_TYPE.REQUEST_STATE]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT, USER_ROLE.ORG_ADMIN],
   [PUSH_MESSAGE_TYPE.ACTION_REJECTED]: [USER_ROLE.RECEIVER, USER_ROLE.CONTACT, USER_ROLE.ORG_ADMIN],
@@ -248,6 +249,10 @@ function handlePushMessage(pushMessage) {
     case PUSH_MESSAGE_TYPE.EMAIL_STATE:
       if (activeReceiverTab !== RECEIVER_TAB.INBOX || isOnboardingOpen) showReceiverTab(RECEIVER_TAB.INBOX); // a new hold must be seen
       handleEmailStatePush(pushMessage.email);
+      break;
+    case PUSH_MESSAGE_TYPE.MESSAGE_STATE:
+      if (activeReceiverTab !== RECEIVER_TAB.INBOX || isOnboardingOpen) showReceiverTab(RECEIVER_TAB.INBOX); // a new hold must be seen
+      handleMessageStatePush(pushMessage.message);
       break;
     case PUSH_MESSAGE_TYPE.VERIFICATION_CARD:
       handleVerificationCardPush(pushMessage.request);

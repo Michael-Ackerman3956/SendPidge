@@ -1,5 +1,6 @@
 """A contact's Yes / No / Undo / Reverse and the receiver's Confirm. No beats Yes; the first valid tap wins; a Yes never counts
-on the channel the suspicious message arrived on (today: email). Never reads the email."""
+by email, nor on the channel the suspicious message arrived on or its number sibling (SMS and RCS share one number). Never
+reads the message."""
 
 import hmac
 import logging
@@ -144,6 +145,16 @@ def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool
     return any(hmac.compare_digest(address, sender.value) for address in askable_addresses)
 
 
+def is_yes_refused_on(answer_channel: Channel, inbound_channel: Channel) -> bool:
+    """A Yes by email (the mailbox is the channel scammers hijack), or on the inbound channel's reach channel (an SMS hold
+    refuses an RCS Yes and the reverse; a WhatsApp hold a WhatsApp Yes). An in-app Yes is never refused here."""
+    if answer_channel is Channel.INAPP:
+        return False
+    if answer_channel is Channel.EMAIL:
+        return True
+    return reach_points.reach_channel_of(answer_channel) is reach_points.reach_channel_of(inbound_channel)
+
+
 def record_answer(
     request_id: str, answer: VerdictAnswer, sender: SenderIdentity, inbound_message_id: str, now: str
 ) -> ActionResult:
@@ -155,8 +166,8 @@ def record_answer(
     if not is_expected_sender(contact_row, sender):
         logger.warning("answer on %s from an unexpected %s sender", request_id, sender.channel)
         return ActionResult(ActionOutcome.WRONG_SENDER, request_row)
-    if answer is VerdictAnswer.YES and sender.channel is inbox_rows.inbound_channel_of(request_row):
-        logger.warning("a Yes on %s by %s, the channel the message came in on, is refused", request_id, sender.channel)
+    if answer is VerdictAnswer.YES and is_yes_refused_on(sender.channel, inbox_rows.inbound_channel_of(request_row)):
+        logger.warning("a Yes on %s by %s is refused (email, or the inbound channel's reach)", request_id, sender.channel)
         return ActionResult(ActionOutcome.WRONG_CHANNEL, request_row, contact_row)
     if not graph.write_answer(request_id, build_answer_update(answer, sender, inbound_message_id, now)):
         logger.info("answer %s on %s not applied (duplicate, late, or wrong state)", answer, request_id)
@@ -219,7 +230,8 @@ def send_receipt(ses_client, sender_address: str, contact_row: dict, status: Req
 def confirm_quarantine(
     request_id: str, confirming_user_id: str, receiver_user_id: str, receiver_address: str, s3_client, bucket_name: str
 ) -> ActionResult:
-    """Only the receiver, only after a No: tag the raw email, mark it quarantined, list the sender's full address."""
+    """Only the receiver, only after a No: tag the raw email in S3 (an email hold only; a text has no stored object), mark the
+    held row quarantined, list the sender's full address or number."""
     if not hmac.compare_digest(confirming_user_id, receiver_user_id):
         return ActionResult(ActionOutcome.NOT_ALLOWED)
     request_row = graph.get_request(request_id)
@@ -230,8 +242,10 @@ def confirm_quarantine(
     if request_row["status"] != RequestState.DENIED:
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row)
     email_row = inbox_rows.require_held_row(request_row)
-    s3_client.put_object_tagging(Bucket=bucket_name, Key=email_row["s3Key"], Tagging={"TagSet": [QUARANTINE_TAG]})
-    if not inbox_rows.mark_quarantined(inbox_rows.inbound_channel_of(request_row), request_row["emailId"]):
+    inbound_channel = inbox_rows.inbound_channel_of(request_row)
+    if inbound_channel is Channel.EMAIL:
+        s3_client.put_object_tagging(Bucket=bucket_name, Key=email_row["s3Key"], Tagging={"TagSet": [QUARANTINE_TAG]})
+    if not inbox_rows.mark_quarantined(inbound_channel, request_row["emailId"]):
         return ActionResult(ActionOutcome.NOT_APPLIED, request_row, email_row=email_row)
     graph.write_listed_address(email_row["senderAddress"], "Reported after the real contact said they did not send it", request_id)
     return ActionResult(ActionOutcome.RECORDED, request_row, email_row=email_row, status=RequestState.DENIED)
