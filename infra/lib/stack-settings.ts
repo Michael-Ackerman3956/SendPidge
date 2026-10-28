@@ -35,6 +35,18 @@ export interface StackSettings {
   caseAgentRuntimeMode: string;
   caseAgentModel: string;
   retrySchedulerEnabled: boolean;
+  // The keypad call to the contact on the re-ask (Amazon Connect); on needs every voice* value below and retrySchedulerEnabled.
+  voiceEnabled: boolean;
+  // The Connect instance that places the call; its "pidge-ask" flow invokes pidge-verdict with the keypad answer.
+  voiceInstanceArn: string;
+  // The "pidge-ask" contact flow on that instance: speaks the ask and reads the keypad digit.
+  voiceContactFlowId: string;
+  // The instance's claimed number in E.164: the caller the contact sees.
+  voiceSourcePhoneNumber: string;
+  // How many calls the whole stack may place per hour (CALLRATE#stack); a re-ask past the cap goes without a call.
+  voiceCallsPerHour: number;
+  // A one-time schedule hangs up a call still open after this many seconds (30-600).
+  voiceCallMaxSeconds: number;
   reAskDelaySeconds: number;
   bankFollowUpEnabled: boolean;
   bankFollowUpDelaySeconds: number;
@@ -65,6 +77,10 @@ const COGNITO_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const COGNITO_DOMAIN_PREFIX_RESERVED_WORDS = ["aws", "amazon", "cognito"];
 // lambda/shared/org_ids.py ORG_ID_PATTERN (fullmatch).
 const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
+// lambda/shared/voice_ask.py INSTANCE_ARN_PATTERN (fullmatch).
+const CONNECT_INSTANCE_ARN_PATTERN = /^arn:aws:connect:[a-z0-9-]+:\d{12}:instance\/[0-9a-f-]{36}$/;
+const MINIMUM_VOICE_CALL_MAX_SECONDS = 30;
+const MAXIMUM_VOICE_CALL_MAX_SECONDS = 600;
 const E164_PHONE_NUMBER_PATTERN = /^\+[1-9][0-9]{1,14}$/;
 
 export function readStackSettings(stack: Stack): StackSettings {
@@ -108,6 +124,7 @@ export function readStackSettings(stack: Stack): StackSettings {
   if (orgEnabled && !releaseSchedulerEnabled) {
     throw new Error("orgEnabled needs releaseSchedulerEnabled: without the release timer a confirmed answer never reaches the stream the org projection reads");
   }
+  const retrySchedulerEnabled = stack.node.getContext("retrySchedulerEnabled") === true;
   return {
     receiverDomain,
     mailboxResidentAddress,
@@ -135,7 +152,8 @@ export function readStackSettings(stack: Stack): StackSettings {
     releaseSchedulerEnabled,
     caseAgentRuntimeMode: stack.node.getContext("caseAgentRuntime"),
     caseAgentModel: stack.node.getContext("caseAgentModel"),
-    retrySchedulerEnabled: stack.node.getContext("retrySchedulerEnabled") === true,
+    retrySchedulerEnabled,
+    ...readVoiceSettings(stack, retrySchedulerEnabled),
     reAskDelaySeconds: Number(stack.node.getContext("reAskDelaySeconds")),
     bankFollowUpEnabled: stack.node.getContext("bankFollowUpEnabled") === true,
     bankFollowUpDelaySeconds: Number(stack.node.getContext("bankFollowUpDelaySeconds")),
@@ -205,6 +223,34 @@ function readSmsSettings(
     throw new Error("smsEnabled needs smsOriginationNumber (E.164), smsPhoneNumberArn and messengerResidentAddress");
   }
   return { smsEnabled, smsOriginationNumber, smsPhoneNumberArn };
+}
+
+type VoiceSettings = Pick<
+  StackSettings,
+  "voiceEnabled" | "voiceInstanceArn" | "voiceContactFlowId" | "voiceSourcePhoneNumber" | "voiceCallsPerHour" | "voiceCallMaxSeconds"
+>;
+
+// The keypad call settings; absent text reads as "" and an absent number as NaN. Throws when voiceEnabled is on without a Connect
+// instance ARN, a flow id, an E.164 caller number, a whole hourly cap above 0, a whole call limit of 30-600 s, or the retry
+// scheduler (pidge-retry places the call on the re-ask and hangs it up from a schedule).
+function readVoiceSettings(stack: Stack, retrySchedulerEnabled: boolean): VoiceSettings {
+  const voiceEnabled = stack.node.tryGetContext("voiceEnabled") === true;
+  const voiceInstanceArn = readOptionalTextContext(stack, "voiceInstanceArn");
+  const voiceContactFlowId = readOptionalTextContext(stack, "voiceContactFlowId");
+  const voiceSourcePhoneNumber = readOptionalTextContext(stack, "voiceSourcePhoneNumber");
+  const voiceCallsPerHour = Number(stack.node.tryGetContext("voiceCallsPerHour"));
+  const voiceCallMaxSeconds = Number(stack.node.tryGetContext("voiceCallMaxSeconds"));
+  const isVoiceConfigurationComplete = CONNECT_INSTANCE_ARN_PATTERN.test(voiceInstanceArn)
+    && voiceContactFlowId !== ""
+    && E164_PHONE_NUMBER_PATTERN.test(voiceSourcePhoneNumber)
+    && Number.isInteger(voiceCallsPerHour) && voiceCallsPerHour > 0
+    && Number.isInteger(voiceCallMaxSeconds)
+    && voiceCallMaxSeconds >= MINIMUM_VOICE_CALL_MAX_SECONDS && voiceCallMaxSeconds <= MAXIMUM_VOICE_CALL_MAX_SECONDS
+    && retrySchedulerEnabled;
+  if (voiceEnabled && !isVoiceConfigurationComplete) {
+    throw new Error("voiceEnabled needs voiceInstanceArn (a Connect instance ARN), voiceContactFlowId, voiceSourcePhoneNumber (E.164), voiceCallsPerHour > 0, voiceCallMaxSeconds 30-600 and retrySchedulerEnabled");
+  }
+  return { voiceEnabled, voiceInstanceArn, voiceContactFlowId, voiceSourcePhoneNumber, voiceCallsPerHour, voiceCallMaxSeconds };
 }
 
 // An optional text context key: absent reads as "" (the feature it configures then reports itself off), never a guess.

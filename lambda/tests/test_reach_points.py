@@ -121,6 +121,14 @@ def test_a_malformed_point_raises(broken_point):
         reach_points.reach_points_of({**LIST_ROW, "contactReachPoints": [broken_point]})
 
 
+def test_number_siblings_reach_through_rcs():
+    assert [reach_points.reach_channel_of(channel) for channel in (Channel.SMS, Channel.VOICE)] == [Channel.RCS, Channel.RCS]
+    for channel in (Channel.WHATSAPP, Channel.RCS, Channel.EMAIL):
+        assert reach_points.reach_channel_of(channel) is channel
+    with pytest.raises(ValueError):
+        reach_points.reach_channel_of(Channel.INAPP)
+
+
 def test_only_the_reader_and_the_seed_script_name_the_old_fields():
     allowed_files = {LAMBDA_SOURCE_DIRECTORY / "shared" / "reach_points.py", REPOSITORY_ROOT / "scripts" / "seed_graph.py"}
     source_files = [path for directory in ("lambda", "scripts", "agent") for path in (REPOSITORY_ROOT / directory).rglob("*.py")]

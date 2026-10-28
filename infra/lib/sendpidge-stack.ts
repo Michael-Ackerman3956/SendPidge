@@ -38,6 +38,9 @@ const RECEIVER_MISMATCH_REASON = "receiver_mismatch";
 // lambda/shared/sanitize.py SUMMARY_FALLBACK_METRIC_NAME and AGENT_OUTPUT_REFUSED_METRIC_NAME (the alarm reads the dimensionless count).
 const SUMMARY_FALLBACK_METRIC_NAME = "SummaryFallback";
 const AGENT_OUTPUT_REFUSED_METRIC_NAME = "AgentOutputRefused";
+// lambda/shared/voice_ask.py VOICE_ASK_FAILED_METRIC_NAME and lambda/pidge_verdict/voice_answers.py VOICE_ANSWER_FAILED_METRIC_NAME.
+const VOICE_ASK_FAILED_METRIC_NAME = "VoiceAskFailed";
+const VOICE_ANSWER_FAILED_METRIC_NAME = "VoiceAnswerFailed";
 
 // CDK stack: the declaration of every AWS resource SendPidge deploys (`cdk deploy` turns this into CloudFormation).
 // The whole SendPidge deployment: table → email store → the Lambdas → the Mail Manager ingress (it names the Reader) → the case
@@ -114,7 +117,7 @@ export class SendPidgeStack extends Stack {
     const releaseFunction = buildReleaseFunction(this, settings, shared);
     // pidge_call_reminder is call-nudge wave 2 and not written yet, so the function exists only once the nudge is switched on.
     const callReminderFunction = settings.callNudgeEnabled ? buildCallReminderFunction(this, settings, shared) : undefined;
-    buildVerdictFunction(this, settings, shared, { topics, releaseFunction, caseFollowUpFunction, callReminderFunction });
+    const verdictFunction = buildVerdictFunction(this, settings, shared, { topics, releaseFunction, caseFollowUpFunction, callReminderFunction });
     // pidge-inbound exists only while a messenger resident is set: texts to Pidge's numbers become that resident's inbox rows.
     const inboundMessage = settings.messengerResidentAddress === ""
       ? undefined : buildInboundMessageFunction(this, settings, shared, retryFunction, askLinkSecret, topics);
@@ -193,6 +196,30 @@ export class SendPidgeStack extends Stack {
       comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: TreatMissingData.NOT_BREACHING,
     });
+    if (settings.voiceEnabled) {
+      new Alarm(this, "VoiceAskFailedAlarm", {
+        alarmDescription: "a re-ask call was not placed (refused prompt, hang-up booking or StartOutboundVoiceContact failed) or a hang-up failed",
+        metric: new Metric({
+          namespace: LAMBDA_METRIC_NAMESPACE, metricName: VOICE_ASK_FAILED_METRIC_NAME, statistic: Stats.SUM, period: Duration.minutes(5),
+        }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: TreatMissingData.NOT_BREACHING,
+      });
+      new Alarm(this, "VoiceAnswerFailedAlarm", {
+        alarmDescription: "pidge-verdict raised on a Connect flow event; the keypad answer was not recorded",
+        metric: new Metric({
+          namespace: LAMBDA_METRIC_NAMESPACE, metricName: VOICE_ANSWER_FAILED_METRIC_NAME, statistic: Stats.SUM, period: Duration.minutes(5),
+        }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: TreatMissingData.NOT_BREACHING,
+      });
+      // The founder pastes this into the "pidge-ask" flow's Lambda block (Seoul).
+      new CfnOutput(this, "VerdictFunctionArn", { value: verdictFunction.functionArn });
+    }
 
     new CfnOutput(this, "EmailBucketName", { value: emailBucket.bucketName });
     new CfnOutput(this, "TableName", { value: table.tableName });

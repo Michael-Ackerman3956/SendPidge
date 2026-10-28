@@ -13,6 +13,7 @@ const FAKE_PERSONAL_CONTEXT: Record<string, unknown> = {
   cognitoDomainPrefix: "sendpidge-test",  // passkey sign-in on, so the Cognito resources are synthesised
   orgEnabled: true,  // the org projection, OrgActions route and canary are synthesised
   orgId: "test-home",
+  voiceEnabled: true,  // the call grants, invoke permission and alarms are synthesised
 };
 
 const outputDirectory = process.argv[2];

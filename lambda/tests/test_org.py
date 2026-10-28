@@ -110,6 +110,7 @@ def run_release_retries_and_confirm(handler, monkeypatch, caplog, request_ids: t
     the third. Returns the retry timers booked and, per shared.orgs log line, the request ids it names."""
     released_id, timed_out_id, confirmed_id = request_ids
     monkeypatch.setenv("RE_ASK_DELAY_SECONDS", "600")
+    monkeypatch.setenv("VOICE_ENABLED", "false")
     release_handler = importlib.reload(importlib.import_module("pidge_release.handler"))
     retry_handler = importlib.reload(importlib.import_module("pidge_retry.handler"))
     scheduled: list[tuple[str, dict]] = []

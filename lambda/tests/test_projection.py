@@ -107,6 +107,7 @@ def answer(request_id: str, verdict_answer: VerdictAnswer, message_id: str, now:
 def time_out(request_id: str, monkeypatch) -> dict:
     """pidge-retry's second timer marks the request timeout; returns the MODIFY record."""
     monkeypatch.setenv("RE_ASK_DELAY_SECONDS", "600")
+    monkeypatch.setenv("VOICE_ENABLED", "false")
     retry_handler = importlib.reload(importlib.import_module("pidge_retry.handler"))
     old_row = read_stored_row(request_key(request_id))
     retry_handler.handle({"requestId": request_id, "attempt": 2}, None)

@@ -1,7 +1,8 @@
 """WebSocket $default: sync (an org admin's in org_admin_handlers), the contact's Yes / No / Undo / Reverse, the receiver's
 Confirm, case actions and questions to Pidge, a browser's Web Push subscription, the receiver's Add-someone form and demo
 code reply (circle_handlers), the receiver's home visibility and office row (org_preference_handlers); SNS: phone-channel
-taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's reply to the ask by email.
+taps and a pending contact's code typed on WhatsApp; S3 asks/: a contact's reply to the ask by email; Amazon Connect:
+Jimin's keypad answer on Pidge's call (voice_answers).
 
 The user comes from the connection row, never from the message body; their role and resident (or org) come from their own
 USER#<id>/PROFILE row, and an answer's resident from the REQUEST# row's receiverEmail.
@@ -16,7 +17,7 @@ from urllib.parse import unquote_plus
 
 import boto3
 
-from pidge_verdict import circle_handlers, org_admin_handlers, org_preference_handlers
+from pidge_verdict import circle_handlers, org_admin_handlers, org_preference_handlers, voice_answers
 from shared import (
     cases, channels, chat, email_ask, graph, inbox_rows, org_preferences, orgs, payloads, profiles, push_subscriptions, rcs, schedules,
     verdict, whatsapp,
@@ -58,6 +59,8 @@ ses_client = boto3.client("sesv2")
 
 
 def handle(event, context):
+    if voice_answers.is_connect_flow_event(event):
+        return voice_answers.handle_flow_event(event, announce_recorded_answer)
     if "Records" in event:
         if event["Records"] and "s3" in event["Records"][0]:
             handle_emailed_answer_records(event["Records"])

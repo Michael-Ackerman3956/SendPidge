@@ -149,6 +149,7 @@ export const CHANNEL = Object.freeze({
   INAPP: "inapp",
   EMAIL: "email",
   SMS: "sms",
+  VOICE: "voice",
 });
 
 // Whether a MESSAGE# row came in or went out (message.direction). Mirrors MessageDirection in lambda/shared/messenger_enums.py.

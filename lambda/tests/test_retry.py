@@ -14,6 +14,7 @@ from tests.test_verdict import JIMIN, RECEIVER_ADDRESS, RECEIVER_USER_ID, aws, a
 def retry_handler(aws, monkeypatch):  # noqa: F811
     seed_resident(RECEIVER_ADDRESS, RECEIVER_USER_ID, "Grandma")
     monkeypatch.setenv("RE_ASK_DELAY_SECONDS", "600")
+    monkeypatch.setenv("VOICE_ENABLED", "false")
     monkeypatch.setenv("WEBSOCKET_ENDPOINT", "https://example.com")
     handler = importlib.import_module("pidge_retry.handler")
     importlib.reload(handler)

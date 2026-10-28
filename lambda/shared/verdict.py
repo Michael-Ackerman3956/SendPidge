@@ -1,6 +1,7 @@
 """A contact's Yes / No / Undo / Reverse and the receiver's Confirm. No beats Yes; the first valid tap wins; a Yes never counts
-by email, nor on the channel the suspicious message arrived on or its number sibling (SMS and RCS share one number). Never
-reads the message."""
+by email, nor on the channel the suspicious message arrived on or its number sibling (SMS, RCS and Pidge's call share one
+number: a voice Yes is refused on SMS and RCS holds and counts on email and WhatsApp holds; a voice No counts on every hold).
+Never reads the message."""
 
 import hmac
 import logging
@@ -35,7 +36,7 @@ class SenderIdentity:
     """Who a reply came from, as the channel itself reports it (never from the message body)."""
 
     channel: Channel
-    value: str  # PWA user id, WhatsApp number or RCS number
+    value: str  # PWA user id, email address, or the WhatsApp, RCS or called number
 
 
 @dataclass(frozen=True)
@@ -129,8 +130,9 @@ def is_office_of_residents_own_org(contact_row: dict, org_user_id: str) -> bool:
 
 def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool:
     """The contact's own PWA user (for an org contact, an admin of that org, and only while the org is the resident's own: a
-    former home's row is refused; org-<orgId> itself never answers), or one of the addresses Pidge may ask on that channel,
-    exactly; an email address compares case-insensitively."""
+    former home's row is refused; org-<orgId> itself never answers), or one of the addresses Pidge may ask on that channel's
+    reach channel (an SMS or voice answer must come from a checked RCS number), exactly; an email address compares
+    case-insensitively."""
     if contact_row is None:
         return False
     if sender.channel is Channel.INAPP:
@@ -139,7 +141,8 @@ def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool
             return (is_office_of_residents_own_org(contact_row, contact_user_id)
                     and orgs.is_admin_of_org_user(sender.value, contact_user_id))
         return hmac.compare_digest(contact_user_id, sender.value)
-    askable_addresses = reach_points.askable_addresses(reach_points.reach_points_of(contact_row), sender.channel)
+    askable_addresses = reach_points.askable_addresses(
+        reach_points.reach_points_of(contact_row), reach_points.reach_channel_of(sender.channel))
     if sender.channel is Channel.EMAIL:
         return any(hmac.compare_digest(address.casefold(), sender.value.casefold()) for address in askable_addresses)
     return any(hmac.compare_digest(address, sender.value) for address in askable_addresses)
@@ -147,7 +150,8 @@ def is_expected_sender(contact_row: dict | None, sender: SenderIdentity) -> bool
 
 def is_yes_refused_on(answer_channel: Channel, inbound_channel: Channel) -> bool:
     """A Yes by email (the mailbox is the channel scammers hijack), or on the inbound channel's reach channel (an SMS hold
-    refuses an RCS Yes and the reverse; a WhatsApp hold a WhatsApp Yes). An in-app Yes is never refused here."""
+    refuses an RCS or voice Yes and an RCS hold the same; a WhatsApp hold a WhatsApp Yes; a voice Yes counts on email and
+    WhatsApp holds). An in-app Yes is never refused here."""
     if answer_channel is Channel.INAPP:
         return False
     if answer_channel is Channel.EMAIL:

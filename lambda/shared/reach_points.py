@@ -101,9 +101,10 @@ def stored_items_by_point(contact_row: dict) -> dict[tuple[Channel, str], dict]:
 
 
 def reach_channel_of(channel: Channel) -> Channel:
-    """The channel whose points stand for this one: an SMS number is the contact's RCS point (one E.164 serves both), every
-    other phone channel and email is itself. INAPP has no point (the app is reached through the PWA token): ValueError."""
-    if channel is Channel.SMS:
+    """The channel whose points stand for this one: an SMS number and Pidge's call (VOICE) use the contact's RCS point (one
+    E.164 serves all three); RCS, WhatsApp and email are themselves. INAPP has no point (the app is reached through the PWA
+    token): ValueError."""
+    if channel in (Channel.SMS, Channel.VOICE):
         return Channel.RCS
     if channel is Channel.INAPP:
         raise ValueError("the app has no reach point")

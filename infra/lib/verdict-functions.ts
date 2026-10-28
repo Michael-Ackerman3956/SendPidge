@@ -35,6 +35,7 @@ export function buildRetryFunction(stack: Stack, settings: StackSettings, shared
       ASK_LINK_BASE_URL: `https://${settings.pwaDomain}`,
       ASK_LINK_SECRET_NAME: askLinkSecret.secretName,
       PIDGE_IMAGE_URL: `https://${settings.pwaDomain}/assets/pidge-icon.png`,
+      ...buildRetryVoiceEnvironment(settings),
     },
   });
   shared.table.grantReadWriteData(retryFunction);
@@ -46,7 +47,38 @@ export function buildRetryFunction(stack: Stack, settings: StackSettings, shared
   retryFunction.grantInvoke(shared.schedulerRole);
   grantWhatsAppSendIfConfigured(retryFunction, settings.whatsappPhoneNumberArn);
   grantRcsSendIfConfigured(retryFunction, settings.rcsAgentArn);
+  if (settings.voiceEnabled) {
+    // The re-ask call and its scheduled hang-up, on that one instance's contacts only (lambda/shared/voice_ask.py).
+    retryFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["connect:StartOutboundVoiceContact", "connect:StopContact"],
+        resources: [`${settings.voiceInstanceArn}/contact/*`],
+      }),
+    );
+  }
   return retryFunction;
+}
+
+// pidge-retry's call settings (lambda/shared/voice_ask.py): the real values with voiceEnabled, every one "" while it is off.
+function buildRetryVoiceEnvironment(settings: StackSettings): Record<string, string> {
+  if (!settings.voiceEnabled) {
+    return {
+      VOICE_ENABLED: flagEnvironmentValue(false),
+      VOICE_INSTANCE_ARN: "",
+      VOICE_CONTACT_FLOW_ID: "",
+      VOICE_SOURCE_PHONE_NUMBER: "",
+      VOICE_CALLS_PER_HOUR: "",
+      VOICE_CALL_MAX_SECONDS: "",
+    };
+  }
+  return {
+    VOICE_ENABLED: flagEnvironmentValue(true),
+    VOICE_INSTANCE_ARN: settings.voiceInstanceArn,
+    VOICE_CONTACT_FLOW_ID: settings.voiceContactFlowId,
+    VOICE_SOURCE_PHONE_NUMBER: settings.voiceSourcePhoneNumber,
+    VOICE_CALLS_PER_HOUR: String(settings.voiceCallsPerHour),
+    VOICE_CALL_MAX_SECONDS: String(settings.voiceCallMaxSeconds),
+  };
 }
 
 // The one reminder to the SIMULATED bank, fired by a schedule booked on Send to my bank.
@@ -226,6 +258,9 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
       CALL_REMINDER_TODAY_DELAY_SECONDS: String(settings.callReminderTodayDelaySeconds),
       CALL_REMINDER_TOMORROW_DELAY_SECONDS: String(settings.callReminderTomorrowDelaySeconds),
       ...(dependencies.callReminderFunction ? { CALL_REMINDER_FUNCTION_ARN: dependencies.callReminderFunction.functionArn } : {}),
+      // The keypad answer's flow event must name this instance (lambda/pidge_verdict/voice_answers.py); "" while voice is off.
+      VOICE_ENABLED: flagEnvironmentValue(settings.voiceEnabled),
+      VOICE_INSTANCE_ARN: settings.voiceEnabled ? settings.voiceInstanceArn : "",
     },
   });
   shared.table.grantReadWriteData(verdictFunction);
@@ -247,5 +282,13 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
   });
   dependencies.topics.rcsInboundTopic.addSubscription(new LambdaSubscription(verdictFunction));
   dependencies.topics.whatsappInboundTopic.addSubscription(new LambdaSubscription(verdictFunction));
+  if (settings.voiceEnabled) {
+    // The Seoul flow "pidge-ask" invokes this us-east-1 function by ARN (cross-Region, D2); only from our instance and account.
+    verdictFunction.addPermission("ConnectFlowInvoke", {
+      principal: new ServicePrincipal("connect.amazonaws.com"),
+      sourceArn: settings.voiceInstanceArn,
+      sourceAccount: stack.account,
+    });
+  }
   return verdictFunction;
 }

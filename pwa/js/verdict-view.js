@@ -11,6 +11,7 @@ const ANSWER_CHANNEL_LABELS = Object.freeze({
   [CHANNEL.WHATSAPP]: "on WhatsApp",
   [CHANNEL.RCS]: "by RCS",
   [CHANNEL.EMAIL]: "by email",
+  [CHANNEL.VOICE]: "by phone",
 });
 
 // A confirmed_pending whose releaseAt has passed reads as confirmed (the server releases it on its next read too).

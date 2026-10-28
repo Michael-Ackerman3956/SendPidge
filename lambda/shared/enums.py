@@ -192,6 +192,9 @@ class Channel(StrEnum):
     INAPP = "inapp"
     EMAIL = "email"  # the ask goes out through SES; only a No may come back this way (verdict.record_answer)
     SMS = "sms"  # inbound only (pidge-inbound), never an ask channel; its number is the contact's RCS point (reach_channel_of)
+    # Pidge's outbound call (shared/voice_ask.py): an ask and answer channel only, never inbound and never a reach point; its
+    # number is the contact's RCS point (reach_channel_of).
+    VOICE = "voice"
 
 
 class AskLinkOutcome(StrEnum):

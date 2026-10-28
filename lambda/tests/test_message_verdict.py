@@ -28,11 +28,13 @@ SENDER_ON = {
     Channel.WHATSAPP: verdict.SenderIdentity(Channel.WHATSAPP, JIMIN_NUMBER),
     Channel.RCS: verdict.SenderIdentity(Channel.RCS, JIMIN_NUMBER),
     Channel.EMAIL: verdict.SenderIdentity(Channel.EMAIL, JIMIN_EMAIL),
+    Channel.VOICE: verdict.SenderIdentity(Channel.VOICE, JIMIN_NUMBER),  # Connect's CustomerEndpoint on Pidge's call
 }
 MESSAGE_PAYLOAD_FIELDS = {"messageId", "channel", "direction", "threadKey", "senderName", "senderAddress", "textBody", "receivedAt",
                           "state", "warnReason", "reasons", "quarantined", "request"}
 RECORDED, REFUSED = ActionOutcome.RECORDED, ActionOutcome.WRONG_CHANNEL
-# R3: a Yes is refused by email, and on the inbound channel's reach channel (SMS and RCS share one number); in-app always counts.
+# R3: a Yes is refused by email, and on the inbound channel's reach channel (SMS, RCS and Pidge's call share one number); in-app
+# always counts. D9 R1(b): a voice Yes counts on email and WhatsApp holds and is refused on SMS and RCS holds.
 YES_GOLDENS = [
     (Channel.EMAIL, Channel.INAPP, RECORDED), (Channel.EMAIL, Channel.WHATSAPP, RECORDED),
     (Channel.EMAIL, Channel.RCS, RECORDED), (Channel.EMAIL, Channel.EMAIL, REFUSED),
@@ -42,6 +44,8 @@ YES_GOLDENS = [
     (Channel.WHATSAPP, Channel.RCS, RECORDED), (Channel.WHATSAPP, Channel.EMAIL, REFUSED),
     (Channel.RCS, Channel.INAPP, RECORDED), (Channel.RCS, Channel.WHATSAPP, RECORDED),
     (Channel.RCS, Channel.RCS, REFUSED), (Channel.RCS, Channel.EMAIL, REFUSED),
+    (Channel.EMAIL, Channel.VOICE, RECORDED), (Channel.SMS, Channel.VOICE, REFUSED),
+    (Channel.WHATSAPP, Channel.VOICE, RECORDED), (Channel.RCS, Channel.VOICE, REFUSED),
 ]
 
 
@@ -231,3 +235,24 @@ def test_send_to_lists_only_askable_addresses(verdict_handler, monkeypatch):  # 
     monkeypatch.setenv("SMS_ENABLED", "true")
     assert synced_send_to(handler, pushed_messages, RECEIVER_USER_ID)["jimin"] == {  # an SMS goes to the checked RCS number
         "email": JIMIN_EMAIL, "whatsapp": JIMIN_NUMBER, "sms": JIMIN_NUMBER}
+
+
+def test_voice_no_lands_on_every_hold(aws):  # noqa: F811
+    seed_jimin()
+    for inbound_channel in (Channel.EMAIL, Channel.WHATSAPP, Channel.SMS, Channel.RCS):
+        request_id = new_hold(inbound_channel, f"voice-{inbound_channel}")
+        result = verdict.record_answer(request_id, VerdictAnswer.NO, SENDER_ON[Channel.VOICE], f"connect:{inbound_channel}", at(0))
+        stored_row = graph.get_request(request_id)
+        assert (result.outcome, stored_row["status"], stored_row["repliedVia"]) == (RECORDED, "denied", "voice"), inbound_channel
+
+
+def test_voice_sender_must_be_a_checked_rcs_number(aws):  # noqa: F811
+    seed_contact_row(RECEIVER_ADDRESS, "jimin", "seed", [  # a checked number on WhatsApp only, and an RCS number still waiting
+        {"channel": "whatsapp", "address": "+821033334444", "verifiedVia": "whatsapp"},
+        {"channel": "rcs", "address": JIMIN_NUMBER, "verifiedVia": "pending"},
+    ])
+    request_id = new_hold(Channel.EMAIL)
+    for caller_number in ("+821033334444", JIMIN_NUMBER):
+        caller = verdict.SenderIdentity(Channel.VOICE, caller_number)
+        result = verdict.record_answer(request_id, VerdictAnswer.NO, caller, f"connect:{caller_number}", at(0))
+        assert (result.outcome, status_of(request_id)) == (ActionOutcome.WRONG_SENDER, "pending"), caller_number

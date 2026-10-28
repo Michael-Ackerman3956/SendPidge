@@ -1,5 +1,5 @@
-"""Closed sets for the wire values that WhatsApp and RCS records carry inbound over SNS. Code branches on these, never on
-bare strings."""
+"""Closed sets for the wire values that WhatsApp and RCS records carry inbound over SNS, and that Amazon Connect flow events
+carry into pidge-verdict. Code branches on these, never on bare strings."""
 
 from enum import StrEnum
 
@@ -41,3 +41,9 @@ class WhatsAppMessageStatus(StrEnum):
     """The `status` of a WhatsApp delivery status for one of our own messages. Only a failure is acted on."""
 
     FAILED = "failed"
+
+
+class VoiceFlowStep(StrEnum):
+    """The static voiceStep parameter on the Connect flow's Lambda block: which step of Pidge's call invoked pidge-verdict."""
+
+    RECORD_ANSWER = "record_answer"

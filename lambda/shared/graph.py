@@ -253,6 +253,14 @@ def record_whatsapp_message_id(request_id: str, whatsapp_message_id: str) -> Non
     )
 
 
+def record_voice_contact_id(request_id: str, contact_id: str) -> None:
+    get_table().update_item(
+        Key={"PK": f"REQUEST#{request_id}", "SK": METADATA_SORT_KEY},
+        UpdateExpression="SET voiceContactId = :contactId",
+        ExpressionAttributeValues={":contactId": contact_id},
+    )
+
+
 def get_connection_user_id(connection_id: str) -> str | None:
     item = get_table().get_item(Key={"PK": f"CONN#{connection_id}", "SK": METADATA_SORT_KEY}).get("Item")
     return item["userId"] if item else None
