@@ -1,7 +1,9 @@
 """Writes the seeded reference rows from infra/seed/, after every row is built and parsed:
 - refund rules from every refund_rules[.<CC>].json (RULE# rows, live or proposed as filed);
 - scam-list sample rows from lists.sample.json (LIST# rows, source: sample);
-- the public-feed snapshot from lists.public.json (LIST# rows, source: public-feed, generation 0, the file's expiresAt);
+- the public-feed snapshot from lists.public.json (LIST# rows, source: public-feed, generation 0, the file's expiresAt), for
+  snapshot sources only: a source with a feedParser gets its rows from the sync alone, so a re-seed never brings back a
+  de-listed row;
 - the source registry from sources.json (SOURCE#<id> / v1).
 A (PK, SK) seen twice, or a public row already past its expiresAt, stops the script before any write; refresh expired
 public rows with scripts/sync_list_feeds.py.
@@ -37,8 +39,14 @@ def read_seed_file(seed_path: Path) -> list[dict]:
     return json.loads(seed_path.read_text(), parse_float=Decimal)
 
 
+def list_live_fetch_source_ids() -> set[str]:
+    return {str(seed["id"]) for seed in read_seed_file(SOURCES_SEED) if seed["feedParser"] is not None}
+
+
 def build_public_rows(now: str) -> list[dict]:
-    rows = [public_list_row_from_seed(seed, PUBLIC_SNAPSHOT_GENERATION, seed["expiresAt"]) for seed in read_seed_file(LISTS_PUBLIC_SEED)]
+    live_fetch_source_ids = list_live_fetch_source_ids()
+    rows = [public_list_row_from_seed(seed, PUBLIC_SNAPSHOT_GENERATION, seed["expiresAt"]) for seed in read_seed_file(LISTS_PUBLIC_SEED)
+            if seed["sourceId"] not in live_fetch_source_ids]
     expired_count = sum(1 for row in rows if row["expiresAt"] <= now)
     if expired_count:
         print("run scripts/sync_list_feeds.py")

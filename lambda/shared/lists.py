@@ -12,7 +12,6 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from enum import StrEnum
 from typing import Protocol
 from urllib.parse import urlsplit
 
@@ -21,6 +20,7 @@ from botocore.exceptions import ClientError
 from shared import graph
 from shared.email_parse import registrable_domain_of_host
 from shared.enums import IndicatorKind, ListCategory, ListSource, ListStrength, ReasonCode
+from shared.list_enums import ScamListCoverageState
 from shared.metrics import emit_count_metric
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ SOURCE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,59}$")
 HOST_PATTERN = re.compile(r"^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$")
 WEB_SCHEMES = ("http", "https")
 DEFAULT_WEB_PORTS = (80, 443)
-PUBLIC_FEED_INDICATOR_KINDS = (IndicatorKind.DOMAIN, IndicatorKind.URL)
+PUBLIC_FEED_INDICATOR_KINDS = (IndicatorKind.DOMAIN, IndicatorKind.URL, IndicatorKind.ADDRESS)
 LIST_CHECK_FAILED_METRIC_NAME = "ListCheckFailed"
 COMPLETE_CACHE_SECONDS = 86400    # a complete answer may be reused for a day
 UNAVAILABLE_CACHE_SECONDS = 300   # an unavailable answer is asked again after five minutes
@@ -320,13 +320,6 @@ def sender_reasons_or_lookup_failure(
         return [ReasonCode.LIST_LOOKUP_FAILED]
 
 
-class CheckCoverage(StrEnum):
-    """Whether a check() answer covers every feed it relies on. UNAVAILABLE is never read as clean."""
-
-    COMPLETE = "complete"
-    UNAVAILABLE = "unavailable"
-
-
 @dataclass(frozen=True)
 class Indicator:
     kind: IndicatorKind
@@ -335,7 +328,7 @@ class Indicator:
 
 @dataclass(frozen=True)
 class ListHit:
-    kind: IndicatorKind
+    indicator: Indicator  # the asked indicator this row answered
     category: ListCategory
     strength: ListStrength
     source: ListSource
@@ -347,12 +340,12 @@ class ListHit:
 @dataclass(frozen=True)
 class CheckResult:
     hits: tuple[ListHit, ...]
-    coverage: CheckCoverage
+    coverage: ScamListCoverageState
     cache_until: str
 
     def as_payload(self) -> dict:
         return {
-            "reasons": [{"kind": str(hit.kind), "category": str(hit.category), "strength": str(hit.strength), "reason": hit.reason}
+            "reasons": [{"kind": str(hit.indicator.kind), "category": str(hit.category), "strength": str(hit.strength), "reason": hit.reason}
                         for hit in self.hits],
             "attributions": [{"source": str(hit.source), "sourceId": hit.source_id, "text": hit.attribution} for hit in self.hits],
             "coverage": str(self.coverage),
@@ -376,12 +369,12 @@ def is_feed_stale(last_sync_at: str | None, interval_minutes: int, now: str) -> 
 
 
 def unavailable_check_result(now: str) -> CheckResult:
-    return CheckResult((), CheckCoverage.UNAVAILABLE, add_seconds_to_timestamp(now, UNAVAILABLE_CACHE_SECONDS))
+    return CheckResult((), ScamListCoverageState.UNAVAILABLE, add_seconds_to_timestamp(now, UNAVAILABLE_CACHE_SECONDS))
 
 
-def list_hit_from_row(row: dict) -> ListHit:
+def list_hit_from_row(indicator: Indicator, row: dict) -> ListHit:
     parsed = parse_list_row(row)
-    return ListHit(parsed.kind, parsed.category, parsed.strength, parsed.source, parsed.source_id, parsed.reason,
+    return ListHit(indicator, parsed.category, parsed.strength, parsed.source, parsed.source_id, parsed.reason,
                    str(row["attribution"]))
 
 
@@ -391,7 +384,7 @@ def find_list_hits(store: ListStore, indicators: list[Indicator], now: str) -> t
     for indicator in indicators:
         row = get_unexpired_row(store, indicator.kind, indicator_key(indicator.kind, indicator.value), now)
         if row is not None:
-            hits.append(list_hit_from_row(row))
+            hits.append(list_hit_from_row(indicator, row))
     return tuple(hits)
 
 
@@ -411,5 +404,5 @@ def check(store: ListStore, indicators: list[Indicator], live_sources: list[Live
         emit_count_metric(LIST_CHECK_FAILED_METRIC_NAME)
         return unavailable_check_result(now)
     if has_stale_source_for(indicators, live_sources, now):
-        return CheckResult(hits, CheckCoverage.UNAVAILABLE, add_seconds_to_timestamp(now, UNAVAILABLE_CACHE_SECONDS))
-    return CheckResult(hits, CheckCoverage.COMPLETE, add_seconds_to_timestamp(now, COMPLETE_CACHE_SECONDS))
+        return CheckResult(hits, ScamListCoverageState.UNAVAILABLE, add_seconds_to_timestamp(now, UNAVAILABLE_CACHE_SECONDS))
+    return CheckResult(hits, ScamListCoverageState.COMPLETE, add_seconds_to_timestamp(now, COMPLETE_CACHE_SECONDS))

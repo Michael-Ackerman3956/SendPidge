@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from shared import graph, reach_points
 from shared.enums import CaseEvent, Channel, Friction, PushMessageType, Relationship, RequestState
+from shared.list_enums import ScamListCoverageState
 
 EMAIL_FIELDS_FOR_PWA = ("senderName", "senderAddress", "subject", "receivedAt", "textBody")
 
@@ -45,6 +46,7 @@ def reading_email_for_receiver(email_row: dict) -> dict:
         "warnReason": None,
         "reasons": [],
         "links": [],
+        "scamListCoverage": None,
         "quarantined": False,
         "request": None,
     }
@@ -63,6 +65,7 @@ def email_for_receiver(email_row: dict, request_row: dict | None, contact_name: 
         "warnReason": email_row.get("warnReason"),
         "reasons": list(email_row.get("reasons", [])),
         "links": list(email_row.get("links", [])),  # absent on rows written before slice 9a
+        "scamListCoverage": optional_enum_value(ScamListCoverageState, email_row.get("scamListCoverage")),  # absent before SX3
         "quarantined": bool(email_row.get("quarantined", False)),
         "request": request_for_receiver(request_row, contact_name, status) if request_row else None,
     }

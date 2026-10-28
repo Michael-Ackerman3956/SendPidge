@@ -52,10 +52,14 @@ export function buildLinkStripElement(links) {
 }
 
 // One calm sentence per flagged link; shown under the banner. The link's own text is quoted only when the backend found it
-// naming another address (then it is one address-like word), never for hidden, whole-body or attachment links.
+// naming another address (then it is one address-like word), never for hidden, whole-body or attachment links. A listed link
+// names its list's attribution (a licence obligation), so that line comes before the mismatch one.
 function describeFlaggedLink(link) {
   if (isCodeRunningLink(link)) return "A link in this email runs code instead of opening a page.";
   const linkReasons = Array.isArray(link.reasons) ? link.reasons : [];
+  if (linkReasons.includes(REASON_CODE.LINK_LISTED) && typeof link.listedBy === "string" && link.listedBy) {
+    return `A link here goes to a site on a scam list (${link.listedBy}).`;
+  }
   if (linkReasons.includes(REASON_CODE.LINK_TEXT_HREF_MISMATCH) && link.text && link.domain) {
     return `The link says ${link.text} but goes to ${link.domain}.`;
   }

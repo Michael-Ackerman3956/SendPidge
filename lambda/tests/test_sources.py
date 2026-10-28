@@ -1,5 +1,6 @@
 """SOURCE# registry: every peer seed source parses, live is refused for a non-commercial-only or unverified licence (in code
-and in the DynamoDB condition), and a proposed mapping must read at least ten indicators from its sample."""
+and in the DynamoDB condition), and a proposed mapping must read at least ten indicators from its sample. The no-derivatives
+and share-alike refusals are proven with the sync in test_list_dispatch.py."""
 
 import json
 from decimal import Decimal
@@ -43,7 +44,7 @@ def test_every_seed_source_parses_and_the_licence_rule_holds():
     parsed = {source.source_id: source for source in (parse_source_row(source_row_from_seed(seed)) for seed in seed_sources())}
     assert len(parsed) == len(seed_sources())
     for source_id in (PHISHING_DATABASE, AMF):
-        assert (parsed[source_id].status, parsed[source_id].licence_tag) == (SourceState.LIVE, LicenceTag.COMMERCIAL_OK)
+        assert (parsed[source_id].status, parsed[source_id].licence_tag) == (SourceState.LIVE, LicenceTag.COMMERCIAL_OK_ATTRIBUTION)
     unverified = parsed["ftc-dnc-reported-calls"]
     assert (unverified.status, unverified.licence_tag) == (SourceState.PROPOSED, LicenceTag.UNVERIFIED)
     for refused_tag in ("non-commercial-only", "unverified"):

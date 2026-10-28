@@ -63,9 +63,10 @@ CLOUDFRONT_SERVICE = "cloudfront.amazonaws.com"
 TABLE_ROLES = (
     "WebSocketConnectFunctionServiceRole", "RetryFunctionServiceRole", "CaseFollowUpFunctionServiceRole", "CaseInboundFunctionServiceRole",
     "QuestionInboundFunctionServiceRole", "ReaderFunctionServiceRole", "ReleaseFunctionServiceRole", "VerdictFunctionServiceRole",
-    "AskLinkFunctionServiceRole", "DispatchFunctionServiceRole",
+    "AskLinkFunctionServiceRole", "DispatchFunctionServiceRole", "ListDispatchFunctionServiceRole",
 )
-SOCKET_PUSH_ROLES = tuple(role for role in TABLE_ROLES if role not in ("WebSocketConnectFunctionServiceRole", "QuestionInboundFunctionServiceRole"))
+SOCKET_PUSH_ROLES = tuple(role for role in TABLE_ROLES if role not in (
+    "WebSocketConnectFunctionServiceRole", "QuestionInboundFunctionServiceRole", "ListDispatchFunctionServiceRole"))
 # The org functions (synth-for-tests.ts turns orgEnabled on) hold scoped table grants, never grantReadWriteData: not TABLE_ROLES.
 ORG_FUNCTION_ROLES = ("OrgProjectionFunctionServiceRole", "OrgActionsFunctionServiceRole")
 SCHEDULE_WRITING_ROLES = ("RetryFunctionServiceRole", "ReaderFunctionServiceRole", "VerdictFunctionServiceRole")

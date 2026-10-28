@@ -224,6 +224,14 @@ export const REASON_CODE = Object.freeze({
   LINKS_TRUNCATED: "links_truncated",
   IDN_LINK_DOMAIN: "idn_link_domain",
   IMAGE_ONLY_BODY: "image_only_body",
+  LINK_LISTED: "link_listed",
+});
+
+// Whether Pidge's scam lists answered for an email (email.scamListCoverage; null before the verdict and on older rows).
+// Mirrors ScamListCoverageState in lambda/shared/list_enums.py.
+export const SCAM_LIST_COVERAGE = Object.freeze({
+  COMPLETE: "complete",
+  UNAVAILABLE: "unavailable",
 });
 
 // What a link's href does (links[].kind). Mirrors LinkKind in enums.py.

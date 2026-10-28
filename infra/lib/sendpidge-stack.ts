@@ -10,6 +10,7 @@ import { EmailIdentity, Identity } from "aws-cdk-lib/aws-ses";
 import { Construct } from "constructs";
 import { buildCaseAgent, buildChatGuardrail, buildDispatchFunction } from "./case-agent.js";
 import { buildCaseInboundFunction, buildQuestionInboundFunction, buildReaderFunction } from "./inbound-functions.js";
+import { buildListDispatch } from "./list-functions.js";
 import { buildEmailStore, buildInboundRouting } from "./mail-ingress.js";
 import { buildOrgFunctions } from "./org-functions.js";
 import { buildPasskeySignIn, buildPwaSignInConfig } from "./passkey-sign-in.js";
@@ -123,6 +124,7 @@ export class SendPidgeStack extends Stack {
     const caseAgent = buildCaseAgent(this, settings, table);
     const guardrail = buildChatGuardrail(this);
     buildDispatchFunction(this, settings, shared, caseAgent, guardrail, vapidSecret);
+    buildListDispatch(this, shared);
     buildOrgFunctions(this, settings, shared);
 
     new Alarm(this, "ReaderDeadLetterAlarm", {

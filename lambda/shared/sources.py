@@ -1,8 +1,10 @@
 """SOURCE# rows: the registry of scam-list feeds, one row per version (SOURCE#<id> / v<n>), listed through UserIndex.
 
-Only live sources are synced. Code refuses live for a non-commercial-only or unverified licence when a row is parsed,
-seeded or approved, and again in the DynamoDB condition. A proposed source's mapping{} is dry-run against a sample
-before it is saved; the peer's hand-written mapping{} in sources.json is stored as it came and never interpreted.
+A live source with a feedParser is fetched by the sync; one without is a hand-loaded snapshot. Code refuses live for a
+non-commercial-only, unverified, no-derivatives or share-alike licence when a row is parsed, seeded or approved, and again
+in the DynamoDB condition; a sync copies only a SYNCABLE_LICENCES source. A proposed source's mapping{} is dry-run
+against a sample before it is saved; the peer's hand-written mapping{} in sources.json is stored as it came and never
+interpreted, except mapping.url, the https address a live-fetch source is downloaded from.
 """
 
 import csv
@@ -10,12 +12,14 @@ import io
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
+from urllib.parse import urlsplit
 
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from shared import graph, lists
-from shared.enums import IndicatorKind, ProposedBy
+from shared.enums import IndicatorKind, ListSource, ProposedBy
+from shared.list_enums import FeedParser
 from shared.lists import LIST_CHECK_FAILED_METRIC_NAME, SOURCE_ID_PATTERN, CheckResult, Indicator
 from shared.metrics import emit_count_metric
 
@@ -29,6 +33,9 @@ ALLOWED_SAMPLE_ENCODINGS = frozenset({"utf-8", "utf-8-sig", "cp949", "euc-kr", "
 REJECT_REASON_MAX_LENGTH = 300
 CONDITIONAL_CHECK_FAILED_CODE = "ConditionalCheckFailedException"
 COMMENT_LINE_PREFIX = "#"
+SCAM_LIST_HIT_METRIC_NAME = "ScamListHit"
+FEED_URL_SCHEME = "https"
+MINUTES_PER_DAY = 1440
 
 
 class SourceState(StrEnum):
@@ -47,6 +54,9 @@ class SourceKind(StrEnum):
 
 class LicenceTag(StrEnum):
     COMMERCIAL_OK = "commercial-ok"
+    COMMERCIAL_OK_ATTRIBUTION = "commercial-ok-attribution"        # commercial use, attribution required
+    COMMERCIAL_OK_NO_DERIVATIVES = "commercial-ok-no-derivatives"  # unchanged reuse only: normalised rows are a change
+    SHARE_ALIKE = "share-alike"
     COMMERCIAL_PAID = "commercial-paid"
     NON_COMMERCIAL_ONLY = "non-commercial-only"
     UNVERIFIED = "unverified"
@@ -59,11 +69,14 @@ class MappingFormat(StrEnum):
     CSV = "csv"    # one indicator per row, in mapping["indicatorColumn"]
 
 
-REFUSED_LIVE_LICENCES = frozenset({LicenceTag.NON_COMMERCIAL_ONLY, LicenceTag.UNVERIFIED})
+REFUSED_LIVE_LICENCES = frozenset({
+    LicenceTag.NON_COMMERCIAL_ONLY, LicenceTag.UNVERIFIED, LicenceTag.COMMERCIAL_OK_NO_DERIVATIVES, LicenceTag.SHARE_ALIKE,
+})
+SYNCABLE_LICENCES = frozenset({LicenceTag.COMMERCIAL_OK, LicenceTag.COMMERCIAL_OK_ATTRIBUTION})
 
 
 class LicenceRefused(ValueError):
-    """A source with a non-commercial-only or unverified licence may never be live."""
+    """A source with a REFUSED_LIVE_LICENCES licence may never be live; one outside SYNCABLE_LICENCES is never synced."""
 
 
 class MappingRejected(ValueError):
@@ -94,6 +107,7 @@ class SourceRow:
     last_sync_at: str | None
     last_generation: int | None
     mapping: dict
+    feed_parser: FeedParser | None  # None: a hand-loaded snapshot, never fetched
 
 
 def require_source_id(source_id: str) -> str:
@@ -123,8 +137,27 @@ def optional_int(value) -> int | None:
     return None if value is None else int(value)
 
 
+def optional_feed_parser(value) -> FeedParser | None:
+    return None if value is None else FeedParser(value)
+
+
+def require_live_fetch_invariants(source: SourceRow) -> None:
+    """A live source with a feed parser keeps its rows for at least two sync intervals and is fetched over https only."""
+    if source.sync_interval_minutes * 2 > source.ttl_days * MINUTES_PER_DAY:
+        raise ValueError(f"{source.source_id} v{source.version} syncs less often than half its rows' lifetime")
+    feed_url = urlsplit(str(source.mapping["url"]))
+    if feed_url.scheme != FEED_URL_SCHEME or not feed_url.hostname:
+        raise ValueError(f"{source.source_id} v{source.version} has no https feed url")
+
+
+def require_syncable_licence(source: SourceRow) -> None:
+    if source.licence_tag not in SYNCABLE_LICENCES:
+        raise LicenceRefused(f"{source.source_id} v{source.version} has licence {source.licence_tag}, which a sync may not copy")
+
+
 def parse_source_row(item: dict) -> SourceRow:
-    """Raises KeyError / ValueError on a broken envelope, and LicenceRefused on a live row with a refused licence."""
+    """Raises KeyError / ValueError on a broken envelope (feedParser is required, null for a snapshot), LicenceRefused on a
+    live row with a refused licence, and ValueError on a live-fetch row that breaks require_live_fetch_invariants."""
     partition = str(item["PK"])
     if not partition.startswith(SOURCE_PARTITION_PREFIX):
         raise ValueError(f"not a SOURCE# row: {partition}")
@@ -139,9 +172,12 @@ def parse_source_row(item: dict) -> SourceRow:
         status=SourceState(item["status"]), proposed_by=ProposedBy(item["proposedBy"]),
         reject_reason=optional_text(item["rejectReason"]), last_sync_at=optional_text(item["lastSyncAt"]),
         last_generation=optional_int(item["lastGeneration"]), mapping=dict(item["mapping"]),
+        feed_parser=optional_feed_parser(item["feedParser"]),
     )
     if source.status is SourceState.LIVE and source.licence_tag in REFUSED_LIVE_LICENCES:
         raise LicenceRefused(f"{source.source_id} v{source.version} is live with licence {source.licence_tag}")
+    if source.status is SourceState.LIVE and source.feed_parser is not None:
+        require_live_fetch_invariants(source)
     return source
 
 
@@ -184,14 +220,14 @@ def list_source_versions(source_id: str) -> list[SourceRow]:
 
 
 def write_proposed_source(source_id: str, fields: dict) -> int:
-    """SOURCE#<id> / v<newest + 1> as proposed by the keeper; code sets status and the bookkeeping fields after `fields`, and
-    the condition stops any overwrite."""
+    """SOURCE#<id> / v<newest + 1> as proposed by the keeper; code sets status and the bookkeeping fields after `fields`
+    (feedParser null, so a keeper row is never fetched), and the condition stops any overwrite."""
     versions = list_source_versions(source_id)
     version = versions[-1].version + 1 if versions else 1
     item = {
         **fields, **source_key(source_id, version), **registry_index_keys(source_id, version),
         "status": str(SourceState.PROPOSED), "proposedBy": str(ProposedBy.KEEPER), "checkedAt": graph.now_timestamp(),
-        "lastSyncAt": None, "lastGeneration": None, "rejectReason": None, "hits90d": 0,
+        "lastSyncAt": None, "lastGeneration": None, "rejectReason": None, "hits90d": 0, "feedParser": None,
     }
     parse_source_row(item)
     graph.get_table().put_item(Item=item, ConditionExpression="attribute_not_exists(PK)")
@@ -217,10 +253,12 @@ def approve_source(source_id: str, version: int) -> None:
         raise LicenceRefused(f"{source_id} v{version} has licence {item['licenceTag']}")
     update_proposed_source(source_id, version, {
         "UpdateExpression": "SET #status = :live",
-        "ConditionExpression": "#status = :proposed AND NOT licenceTag IN (:nonCommercial, :unverified)",
+        "ConditionExpression": "#status = :proposed AND NOT licenceTag IN (:nonCommercial, :unverified, :noDerivatives, :shareAlike)",
         "ExpressionAttributeNames": {"#status": "status"},
         "ExpressionAttributeValues": {":live": str(SourceState.LIVE), ":proposed": str(SourceState.PROPOSED),
-                                      ":nonCommercial": str(LicenceTag.NON_COMMERCIAL_ONLY), ":unverified": str(LicenceTag.UNVERIFIED)},
+                                      ":nonCommercial": str(LicenceTag.NON_COMMERCIAL_ONLY), ":unverified": str(LicenceTag.UNVERIFIED),
+                                      ":noDerivatives": str(LicenceTag.COMMERCIAL_OK_NO_DERIVATIVES),
+                                      ":shareAlike": str(LicenceTag.SHARE_ALIKE)},
     })
 
 
@@ -236,7 +274,8 @@ def reject_source(source_id: str, version: int, reason: str) -> None:
 
 
 def record_sync(source: SourceRow, generation: int, now: str) -> None:
-    """Stamps the sync on the live version; called only after every row and the BUCKETS row are written."""
+    """Stamps the sync on the live version; called only after every row and the BUCKETS row are written, or on a 304 to the
+    validators the last sync stored (its rows unchanged and young)."""
     graph.get_table().update_item(
         Key=source_key(source.source_id, source.version),
         UpdateExpression="SET lastSyncAt = :now, lastGeneration = :generation",
@@ -295,11 +334,17 @@ def dry_run_mapping(mapping: dict, indicator_kind: IndicatorKind, sample_bytes: 
 
 
 def check_against_live_sources(indicators: list[Indicator], now: str) -> CheckResult:
-    """lists.check over the production table and the live registry; a registry read that fails answers UNAVAILABLE."""
+    """lists.check over the production table and the live registry. Only live-fetch sources count toward staleness (a
+    snapshot is bounded by its rows' expiresAt). A registry read or row that fails is logged, counted as ListCheckFailed
+    and answered UNAVAILABLE. Each public-feed hit is counted as ScamListHit by source."""
     try:
-        live_sources = list_newest_live_sources()
-    except ClientError as error:
+        live_fetch_sources = [source for source in list_newest_live_sources() if source.feed_parser is not None]
+    except (ClientError, KeyError, ValueError) as error:
         logger.error("source registry read failed: %s", error)
         emit_count_metric(LIST_CHECK_FAILED_METRIC_NAME)
         return lists.unavailable_check_result(now)
-    return lists.check(lists.DynamoListStore(), indicators, live_sources, now)
+    result = lists.check(lists.DynamoListStore(), indicators, live_fetch_sources, now)
+    for hit in result.hits:
+        if hit.source is ListSource.PUBLIC_FEED:
+            emit_count_metric(SCAM_LIST_HIT_METRIC_NAME, "source", hit.source_id)
+    return result

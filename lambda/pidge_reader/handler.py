@@ -12,12 +12,13 @@ from datetime import datetime, timedelta, timezone
 import boto3
 from botocore.exceptions import ClientError
 
-from shared import channels, graph, hourly_counters, lists, payloads, schedules
+from shared import channels, graph, hourly_counters, lists, payloads, schedules, sources
 from shared.metrics import emit_count_metric
 from shared.auth import authentication_reasons
 from shared import links as link_checks
 from shared.email_parse import ParsedEmail, parse_eml
 from shared.enums import PolicyDecision, ReaderModelChoice, RequestState, WarnReason
+from shared.list_enums import ScamListCoverageState
 from shared.escalation import EscalationFacts, EscalationVerdict, build_escalation_reader, escalate, escalation_fields
 from shared.policy import (
     EscalationAnswer, EscalationFailure, PolicyOutcome, ReaderFailure, apply_escalation, decide, needs_escalation,
@@ -113,7 +114,11 @@ def process_email(receiver: ReceiverProfile, object_key: str, raw_email: bytes) 
     parsed_email = parse_eml(raw_email)
     contacts = graph.list_contacts(receiver.receiver_address)  # one query per email; every name match below reads this list
     link_assessments = link_checks.assess_links(parsed_email.links, graph.domains_of(contacts))
-    email_row = build_email_row(receiver, object_key, parsed_email, link_assessments)
+    # Before the claim, so EMAIL# stores LINK_LISTED and the coverage in one write; a failed read answers unavailable.
+    scam_list_check = sources.check_against_live_sources(
+        link_checks.list_indicators_of(link_assessments, parsed_email.sender_domain), graph.now_timestamp())
+    link_assessments = link_checks.mark_listed_links(link_assessments, scam_list_check)
+    email_row = build_email_row(receiver, object_key, parsed_email, link_assessments, scam_list_check.coverage)
     if not graph.claim_email(object_key, email_row):
         if not graph.reclaim_abandoned_email(object_key, datetime.now(timezone.utc)):
             logger.info("duplicate event for %s; already processed or still running", object_key)
@@ -227,6 +232,7 @@ def schedule_re_ask(request_id: str) -> None:
 
 def build_email_row(
     receiver: ReceiverProfile, object_key: str, parsed_email: ParsedEmail, link_assessments: list[link_checks.LinkAssessment],
+    scam_list_coverage: ScamListCoverageState,
 ) -> dict:
     received_at = graph.now_timestamp()
     return {
@@ -236,6 +242,7 @@ def build_email_row(
         "subject": parsed_email.subject,
         "textBody": parsed_email.text_body[:TEXT_BODY_MAX_CHARACTERS],
         "links": [assessment.as_row() for assessment in link_assessments],
+        "scamListCoverage": str(scam_list_coverage),  # unavailable: a live feed is stale or the lists could not be read
         "imageCount": parsed_email.image_count,  # tracking pixels included; counted, never a reason on its own (D7)
         "visibleHtmlCharacters": parsed_email.visible_html_characters,
         "receivedAt": received_at,

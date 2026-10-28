@@ -1,6 +1,6 @@
 """The scam list: normalisers, lookalikes, LIST# reads that add reasons (never a verdict), a failed read that marks, the
-ask cap that fails closed, public-feed rows, and check() reading a stale feed or a failed read as unavailable, never
-clean. Reads go through the production table fixture."""
+ask cap that fails closed, public-feed rows, check() reading a stale feed or a failed read as unavailable, never clean,
+and a listed link domain marking the link LINK_LISTED. Reads go through the production table fixture."""
 
 import json
 from decimal import Decimal
@@ -11,9 +11,12 @@ import pytest
 from botocore.exceptions import ClientError
 
 from shared import graph, hourly_counters, lists
-from shared.enums import Friction, IndicatorKind, ListSource, PolicyDecision, ReasonCode, RequestState, WarnReason
+from shared.email_parse import EmailLink, link_kind_of_href, parse_eml
+from shared.enums import Friction, HiddenBy, IndicatorKind, LinkSource, ListSource, PolicyDecision, ReasonCode, RequestState, WarnReason
+from shared.links import assess_links, link_reasons, list_indicators_of, mark_listed_links
+from shared.list_enums import ScamListCoverageState
 from shared.lists import (
-    LIST_CHECK_FAILED_METRIC_NAME, CheckCoverage, DynamoListStore, Indicator, ListLookupFailed, SeedListStore, canonical_url,
+    LIST_CHECK_FAILED_METRIC_NAME, DynamoListStore, Indicator, ListLookupFailed, SeedListStore, canonical_url,
     check, confusable_skeleton, indicator_key, is_lookalike_name, list_row_from_seed, lookup_sender_reasons,
     normalise_phone_e164, normalise_registrable_domain, parse_list_row, public_list_row_from_seed,
     sender_reasons_or_lookup_failure,
@@ -21,10 +24,16 @@ from shared.lists import (
 from shared.policy import decide
 from shared.reader_agent import EmailVerdict
 from shared.enums import Intent
+from shared.sources import check_against_live_sources, source_row_from_seed
+from tests.test_sources import AMF, PHISHING_DATABASE, put_source, seed_source
 from tests.test_verdict import aws  # noqa: F401
 
 SEED_PATH = Path(__file__).resolve().parents[2] / "infra" / "seed" / "lists.sample.json"
 PUBLIC_SEED_PATH = SEED_PATH.parent / "lists.public.json"
+SAMPLES_PATH = Path(__file__).resolve().parents[2] / "samples"
+NOW = "2026-10-27T15:00:00Z"
+KISA_2024 = "kr-kisa-phishing-2024"
+AMF_ATTRIBUTION = "AMF Listes noires · Licence Ouverte 2.0"
 JIMIN = graph.Contact("CONTACT#jimin", "Jimin", "jimin", known_addresses=("jimin@example.com",))
 MINHO = graph.Contact("CONTACT#minho", "Minho", "minho", known_addresses=("minho@family.example",))
 CONTACTS = [JIMIN, MINHO]
@@ -234,15 +243,15 @@ def test_check_reads_stale_and_failed_reads_as_unavailable_never_clean(capsys):
     indicators = [Indicator(IndicatorKind.DOMAIN, "parcel-fee.example")]
     domain_source = SimpleNamespace(indicator_kinds=(IndicatorKind.DOMAIN,), last_sync_at="2026-10-27T09:00:00Z", sync_interval_minutes=60)
     fresh = check(SeedListStore([]), indicators, [domain_source], "2026-10-27T12:00:00Z")
-    assert (fresh.hits, fresh.coverage, fresh.cache_until) == ((), CheckCoverage.COMPLETE, "2026-10-28T12:00:00Z")
+    assert (fresh.hits, fresh.coverage, fresh.cache_until) == ((), ScamListCoverageState.COMPLETE, "2026-10-28T12:00:00Z")
     stale = check(SeedListStore([]), indicators, [domain_source], "2026-10-27T12:00:01Z")
-    assert (stale.hits, stale.coverage, stale.cache_until) == ((), CheckCoverage.UNAVAILABLE, "2026-10-27T12:05:01Z")
+    assert (stale.hits, stale.coverage, stale.cache_until) == ((), ScamListCoverageState.UNAVAILABLE, "2026-10-27T12:05:01Z")
     never_synced = SimpleNamespace(indicator_kinds=(IndicatorKind.DOMAIN,), last_sync_at=None, sync_interval_minutes=60)
-    assert check(SeedListStore([]), indicators, [never_synced], "2026-10-27T12:00:00Z").coverage is CheckCoverage.UNAVAILABLE
+    assert check(SeedListStore([]), indicators, [never_synced], "2026-10-27T12:00:00Z").coverage is ScamListCoverageState.UNAVAILABLE
 
     capsys.readouterr()
     failed = check(FailingListStore(), indicators, [domain_source], "2026-10-27T12:00:00Z")
-    assert (failed.hits, failed.coverage, failed.cache_until) == ((), CheckCoverage.UNAVAILABLE, "2026-10-27T12:05:00Z")
+    assert (failed.hits, failed.coverage, failed.cache_until) == ((), ScamListCoverageState.UNAVAILABLE, "2026-10-27T12:05:00Z")
     metric_lines = [line for line in capsys.readouterr().out.splitlines() if LIST_CHECK_FAILED_METRIC_NAME in line]
     assert len(metric_lines) == 1 and json.loads(metric_lines[0])[LIST_CHECK_FAILED_METRIC_NAME] == 1
     assert failed.as_payload() == {"reasons": [], "attributions": [], "coverage": "unavailable", "cacheUntil": "2026-10-27T12:05:00Z"}
@@ -264,3 +273,66 @@ def test_a_listed_sender_from_a_feed_is_warn_never_hold(aws):  # noqa: F811
 
     graph.get_table().put_item(Item=public_list_row_from_seed(listed_domain, 1, "2026-01-01T00:00:00Z"))  # expired, TTL not yet run
     assert lookup_sender_reasons(DynamoListStore(), sender_address, "1password-login.com", "Billing", CONTACTS) == []
+
+
+def test_check_returns_link_listed_for_a_listed_domain():
+    newsletter = parse_eml((SAMPLES_PATH / "newsletter-link.eml").read_bytes())
+    assessments = assess_links(newsletter.links, frozenset())
+    indicators = list_indicators_of(assessments, newsletter.sender_domain)
+    assert indicators[0].kind is IndicatorKind.DOMAIN  # the sender's domain is asked first
+    assert indicators[1:] == [Indicator(IndicatorKind.DOMAIN, "zelle-pay-help.example"),
+                              Indicator(IndicatorKind.URL, "https://zelle-pay-help.example/renew")]
+    listed_row = public_list_row_from_seed({
+        "kind": "domain", "value": "zelle-pay-help.example", "category": "scam", "strength": "listed", "tier": 1,
+        "reason": "On the AMF blacklist (Usurpation) since 2026-10-08", "attribution": AMF_ATTRIBUTION, "addedAt": NOW,
+        "source": "public-feed", "sourceId": AMF,
+    }, 1, "2027-04-25T15:00:00Z")
+    marked = mark_listed_links(assessments, check(SeedListStore([listed_row]), indicators, [], NOW))
+    assert marked[0].reasons == (ReasonCode.LINK_TEXT_HREF_MISMATCH, ReasonCode.LINK_LISTED)
+    assert marked[0].as_row()["listedBy"] == AMF_ATTRIBUTION
+    quiet_verdict = EmailVerdict(claimed_person=None, intent=Intent.NONE, confidence=0.1, summary="A newsletter.")
+    outcome = decide(quiet_verdict, None, None, newsletter.sender_address, link_reasons(marked, newsletter))
+    assert (outcome.decision, outcome.warn_reason) == (PolicyDecision.WARN, WarnReason.LINK_REASONS)
+
+    mailto_href = "mailto:hello@gardenweekly.example"
+    mailto_link = EmailLink("Write to us", mailto_href, "", False, link_kind_of_href(mailto_href), HiddenBy.NONE,
+                            LinkSource.HTML_PART, 0.1, False)
+    only_sender = list_indicators_of(assess_links((mailto_link,), frozenset()), newsletter.sender_domain)
+    assert [indicator.kind for indicator in only_sender] == [IndicatorKind.DOMAIN]  # the mailto link adds no indicator
+
+
+def test_a_listed_url_marks_its_link_with_the_asked_indicator():
+    """A URL row's SK is a hash: the hit must carry the link's own URL indicator, or mark_listed_links never matches it."""
+    newsletter = parse_eml((SAMPLES_PATH / "newsletter-link.eml").read_bytes())
+    assessments = assess_links(newsletter.links, frozenset())
+    indicators = list_indicators_of(assessments, newsletter.sender_domain)
+    listed_url_row = public_list_row_from_seed({
+        "kind": "url", "value": "HTTPS://Zelle-Pay-Help.example/renew", "category": "scam", "strength": "listed", "tier": 1,
+        "reason": "Reported to KISA as a phishing site, 2024-12-31", "attribution": "KISA 피싱사이트 URL", "addedAt": NOW,
+        "source": "public-feed", "sourceId": KISA_2024,
+    }, 1, "2027-04-25T15:00:00Z")
+    result = check(SeedListStore([listed_url_row]), indicators, [], NOW)
+    assert [hit.indicator for hit in result.hits] == [Indicator(IndicatorKind.URL, "https://zelle-pay-help.example/renew")]
+    marked = mark_listed_links(assessments, result)
+    assert marked[0].reasons == (ReasonCode.LINK_TEXT_HREF_MISMATCH, ReasonCode.LINK_LISTED)
+    assert marked[0].as_row()["listedBy"] == "KISA 피싱사이트 URL"
+
+
+def test_scam_list_coverage_unavailable_when_any_live_source_is_stale(aws, capsys):  # noqa: F811
+    sender_only = [Indicator(IndicatorKind.DOMAIN, "gardenweekly.example")]
+    put_source({**seed_source(AMF), "lastSyncAt": NOW, "lastGeneration": 1})
+    put_source({**seed_source(KISA_2024), "lastSyncAt": "2026-10-01T00:00:00Z", "lastGeneration": 1})  # over 3 weekly intervals
+    assert check_against_live_sources(sender_only, NOW).coverage is ScamListCoverageState.UNAVAILABLE
+
+    put_source({**seed_source(KISA_2024), "lastSyncAt": NOW, "lastGeneration": 1})
+    put_source({**seed_source(PHISHING_DATABASE), "lastSyncAt": "2026-01-01T00:00:00Z", "lastGeneration": 0})  # a stale snapshot
+    links_and_sender = [*sender_only, Indicator(IndicatorKind.URL, "https://zelle-pay-help.example/renew")]
+    assert check_against_live_sources(links_and_sender, NOW).coverage is ScamListCoverageState.COMPLETE
+
+    pre_sx3_item = source_row_from_seed({**seed_source(AMF), "lastSyncAt": NOW, "lastGeneration": 1})
+    del pre_sx3_item["feedParser"]
+    graph.get_table().put_item(Item=pre_sx3_item)
+    capsys.readouterr()
+    assert check_against_live_sources(sender_only, NOW).coverage is ScamListCoverageState.UNAVAILABLE
+    metric_lines = [line for line in capsys.readouterr().out.splitlines() if LIST_CHECK_FAILED_METRIC_NAME in line]
+    assert len(metric_lines) == 1

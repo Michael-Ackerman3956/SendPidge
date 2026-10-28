@@ -24,7 +24,8 @@ def test_text_href_mismatch():
     assessment = assess_link(link("zelle.com", "https://zelle-pay-help.example/renew", "zelle-pay-help.example"), frozenset())
     assert assessment.reasons == (ReasonCode.LINK_TEXT_HREF_MISMATCH,)
     assert assessment.as_row() == {"text": "zelle.com", "domain": "zelle-pay-help.example", "href": "https://zelle-pay-help.example/renew",
-                                   "flagged": True, "kind": "web", "hiddenBy": "none", "reasons": ["link_text_href_mismatch"]}
+                                   "flagged": True, "kind": "web", "hiddenBy": "none", "reasons": ["link_text_href_mismatch"],
+                                   "listedBy": None}
 
 
 def test_plain_words_over_a_link_are_not_a_mismatch():

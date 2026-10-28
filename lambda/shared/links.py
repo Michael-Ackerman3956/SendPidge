@@ -1,11 +1,12 @@
-"""Link reasons from parsing alone: what a link says versus where it goes. Reasons add a mark, never a hold."""
+"""Link reasons from parsing, plus LINK_LISTED from the scam-list check: what a link says versus where it goes, and
+whether that place is listed. Reasons add a mark, never a hold."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from shared.email_parse import EmailLink, ParsedEmail, registrable_domain_of_host
-from shared.enums import HiddenBy, LinkKind, LinkSource, ReasonCode
-from shared.lists import is_lookalike_of
+from shared.enums import HiddenBy, IndicatorKind, LinkKind, LinkSource, ReasonCode
+from shared.lists import CheckResult, Indicator, indicator_key, is_lookalike_of
 
 KNOWN_SHORTENER_HOSTS = frozenset({
     "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rb.gy", "tiny.cc", "t.ly", "shorturl.at",
@@ -22,6 +23,7 @@ HOST_LIKE_TEXT = re.compile(r"^(?:https?://)?(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]
 class LinkAssessment:
     link: EmailLink
     reasons: tuple[ReasonCode, ...]
+    listed_by: str | None = None  # the attribution of the list entry behind LINK_LISTED; None when the link is not listed
 
     @property
     def is_flagged(self) -> bool:
@@ -32,7 +34,7 @@ class LinkAssessment:
         return {
             "text": self.link.visible_text, "domain": describe_domain_for_display(self.link), "href": self.link.href,
             "flagged": self.is_flagged, "kind": str(self.link.kind), "hiddenBy": str(self.link.hidden_by),
-            "reasons": [str(reason) for reason in self.reasons],
+            "reasons": [str(reason) for reason in self.reasons], "listedBy": self.listed_by,
         }
 
 
@@ -106,3 +108,53 @@ def _email_level_link_reasons(parsed_email: ParsedEmail) -> list[ReasonCode]:
     if parsed_email.image_count > 0 and parsed_email.visible_html_characters < IMAGE_ONLY_BODY_MAXIMUM_VISIBLE_CHARACTERS:
         reasons.append(ReasonCode.IMAGE_ONLY_BODY)
     return reasons
+
+
+def indicators_of_web_link(link: EmailLink) -> list[Indicator]:
+    """A web link's domain (the ASCII form, as feeds list it) and its URL; none for mailto, tel, script, data or other links."""
+    if link.kind is not LinkKind.WEB:
+        return []
+    return [Indicator(IndicatorKind.DOMAIN, describe_domain_for_display(link)), Indicator(IndicatorKind.URL, link.href)]
+
+
+def sender_domain_indicators(sender_domain: str) -> list[Indicator]:
+    """The sender's domain in its ASCII (xn--) form, so an IDN sender keys like the feeds' rows; none when it will not encode."""
+    try:
+        return [Indicator(IndicatorKind.DOMAIN, sender_domain.encode("idna").decode("ascii"))]
+    except UnicodeError:  # not a domain name, so no LIST# row can be keyed on it
+        return []
+
+
+def is_keyable_indicator(indicator: Indicator) -> bool:
+    """Whether lists.indicator_key accepts the value; a value it refuses keys no LIST# row, so skipping it misses nothing."""
+    try:
+        indicator_key(indicator.kind, indicator.value)
+    except ValueError:  # an odd host, or a URL that is not a plain web URL
+        return False
+    return True
+
+
+def list_indicators_of(assessments: list[LinkAssessment], sender_domain: str) -> list[Indicator]:
+    """What the Reader asks lists.check about, once each and in order: the sender's domain, then each web link's domain and
+    URL. Never raises (the Reader calls this before the claim): a value indicator_key refuses is skipped."""
+    candidates = sender_domain_indicators(sender_domain)
+    for assessment in assessments:
+        candidates.extend(indicators_of_web_link(assessment.link))
+    indicators: list[Indicator] = []
+    for candidate in candidates:
+        if candidate not in indicators and is_keyable_indicator(candidate):
+            indicators.append(candidate)
+    return indicators
+
+
+def mark_listed_links(assessments: list[LinkAssessment], check_result: CheckResult) -> list[LinkAssessment]:
+    """LINK_LISTED on every web link whose domain or URL is a hit (any strength), with the first such hit's attribution."""
+    return [mark_listed_link(assessment, check_result) for assessment in assessments]
+
+
+def mark_listed_link(assessment: LinkAssessment, check_result: CheckResult) -> LinkAssessment:
+    link_indicators = indicators_of_web_link(assessment.link)
+    first_hit = next((hit for hit in check_result.hits if hit.indicator in link_indicators), None)
+    if first_hit is None:
+        return assessment
+    return replace(assessment, reasons=(*assessment.reasons, ReasonCode.LINK_LISTED), listed_by=first_hit.attribution)

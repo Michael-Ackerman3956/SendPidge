@@ -1,12 +1,13 @@
 // Grandma's incoming data: the five static mock rows (email, SMS, app notice) and validation of every EMAIL / request_state payload.
 // Mock rows carry rowKind; a live row is always ROW_KIND.EMAIL (other channels come in at slice 15).
-import { CALL_PROMISE, CHANNEL, POLICY_DECISION, REQUEST_STATUS, ROW_KIND } from "./constants.js";
+import { CALL_PROMISE, CHANNEL, POLICY_DECISION, REQUEST_STATUS, ROW_KIND, SCAM_LIST_COVERAGE } from "./constants.js";
 
 const MILLISECONDS_PER_HOUR = 3600000;
 const KNOWN_POLICY_DECISIONS = new Set(Object.values(POLICY_DECISION));
 const KNOWN_REQUEST_STATUSES = new Set(Object.values(REQUEST_STATUS));
 const KNOWN_CALL_PROMISES = new Set(Object.values(CALL_PROMISE));
 const KNOWN_CHANNELS = new Set(Object.values(CHANNEL));
+const KNOWN_SCAM_LIST_COVERAGES = new Set(Object.values(SCAM_LIST_COVERAGE));
 
 export function buildMockFamilyEmails() {
   const now = Date.now();
@@ -90,19 +91,29 @@ export function normalizeRepliedVia(repliedVia) {
   return null;
 }
 
+// The scam-list coverage, or null (a reading row, or a row written before SX3). An unknown value is logged and read as
+// UNAVAILABLE, never as complete.
+function normalizeScamListCoverage(scamListCoverage) {
+  if (scamListCoverage === null || scamListCoverage === undefined) return null;
+  if (KNOWN_SCAM_LIST_COVERAGES.has(scamListCoverage)) return scamListCoverage;
+  console.error("SendPidge: email carries an unknown scamListCoverage", scamListCoverage);
+  return SCAM_LIST_COVERAGE.UNAVAILABLE;
+}
+
 function normalizeEmailRequest(request) {
   if (request === null || request === undefined) return null;
   return { ...request, callPromise: normalizeCallPromise(request.callPromise), repliedVia: normalizeRepliedVia(request.repliedVia) };
 }
 
-// Returns the email with request, quarantined and links made explicit, or null (after logging) when the payload is invalid.
-// A reading row (state null) never carries a body or links on this side either, whatever the server sent.
+// Returns the email with request, quarantined, links and scamListCoverage made explicit, or null (after logging) when the
+// payload is invalid. A reading row (state null) never carries a body, links or coverage on this side either.
 export function normalizeEmailPayloadOrReportError(email) {
   if (!isValidEmailPayload(email)) return null;
   const isReading = email.state === null;
   return {
     ...email, rowKind: ROW_KIND.EMAIL, request: normalizeEmailRequest(email.request), quarantined: email.quarantined === true,
     textBody: isReading ? "" : email.textBody, links: isReading ? [] : normalizeEmailLinks(email),
+    scamListCoverage: isReading ? null : normalizeScamListCoverage(email.scamListCoverage),
   };
 }
 

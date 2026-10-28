@@ -13,7 +13,7 @@ import {
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
 import { buildLinkReasonLineElements, buildLinkStripElement } from "./link-strip.js";
-import { buildSenderReasonLineElements } from "./reason-lines.js";
+import { buildScamListCoverageLineElement, buildSenderReasonLineElements } from "./reason-lines.js";
 import { isSplitReadingPane, renderPaneTools, renderReaderBar } from "./reading-pane.js";
 
 const ROW_KIND_LABELS = Object.freeze({
@@ -161,6 +161,8 @@ function renderEmailDetail(email, shouldCelebrate = false) {
   if (bannerElement !== null) {
     detailChildren.push(bannerElement, ...buildFirstReasonLineElements(email));
   }
+  const scamListCoverageLine = buildScamListCoverageLineElement(email); // shown on a PASS too, which has no banner
+  if (scamListCoverageLine !== null) detailChildren.push(scamListCoverageLine);
   const subjectHeading = createElementWithText("h2", "detail-subject", email.subject);
   subjectHeading.tabIndex = -1;
   const bodyElement = createElementWithText("p", emailDisplayState === EMAIL_DISPLAY_STATE.QUARANTINED ? "detail-body is-muted" : "detail-body", email.textBody);

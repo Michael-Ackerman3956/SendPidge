@@ -136,6 +136,16 @@ def test_camouflage_reasons_alone_warn_never_hold():
     assert (every_reason.decision, every_reason.warn_reason) == (PolicyDecision.WARN, WarnReason.LINK_REASONS)
 
 
+def test_link_listed_alone_warns_never_holds():
+    for intent in Intent:
+        for confidence in (0.1, 0.95):
+            outcome = decide(make_verdict(intent, confidence, claimed_person=None), None, None, STRANGER_ADDRESS, [ReasonCode.LINK_LISTED])
+            assert outcome.decision is not PolicyDecision.HOLD, (intent, confidence)
+            assert outcome.reasons == (ReasonCode.LINK_LISTED,), (intent, confidence)
+            if intent is Intent.NONE:
+                assert (outcome.decision, outcome.warn_reason) == (PolicyDecision.WARN, WarnReason.LINK_REASONS), confidence
+
+
 def test_link_only_reasons_pick_warn_reason_link_reasons():
     links_only = decide(make_verdict(Intent.NONE, 0.0, claimed_person=None), None, None, "a@b.example", [ReasonCode.HIDDEN_LINK, ReasonCode.KNOWN_SHORTENER])
     mixed = decide(make_verdict(Intent.NONE, 0.0, claimed_person=None), None, None, "a@b.example", [ReasonCode.AUTH_FAILED, ReasonCode.HIDDEN_LINK])

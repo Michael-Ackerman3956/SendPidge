@@ -1,4 +1,4 @@
-"""Fixtures shared across test modules: the CDK synth runs once per session for test_stack.py and test_stack_org.py."""
+"""Fixtures shared across test modules: the CDK synth runs once per session for every test_stack*.py module."""
 import json
 
 import pytest

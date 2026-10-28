@@ -172,7 +172,7 @@ def test_reverse_leaves_the_row_another_residents_confirm_wrote_for_the_same_sen
     assert (listed_row["source"], listed_row["requestId"]) == (ListSource.PIDGE_CONFIRMED, bobs_request_id)
 
 
-# Feeds write only domain and url rows (lists.PUBLIC_FEED_INDICATOR_KINDS), so the feed-sourced address row is hand-built.
+# The feed-sourced address row is hand-built here, not synced through feed_parsers (AMF writes address rows that way).
 @pytest.mark.parametrize("listed_row", [
     lists.list_row_from_seed({"kind": "address", "value": "scammer@lookalike.example", "category": "scam", "strength": "listed",
                               "reason": "Sample impersonation address", "addedAt": "2026-10-25T00:00:00Z"}),

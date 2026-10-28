@@ -63,6 +63,7 @@ class ReasonCode(StrEnum):
     LINKS_TRUNCATED = "links_truncated"                  # more links than the cap; the ones past it were not checked
     IDN_LINK_DOMAIN = "idn_link_domain"                  # a punycode or non-ASCII link host (mixed-script or undecodable)
     IMAGE_ONLY_BODY = "image_only_body"                  # the HTML body is images with under 40 visible characters
+    LINK_LISTED = "link_listed"                          # a link's domain or URL is on a scam list (a mark, never a hold)
 
 
 LINK_REASON_CODES = frozenset({
@@ -70,6 +71,7 @@ LINK_REASON_CODES = frozenset({
     ReasonCode.LOOKALIKE_LINK_DOMAIN, ReasonCode.LINKS_UNREADABLE,
     ReasonCode.WHOLE_BODY_LINK, ReasonCode.SCRIPT_HREF_LINK, ReasonCode.CSS_HIDDEN_LINK, ReasonCode.IMAGE_MAP_LINK,
     ReasonCode.HTML_ATTACHMENT_LINK, ReasonCode.LINKS_TRUNCATED, ReasonCode.IDN_LINK_DOMAIN, ReasonCode.IMAGE_ONLY_BODY,
+    ReasonCode.LINK_LISTED,
 })
 
 

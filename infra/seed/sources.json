@@ -3,6 +3,7 @@
     "id": "kr-kisa-phishing-2024",
     "name": "KISA phishing site URLs 2024 [한국인터넷진흥원_피싱사이트]",
     "kind": "feed",
+    "feedParser": "kisa_phishing_csv",
     "indicatorKinds": [
       "domain",
       "url"
@@ -14,7 +15,7 @@
       "text": "KISA 피싱사이트 URL · data.go.kr 15143094 · 이용허락범위 제한 없음",
       "url": "https://www.data.go.kr/data/15143094/fileData.do"
     },
-    "syncIntervalMinutes": 525600,
+    "syncIntervalMinutes": 10080,
     "ttlDays": 180,
     "status": "live",
     "proposedBy": "seed",
@@ -36,8 +37,8 @@
       "trim": true
     },
     "checkedAt": "2026-10-27T00:00:00Z",
-    "lastSyncAt": "2026-10-27T14:02:53Z",
-    "lastGeneration": 0,
+    "lastSyncAt": null,
+    "lastGeneration": null,
     "hits90d": 0,
     "rows": 147
   },
@@ -45,6 +46,7 @@
     "id": "kr-kisa-phishing-2023",
     "name": "KISA phishing site URLs 2023 [한국인터넷진흥원_피싱사이트 URL]",
     "kind": "feed",
+    "feedParser": "kisa_phishing_csv",
     "indicatorKinds": [
       "domain",
       "url"
@@ -56,7 +58,7 @@
       "text": "KISA 피싱사이트 URL · data.go.kr 15109780 · 이용허락범위 제한 없음",
       "url": "https://www.data.go.kr/data/15109780/fileData.do"
     },
-    "syncIntervalMinutes": 525600,
+    "syncIntervalMinutes": 10080,
     "ttlDays": 180,
     "status": "live",
     "proposedBy": "seed",
@@ -78,8 +80,8 @@
       "trim": true
     },
     "checkedAt": "2026-10-27T00:00:00Z",
-    "lastSyncAt": "2026-10-27T14:03:19Z",
-    "lastGeneration": 0,
+    "lastSyncAt": null,
+    "lastGeneration": null,
     "hits90d": 0,
     "rows": 50
   },
@@ -87,11 +89,12 @@
     "id": "kr-msit-spam-url-sample",
     "name": "MSIT illegal spam URL dataset, sample [과학기술정보통신부_통신 빅데이터플랫폼_불법 스팸 URL 데이터셋]",
     "kind": "feed",
+    "feedParser": null,
     "indicatorKinds": [
       "domain",
       "url"
     ],
-    "licenceTag": "commercial-ok",
+    "licenceTag": "commercial-ok-attribution",
     "licenceQuote": "이용허락범위 공공저작물 : 출처표시 (제 1유형)",
     "licenceUrl": "https://www.data.go.kr/ugs/selectPortalPolicyView.do",
     "attribution": {
@@ -137,6 +140,7 @@
     "id": "kr-posa-spam-mail-block",
     "name": "Korea Post spam mail block list [한국우편사업진흥원_스팸메일 수신차단 목록]",
     "kind": "feed",
+    "feedParser": null,
     "indicatorKinds": [],
     "licenceTag": "commercial-ok",
     "licenceQuote": "이용허락범위 제한 없음",
@@ -182,15 +186,17 @@
     "id": "amf-listes-noires",
     "name": "AMF Listes noires (France)",
     "kind": "feed",
+    "feedParser": "amf_blacklist_csv",
     "ttlDays": 180,
     "status": "live",
     "proposedBy": "seed",
     "rejectReason": null,
     "indicatorKinds": [
       "domain",
-      "url"
+      "url",
+      "address"
     ],
-    "licenceTag": "commercial-ok",
+    "licenceTag": "commercial-ok-attribution",
     "licenceQuote": "de la diffuser, la redistribuer, la publier et la transmettre, de l’exploiter à titre commercial, par exemple en la combinant avec d’autres informations",
     "licenceUrl": "https://github.com/etalab/Licence-Ouverte/blob/master/LO.md",
     "attribution": {
@@ -212,8 +218,8 @@
       "trim": "Website entries only (no '@', parseable as host or URL), stable-sorted by date_inscription descending (file order within a date); walked newest first, normalised with lists.py, deduped, until 150 rows were kept: 156 entries examined, oldest kept 2026-05-06. Shared-platform hosts become url rows with 'https://' prefixed (AMF writes no scheme); other hosts become registrable-domain rows and any path is dropped. Snapshot export_od_listesnoires_20261026080000_20261026083000.csv, fetched 2026-10-27."
     },
     "checkedAt": "2026-10-27T00:00:00Z",
-    "lastSyncAt": "2026-10-27T14:03:05Z",
-    "lastGeneration": 0,
+    "lastSyncAt": null,
+    "lastGeneration": null,
     "hits90d": 0,
     "rows": 145
   },
@@ -221,12 +227,13 @@
     "id": "jfsa-mutouroku",
     "name": "金融庁 無登録で金融商品取引業を行う者 (Japan FSA warning list)",
     "kind": "feed",
+    "feedParser": null,
     "ttlDays": 180,
     "status": "rejected",
     "proposedBy": "seed",
     "rejectReason": "The warning list carries company names only, no website column in any of the three Excel files (checked 2026-10-27)",
     "indicatorKinds": [],
-    "licenceTag": "commercial-ok",
+    "licenceTag": "commercial-ok-attribution",
     "licenceQuote": "権利表記の記載がない限り「公共データ利用規約（第1.0版）」（PDL1.0）に準拠した利用条件の下で、利用することができます。",
     "licenceUrl": "https://www.fsa.go.jp/rules/index.html",
     "attribution": {
@@ -259,6 +266,7 @@
     "id": "phishing-database",
     "name": "Phishing.Database (active phishing domains)",
     "kind": "feed",
+    "feedParser": null,
     "ttlDays": 180,
     "status": "live",
     "proposedBy": "seed",
@@ -267,7 +275,7 @@
       "domain",
       "url"
     ],
-    "licenceTag": "commercial-ok",
+    "licenceTag": "commercial-ok-attribution",
     "licenceQuote": "to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
     "licenceUrl": "https://github.com/Phishing-Database/Phishing.Database/blob/master/LICENSE",
     "attribution": {
@@ -296,6 +304,7 @@
     "id": "bnetza-massnahmenliste",
     "name": "Bundesnetzagentur Maßnahmenliste (Rufnummernmissbrauch)",
     "kind": "feed",
+    "feedParser": null,
     "ttlDays": 180,
     "status": "rejected",
     "proposedBy": "seed",
@@ -303,7 +312,7 @@
     "indicatorKinds": [
       "phone"
     ],
-    "licenceTag": "commercial-ok",
+    "licenceTag": "commercial-ok-no-derivatives",
     "licenceQuote": "Die Inhalte des Internetauftritts stehen, soweit nicht anders gekennzeichnet, unter der Creative Commons Namensnennung-Keine Bearbeitung 4.0 Deutschland Lizenz.",
     "licenceUrl": "https://www.bundesnetzagentur.de/DE/Service/Impressum/start.html",
     "attribution": {
@@ -335,6 +344,7 @@
     "id": "fcc-cgb-complaints",
     "name": "FCC CGB Consumer Complaints (unwanted calls and texts)",
     "kind": "feed",
+    "feedParser": null,
     "ttlDays": 180,
     "status": "proposed",
     "proposedBy": "seed",
@@ -376,6 +386,7 @@
     "id": "ftc-dnc-reported-calls",
     "name": "FTC Do Not Call reported calls",
     "kind": "feed",
+    "feedParser": null,
     "ttlDays": 180,
     "status": "proposed",
     "proposedBy": "seed",
