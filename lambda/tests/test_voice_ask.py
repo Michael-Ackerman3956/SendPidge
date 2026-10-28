@@ -138,7 +138,7 @@ def test_re_ask_calls_the_checked_number_once(voice_retry):
         "InstanceId": INSTANCE_ID, "ContactFlowId": CONTACT_FLOW_ID, "DestinationPhoneNumber": JIMIN_NUMBER,
         "SourcePhoneNumber": SOURCE_NUMBER,
         "Attributes": {"requestId": request_id, "askPrompt": EMAIL_GOLDEN, "aiOpening": AI_OPENING_EMAIL_GOLDEN},
-        "ClientToken": f"{request_id}-call-1", "RingTimeoutInSeconds": 30,
+        "ClientToken": f"{request_id}-call-1",
     }
     assert voice_retry.client_regions == ["ap-northeast-2"]
     stored_row = graph.get_request(request_id)

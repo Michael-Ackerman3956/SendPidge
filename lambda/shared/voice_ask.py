@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 VOICE_ASK_FAILED_METRIC_NAME = "VoiceAskFailed"
 CALL_COUNTER_PARTITION_KEY = "CALLRATE#stack"
-RING_TIMEOUT_SECONDS = 30
 INSTANCE_ARN_PATTERN = re.compile(r"arn:aws:connect:(?P<region>[a-z0-9-]+):\d{12}:instance/(?P<instance_id>[0-9a-f-]{36})")
 SPOKEN_TEXT_PATTERN = re.compile(r"[A-Za-z0-9 ,.'?-]{1,400}")  # plain words only: no SSML, no line breaks, no other script
 CHANNEL_PHRASES = {
@@ -97,7 +96,6 @@ def place_call(
         SourcePhoneNumber=os.environ["VOICE_SOURCE_PHONE_NUMBER"],
         Attributes={"requestId": request_id, "askPrompt": prompt, "aiOpening": ai_opening},
         ClientToken=f"{request_id}-call-{attempt}",  # deterministic: a retried start returns the same contact
-        RingTimeoutInSeconds=RING_TIMEOUT_SECONDS,
     )
     contact_id = response["ContactId"]
     try:
