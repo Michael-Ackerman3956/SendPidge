@@ -1,7 +1,7 @@
 // Grandma's Cases tab (RECEIVER): Open · Closed · Notes sub-tabs over the case cards, "I already paid" and the case agent's notes.
 // noteText and every pack field come from the server: rendered only through textContent / createElement.
 import { RECOVERY_DRAFT_KIND, CASES_TAB, CASE_STATUS, CLIENT_ACTION, JURISDICTION, PAYMENT_RAIL, REQUEST_STATUS } from "./constants.js";
-import { buildCopyButton, buildPidgeIconElement, createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
+import { buildCopyButton, buildPidgeIconElement, buildSvgIcon, createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { listReceiverRequests } from "./receiver-view.js";
 import { sendClientAction } from "./websocket.js";
 import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessage } from "./action-status.js";
@@ -17,10 +17,17 @@ const PAYMENT_RAIL_LABELS = Object.freeze({
 const DEFAULT_CURRENCY = "USD";
 const SUBTAB_LABELS = Object.freeze({ [CASES_TAB.OPEN]: "Open", [CASES_TAB.CLOSED]: "Closed", [CASES_TAB.NOTES]: "Notes" });
 
-const DRAFT_LABELS = Object.freeze({
-  [RECOVERY_DRAFT_KIND.CALL_SCRIPT]: "Call script",
-  [RECOVERY_DRAFT_KIND.DISPUTE_LETTER]: "Dispute letter",
-  [RECOVERY_DRAFT_KIND.POLICE_REPORT]: "Police report",
+const PHONE_ICON_PATH = "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z";
+const ENVELOPE_ICON_PATHS = ["M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z", "m22 7-10 7L2 7"];
+const DOCUMENT_ICON_PATHS = ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z", "M14 2v6h6", "M8 13h8", "M8 17h8"];
+const CHEVRON_DOWN_PATH = "m6 9 6 6 6-6";
+const COPY_ICON_PATHS = ["M10 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z", "M5 16H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1"];
+
+// Each draft's row: its label, its icon and the class that tints the icon tile (cases.css).
+const DRAFT_ROWS = Object.freeze({
+  [RECOVERY_DRAFT_KIND.CALL_SCRIPT]: { labelText: "Call script", iconPaths: [PHONE_ICON_PATH], tintClass: "is-call-script" },
+  [RECOVERY_DRAFT_KIND.DISPUTE_LETTER]: { labelText: "Dispute letter", iconPaths: ENVELOPE_ICON_PATHS, tintClass: "is-dispute-letter" },
+  [RECOVERY_DRAFT_KIND.POLICE_REPORT]: { labelText: "Police report", iconPaths: DOCUMENT_ICON_PATHS, tintClass: "is-police-report" },
 });
 
 const notesById = new Map();
@@ -60,11 +67,21 @@ function describeDeadline(step) {
   return "";
 }
 
-// One collapsible draft; the text is the server's, rendered through textContent, and Copy puts it on the clipboard for her mail app.
-function buildDraftElement(labelText, draftText) {
-  const draftElement = createElementWithText("details", "pidge-pack-draft");
-  draftElement.append(createElementWithText("summary", "", labelText), createElementWithText("pre", "pidge-pack-draft-text", draftText));
-  draftElement.append(buildCopyButton(draftText));
+// One collapsible row: tinted icon, label and the draft's first line; open, the server's text (textContent only) and Copy for her mail app.
+function buildDraftElement(draftRow, draftText) {
+  const draftElement = createElementWithText("details", `pidge-pack-draft ${draftRow.tintClass}`);
+  const iconTile = createElementWithText("span", "pidge-pack-draft-icon");
+  iconTile.append(buildSvgIcon("", draftRow.iconPaths));
+  const titles = createElementWithText("span", "pidge-pack-draft-titles");
+  titles.append(createElementWithText("span", "pidge-pack-draft-label", draftRow.labelText),
+    createElementWithText("span", "pidge-pack-draft-preview", draftText.split("\n", 1)[0]));
+  const summary = createElementWithText("summary", "pidge-pack-draft-summary");
+  summary.append(iconTile, titles, buildSvgIcon("pidge-pack-draft-chevron", CHEVRON_DOWN_PATH));
+  const copyButton = buildCopyButton(draftText);
+  copyButton.prepend(buildSvgIcon("copy-button-icon", COPY_ICON_PATHS));
+  const body = createElementWithText("div", "pidge-pack-draft-body");
+  body.append(createElementWithText("pre", "pidge-pack-draft-text", draftText), copyButton);
+  draftElement.append(summary, body);
   return draftElement;
 }
 
@@ -73,10 +90,11 @@ function buildDraftsElement(pack, packMailedAt) {
   const drafts = pack.drafts;
   if (drafts === null || typeof drafts !== "object") return null;
   const draftsElement = createElementWithText("div", "pidge-pack-drafts");
-  draftsElement.append(createElementWithText("p", "pidge-pack-drafts-title", "Drafts for you to send"));
-  Object.entries(DRAFT_LABELS).forEach(([draftKey, labelText]) => {
-    if (typeof drafts[draftKey] === "string") draftsElement.append(buildDraftElement(labelText, drafts[draftKey]));
+  const draftGroup = createElementWithText("div", "pidge-pack-draft-group");
+  Object.entries(DRAFT_ROWS).forEach(([draftKey, draftRow]) => {
+    if (typeof drafts[draftKey] === "string") draftGroup.append(buildDraftElement(draftRow, drafts[draftKey]));
   });
+  draftsElement.append(createElementWithText("p", "section-header", "Drafts for you to send"), draftGroup);
   const mailedText = packMailedAt ? "A copy was sent to your own inbox. Pidge sends nothing to anyone else." : "Pidge sends nothing to anyone else.";
   draftsElement.append(createElementWithText("p", "pidge-pack-mailed", mailedText));
   return draftsElement;

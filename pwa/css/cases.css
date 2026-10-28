@@ -1,0 +1,34 @@
+/* The recovery pack's three drafts in a case note: grouped rows (tinted icon, label, first line, chevron), open to the text and
+   Copy. app.css is at its size limit, so these rules live here. */
+.pidge-pack-drafts { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pidge-pack-drafts .section-header { margin: 4px 2px 0; }
+.pidge-pack-draft-group { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.pidge-pack-draft + .pidge-pack-draft { border-top: 1px solid var(--border); }
+.pidge-pack-draft-summary { list-style: none; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 12px; cursor: pointer; }
+.pidge-pack-draft-summary::-webkit-details-marker { display: none; }
+.pidge-pack-draft-icon {
+  flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--draft-tint-background); color: var(--draft-tint);
+}
+.pidge-pack-draft-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pidge-pack-draft.is-call-script { --draft-tint: var(--teal); --draft-tint-background: rgba(58, 166, 142, 0.14); }
+.pidge-pack-draft.is-dispute-letter { --draft-tint: var(--blue); --draft-tint-background: rgba(96, 165, 250, 0.14); }
+.pidge-pack-draft.is-police-report { --draft-tint: var(--orange); --draft-tint-background: rgba(245, 158, 11, 0.14); }
+.pidge-pack-draft-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pidge-pack-draft-label { font-size: 16px; font-weight: 700; }
+.pidge-pack-draft-preview { font-size: 13.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pidge-pack-draft[open] .pidge-pack-draft-preview { display: none; }
+.pidge-pack-draft-chevron {
+  flex: none; width: 20px; height: 20px; fill: none; stroke: var(--text-tertiary); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+  transition: transform 0.15s ease-out;
+}
+.pidge-pack-draft[open] .pidge-pack-draft-chevron { transform: rotate(180deg); }
+.pidge-pack-draft-body { max-width: 720px; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.pidge-pack-draft-text {
+  white-space: pre-wrap; font: inherit; font-size: 15px; line-height: 1.6; overflow-wrap: anywhere;
+  padding: 12px 14px; border-radius: 10px; background: var(--surface-1);
+}
+.pidge-pack-draft-body .copy-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border-radius: 10px; font-size: 15px; font-weight: 700;
+}
+.copy-button-icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

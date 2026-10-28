@@ -56,13 +56,16 @@ export function buildTickIcon(className) {
   return buildSvgIcon(className, "M5 12.5 10 17.5 19 7");
 }
 
-// "Copy" that puts text on the clipboard for her own mail app; the label reports the outcome (a blocked clipboard says so).
+// "Copy" that puts text on the clipboard for her own mail app; the label span reports the outcome (a blocked clipboard says so),
+// so an icon a caller prepends stays.
 export function buildCopyButton(textToCopy) {
-  const copyButton = createElementWithText("button", "copy-button", "Copy");
+  const copyButton = createElementWithText("button", "copy-button");
+  const copyLabel = createElementWithText("span", "", "Copy");
   copyButton.type = "button";
+  copyButton.append(copyLabel);
   copyButton.addEventListener("click", () => {
-    if (typeof navigator.clipboard?.writeText !== "function") { copyButton.textContent = "Select and copy"; return; } // no clipboard API here
-    navigator.clipboard.writeText(textToCopy).then(() => { copyButton.textContent = "Copied"; }, () => { copyButton.textContent = "Select and copy"; });
+    if (typeof navigator.clipboard?.writeText !== "function") { copyLabel.textContent = "Select and copy"; return; } // no clipboard API here
+    navigator.clipboard.writeText(textToCopy).then(() => { copyLabel.textContent = "Copied"; }, () => { copyLabel.textContent = "Select and copy"; });
   });
   return copyButton;
 }
