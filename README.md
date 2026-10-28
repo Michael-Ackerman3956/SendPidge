@@ -6,6 +6,12 @@ Built on **Amazon SES Mail Manager**, **AWS End User Messaging Social (WhatsApp)
 
 > Grandma, Jimin and the bank are invented, and one real phone plays every party in the demo ([which moments are staged](#demo)). SendPidge never moves money and sends nothing to a bank. Pidge is the character in the app; SendPidge is the product.
 
+## Architecture
+
+![SendPidge architecture: catch the email, hold or pass, reach the real person, act on the answer, the home's view](architecture/architecture-overview.png)
+
+SVG sources and the three detail diagrams are in [`architecture/`](architecture/).
+
 ## The problem
 
 <!-- founder: confirm the four numbers and add the source links -->
@@ -27,29 +33,65 @@ Spotting the fake gets harder every year. Asking the real person still works, bu
 
 ## How it works
 
-![SendPidge architecture: catch the email, hold or pass, reach the real person, act on the answer, the home's view](docs/img/architecture-overview.png)
+### 1. Catch the email
 
-Source: [`docs/img/architecture-overview.svg`](docs/img/architecture-overview.svg). Detail diagrams: [`docs/SENDPIDGE_ARCHITECTURE.html`](docs/SENDPIDGE_ARCHITECTURE.html).
+- **Amazon SES Mail Manager** keeps an address list of residents. A traffic policy refuses any other recipient during SMTP.
+- A rule set writes the raw email to **S3** and invokes the Reader.
+- SPF and DKIM are checked at ingress.
 
-1. **Catch.** Mail Manager holds an address list of residents; a traffic policy refuses any other recipient during SMTP; a rule set writes the raw email to S3 and invokes the Reader. SPF and DKIM are checked at ingress.
-2. **Read, then decide in code.** `pidge_reader` (Lambda) runs a Strands agent on Bedrock (Claude Haiku 4.5) with **no tools**. It returns who the email claims to be, what it wants and how sure it is. Code checks the sender and the links: a known name from an unknown address, look-alike names and domains, hidden links, link text that names another domain, shorteners, scam-list senders. `lambda/shared/policy.py` picks HOLD, WARN or PASS. An unknown-address hold gets a second opinion from Claude Opus 4.5; if the two name different people, the hold stays.
-3. **Ask.** A HOLD writes a request row in DynamoDB and asks in three places at once: the app (API Gateway WebSocket), WhatsApp (End User Messaging Social, an approved template with Yes / No buttons, replies back through SNS) and email (SES, a signed one-tap No link, or a reply of NO through Mail Manager).
-4. **Call.** No answer in 10 minutes: EventBridge Scheduler fires the re-ask, which places an Amazon Connect call. An Amazon Q in Connect agent asks. It knows four facts (whose name, what kind of message, what it asked for, how long ago) and never shares amounts, senders, links or numbers. Keypad: 1 = yes, 2 = no. Code records the answer through a `RecordVerdict` tool.
-5. **Act.** The verdict is pushed to Grandma's open screen. No: the email stays held, one tap confirms and reports. Yes: it opens after a ten-second undo. The contact can take back a No for five minutes. A Yes never counts on the channel the message came in on; a No counts from anywhere; email can answer No only.
-6. **Recover.** "I already paid" asks the country and the payment method. Code opens the case; the case agent on Bedrock AgentCore (Runtime plus Memory of the family) writes the note; code builds the pack from the rule book (steps with who to contact and a deadline; a call script, a dispute letter, a police report) and mails it to her own mailbox. Her questions go to a chat agent behind a Bedrock Guardrail.
+### 2. Read, then decide in code
 
-![Act on the answer: three paths into the case agent](docs/img/architecture-after-verdict.png)
+- `pidge_reader` (**Lambda**) runs a **Strands** agent on **Bedrock** (Claude Haiku 4.5) with **no tools**.
+- It returns who the email claims to be, what it wants, and how sure it is.
+- Code checks the sender and the links: a known name from an unknown address, look-alike names and domains, hidden links, link text that names another domain, shorteners, scam-list senders.
+- `lambda/shared/policy.py` picks HOLD, WARN or PASS.
+- An unknown-address hold gets a second opinion from Claude Opus 4.5. If the two name different people, the hold stays.
 
-### The home's view
+### 3. Ask the real person
 
-![Organisation oversight: the projection Lambda turns a resident's rows into a safety state through her privacy filter](docs/img/architecture-stretch-org.png)
+A HOLD writes a request row in **DynamoDB**, then asks in three places at once:
+
+- **App:** a push over the **API Gateway WebSocket**.
+- **WhatsApp:** **End User Messaging Social**, an approved template with Yes / No buttons; replies come back through **SNS**.
+- **Email:** **SES**, a signed one-tap No link, or a reply of NO through Mail Manager.
+
+### 4. Call if nobody answers
+
+- After 10 minutes, **EventBridge Scheduler** fires the re-ask, which places an **Amazon Connect** call.
+- An **Amazon Q in Connect** agent asks. It knows four facts: whose name, what kind of message, what it asked for, how long ago.
+- It never shares amounts, senders, links or numbers.
+- Keypad fallback: 1 = yes, 2 = no. Code records the answer through a `RecordVerdict` tool.
+
+### 5. Act on the answer
+
+- The verdict is pushed to Grandma's open screen.
+- **No:** the email stays held; one tap confirms and reports.
+- **Yes:** it opens after a ten-second undo.
+- The contact can take back a No for five minutes.
+- A Yes never counts on the channel the message came in on. A No counts from anywhere. Email can answer No only.
+
+### 6. Recover a payment
+
+![Act on the answer: three paths into the case agent](architecture/architecture-after-verdict.png)
+
+- "I already paid" asks the country and the payment method. Code opens the case.
+- The case agent on **Bedrock AgentCore** (Runtime plus Memory of the family) writes the note.
+- Code builds the pack from the rule book: steps with who to contact and a deadline, a call script, a dispute letter, a police report. It goes to her own mailbox.
+- Her questions go to a chat agent behind a **Bedrock Guardrail**.
+
+### 7. The home's view
+
+![Organisation oversight: the projection Lambda turns a resident's rows into a safety state through her privacy filter](architecture/architecture-stretch-org.png)
 
 - Each resident picks in her own app what the home sees: alerts only, alerts and cases, or nothing.
 - A projection Lambda turns her rows into one state per member: nothing open, held, held with no answer, confirmed "not me", warned, case open, contact unreachable, not shared.
-- The office signs in through Amazon Cognito managed login (a password, then a passkey added from the app) and sees a members table, follow-ups and a call list.
-- One in-app safety alert goes to every resident, at most 2 an hour per home; she answers "Got it" or "Need help".
+- The office signs in through **Amazon Cognito** managed login (a password, then a passkey added from the app) and sees a members table, follow-ups and a call list.
+- One in-app safety alert goes to every resident, at most 2 an hour per home. She answers "Got it" or "Need help".
 
-The app is one static PWA on S3 + CloudFront (`app.sendpidge.com`). Residents and contacts open it from a tokened link; the server names the role on every sync.
+### The app
+
+- One static PWA on **S3 + CloudFront** (`app.sendpidge.com`).
+- Residents and contacts open it from a tokened link; the office signs in. The server names the role on every sync.
 
 ## Safety and privacy
 
