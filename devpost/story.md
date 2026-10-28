@@ -14,7 +14,7 @@ When an email claims to be from someone you know and asks for money, SendPidge h
 - **Ask.** The real person is asked in the app, on WhatsApp and by email at the same moment. After 10 minutes of silence, SendPidge calls them: an AI agent asks, and a keypad press also counts.
 - **Answer.** No keeps the email held and lets Grandma report it in one tap; Yes opens it after a ten-second undo. A Yes never counts on the channel the message came in on.
 - **Recover.** If she already paid, "I already paid" opens a case: a note, recovery steps from a rule book, and three drafts (call script, dispute letter, police report) mailed to the personal email she saves in Settings. She makes the calls herself; SendPidge never moves money or contacts a bank or agency.
-- **The home's view.** A senior home's office sees one safety state per resident, only what she chose to share, and can send one in-app safety alert to every resident.
+- **The organization's view.** An organization, such as a senior living home, sees one safety state per resident, only what she chose to share, and can send one in-app safety alert to every resident.
 
 The demo is Grandma and her son Jimin; the same check covers a finance clerk with a CEO's wire request or a supplier's new bank details.
 
@@ -73,6 +73,6 @@ We publish our misses: links behind a trusted-service redirect, a QR code in a P
 ## What's next for SendPidge
 
 - Our first 2 to 5 customers by the end of 2026.
-- Homes: outreach by WhatsApp and email, events, reminders, and passkey setup inside the app.
+- Organizations (e.g. senior living homes): outreach by WhatsApp and email, events, reminders, and passkey setup inside the app.
 - Production WhatsApp numbers, SMS, and RCS in launch countries.
 - Cross-organisation checks: one organisation's people confirming messages sent in their name to another.

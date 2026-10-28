@@ -187,11 +187,11 @@ Seed the rule book and the sample lists with `scripts/seed_rows.py`, and a famil
 
 | Criterion | Where to look |
 |---|---|
-| Technical execution | Mail Manager, EUM Social, SES and Cognito wired to Bedrock, AgentCore and Strands in one CDK stack (`infra/`), plus the Amazon Connect call; the tests and stack assertions in `lambda/tests/` |
-| Functionality | The judge sandbox; the Evidence table |
-| Potential value / impact | The problem numbers; families now, homes and organisations next |
-| Creativity | The check asks the impersonated person instead of scoring the message |
-| Demo presentation | The video; this README |
+| Technical execution (40%) | Three CDS services: Amazon SES Mail Manager, AWS End User Messaging Social (WhatsApp) and Amazon Connect, wired to Amazon Bedrock, AgentCore, Strands and Q in Connect ([Agents](#agents), [AWS services](#aws-services)). One CDK stack (`infra/`), reproducible with [Setup instructions](#setup-instructions); tests and stack assertions in `lambda/tests/` |
+| Potential value / impact (20%) | [The problem](#the-problem) with its numbers; measured catch rate in [Evidence](#evidence); families now, organisations such as senior living homes next |
+| Demo presentation (20%) | The [video](https://youtu.be/rCe4ztLSmQ4) runs the end-to-end agentic flow: email held, real person asked, answer back, call; recovery and the organisation view are in the supplementary file; the [judge sandbox](#judge-sandbox) lets you run it yourself |
+| Creativity (10%) | The check asks the impersonated person instead of scoring the message; the model that reads the scam has no tools, and code decides |
+| Functionality (10%) | The [judge sandbox](#judge-sandbox) and the live runs in [Evidence](#evidence); serverless throughout (Lambda, DynamoDB, SQS, API Gateway); AI reads the email, runs the call and drafts the recovery pack |
 
 ## Limitations
 
