@@ -178,7 +178,8 @@ def hold_and_ask(
     receiver: ReceiverProfile, channel: Channel, item_id: str, inbound_row: dict, reader_outcome: EmailVerdict | ReaderFailure,
     outcome: PolicyOutcome, escalation: EscalationVerdict | EscalationFailure | None,
 ) -> None:
-    """The hold reaches the resident before any channel is tried, so a failed channel never undoes it."""
+    """The hold reaches the resident before any channel is tried, so a failed channel never undoes it. It is recorded on the
+    sender's thread first, so a send to that conversation is refused while it is pending (messenger_send.is_thread_held)."""
     contact = outcome.contact
     summary = "" if isinstance(reader_outcome, ReaderFailure) else sanitize_summary(reader_outcome.summary)
     verdict_fields = verdict_fields_for_request(reader_outcome, summary)
@@ -187,6 +188,8 @@ def hold_and_ask(
         escalation_fields(escalation) if escalation is not None else None, channel,
     )
     request_id = graph.request_id_of(request_row)
+    sender_thread_key = inbox_rows.thread_key_for(channel, inbound_row["senderAddress"])
+    inbox_rows.record_thread_hold(receiver.receiver_address, sender_thread_key, request_id)
     inbox_rows.record_outcome(channel, item_id, outcome.decision, None, outcome.reasons, request_id)
     push_state(receiver, channel, inbound_row, outcome, request_row, contact.contact_name)
     if not hourly_counters.take_ask_slot(contact.contact_key, receiver.receiver_address, ASKS_PER_CONTACT_PER_HOUR):

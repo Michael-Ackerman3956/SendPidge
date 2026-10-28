@@ -6,3 +6,25 @@
 .avatar-initial.is-rcs { background: linear-gradient(135deg, #4c1d95, #7c3aed); color: #f5f3ff; }
 /* A text has no subject, so its body takes the detail's programmatic focus (like .detail-subject). */
 .detail-body:focus { outline: none; }
+/* Compose (inbox top), the composer and a row's conversation under its detail (slice 16). */
+.compose-button {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 12px; padding: 0 18px;
+  border: none; border-radius: 16px; background: var(--teal); color: var(--on-teal); font: inherit; font-size: 15px; font-weight: 800;
+}
+.compose-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.compose-screen { display: flex; flex-direction: column; gap: 12px; max-width: 560px; }
+.compose-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.compose-choice {
+  min-height: 44px; padding: 0 16px; border: 1px solid var(--border); border-radius: 22px;
+  background: var(--surface-2); color: var(--text-primary); font: inherit; font-size: 15px; font-weight: 700;
+}
+.compose-choice[aria-pressed="true"] { background: rgba(58, 166, 142, 0.14); border-color: var(--teal); color: var(--teal-light); }
+.compose-choice:focus-visible, .compose-button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.compose-text { min-height: 120px; resize: vertical; }
+.thread { display: flex; flex-direction: column; gap: 10px; }
+.thread-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.thread-item { align-self: flex-start; max-width: 85%; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); }
+.thread-item.is-out { align-self: flex-end; background: rgba(58, 166, 142, 0.14); }
+.thread-item[aria-current="true"] { border: 1px solid rgba(58, 166, 142, 0.35); }
+.thread-text { font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.thread-meta { display: block; margin-top: 4px; font-size: 11.5px; color: var(--text-tertiary); }

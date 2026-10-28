@@ -238,7 +238,8 @@ def test_sync_carries_the_flag_the_last_twenty_messages_oldest_first_and_the_cir
                                        "verifiedAt": None, "codeExpiresAt": None,
                                        "reach": {"inapp": True, "rcs": False, "whatsapp": True, "email": True},
                                        "reachPoints": [{"channel": "whatsapp", "address": "+821012345678", "verifiedVia": "seed"},
-                                                       {"channel": "email", "address": "jimin@example.com", "verifiedVia": None}]}]
+                                                       {"channel": "email", "address": "jimin@example.com", "verifiedVia": None}],
+                                       "sendTo": {"email": "jimin@example.com"}}]  # no messenger resident set: email only
     assert sync_message["contactVerification"] == {"whatsapp": False, "mock": False}
     graph.get_table().put_item(Item={"PK": "USER#jimin", "SK": "PROFILE", "tokenHash": "jimin-token-hash"})
     assert seed_contact_roles(RECEIVER_ADDRESS) == []

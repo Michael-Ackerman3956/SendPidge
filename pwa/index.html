@@ -56,6 +56,10 @@
       <p id="action-status" class="action-status" aria-live="polite"></p>
       <div id="reading-pane" class="reading-pane">
         <section id="inbox-screen" class="inbox-screen" aria-label="Inbox" hidden>
+          <button id="compose-button" class="compose-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            <span>Compose</span>
+          </button>
           <ul id="inbox-list" class="inbox-list"></ul>
         </section>
         <section id="detail-screen" class="detail-screen" hidden>
@@ -63,6 +67,7 @@
           <article id="detail-content" class="detail-content"></article>
         </section>
       </div>
+      <section id="compose-screen" class="compose-screen" aria-label="Compose" hidden></section>
       <section id="contact-screen" aria-label="Requests" hidden>
         <ul id="contact-card-list" class="contact-card-list"></ul>
         <div id="contact-empty-message" class="contact-empty" hidden>

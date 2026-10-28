@@ -131,10 +131,13 @@ def inbox_payloads_for_sync(
     user_id: str, row_kind: str, limit: int, reading_payload: Callable[[dict], dict],
     decided_payload: Callable[[dict, dict | None, str | None, RequestState | None], dict], now: str,
 ) -> list[dict]:
-    """The newest EMAIL# or MESSAGE# rows of one kind: a row still being read as its reading payload, a decided row with
-    the request it holds (if any), that request's contact name and effective status."""
+    """The newest EMAIL# or MESSAGE# rows of one kind: a text she sent as its out payload, a row still being read as its
+    reading payload, a decided row with the request it holds (if any), that request's contact name and effective status."""
     inbox_payloads = []
     for inbox_row in graph.list_recent_rows(user_id, row_kind, limit):
+        if payloads.is_out_message_row(inbox_row):
+            inbox_payloads.append(payloads.out_message_for_receiver(inbox_row))  # no Reader, no verdict, no request
+            continue
         if "state" not in inbox_row:
             inbox_payloads.append(reading_payload(inbox_row))  # the Reader is on it, or its retry will be
             continue

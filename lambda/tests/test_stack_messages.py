@@ -1,12 +1,18 @@
 """CDK assertions on pidge-inbound (slice 15): its topic subscriptions with SourceArn-scoped invoke permissions, its dead-letter
-queue and alarm, its pipeline environment, and the SMS topic that exists only with smsEnabled. test_stack.py is at its line limit,
+queue and alarm, its pipeline environment, and the SMS topic that exists only with smsEnabled; and on pidge-send (slice 16): its
+scoped table writes, SES From condition and phone-channel grants (its route: test_routes.py). test_stack.py is at its line limit,
 so these live here and reuse its helpers and the session synth (conftest.py)."""
+import fnmatch
 import json
 
+from shared import inbox_rows, messenger_send
+from shared.enums import Channel
 from tests.test_stack import (
-    INBOUND_TOPICS, INBOUND_TOPICS_WITHOUT_SMS, assert_each_inbound_topic_takes_publishes_only_from_this_account, find_alarm_properties,
-    find_function_by_handler, resources_of_type, run_synth_for_tests, strip_trailing_logical_id_hash,
+    INBOUND_TOPICS, INBOUND_TOPICS_WITHOUT_SMS, as_list, assert_each_inbound_topic_takes_publishes_only_from_this_account,
+    collect_role_allow_statements, find_alarm_properties, find_function_by_handler, resources_of_type, run_synth_for_tests,
+    statement_grants, strip_trailing_logical_id_hash,
 )
+from tests.test_stack_org import TABLE_WRITE_ACTIONS
 
 INBOUND_HANDLER = "pidge_inbound.handler.handle"
 READER_HANDLER = "pidge_reader.handler.handle"
@@ -22,6 +28,18 @@ SMS_ON_OVERRIDES = {
     "smsPhoneNumberArn": "arn:aws:sms-voice:us-east-1:358148451054:phone-number/phone-test",
 }
 SMS_SETTINGS_REFUSAL = "smsEnabled needs smsOriginationNumber (E.164), smsPhoneNumberArn and messengerResidentAddress"
+SEND_MESSAGE_HANDLER = "pidge_send.handler.handle"
+SEND_MESSAGE_LEADING_KEYS = frozenset({"MESSAGE#*", "SENDRATE#*"})
+SEND_EMAIL_IDENTITY_ARN = "arn:aws:ses:us-east-1:358148451054:identity/sendpidge.com"  # cdk.json receiptSender's domain
+RESIDENT_FROM_ADDRESS_PATTERN = "*@sendpidge.com"  # cdk.json receiverDomain: From is the caller's own RECEIVER# address
+OUT_MESSAGE_ID = f"{messenger_send.OUT_MESSAGE_ID_PREFIX}1"
+# (partition key, write action) pidge-send needs, keys from the production builders: the out row put on any channel (email
+# too), its sent/failed mark, the hourly slot.
+SEND_MESSAGE_WRITES = (
+    (inbox_rows.out_message_key(inbox_rows.message_item_id(Channel.EMAIL, OUT_MESSAGE_ID))["PK"], "dynamodb:PutItem"),
+    (inbox_rows.out_message_key(inbox_rows.message_item_id(Channel.WHATSAPP, OUT_MESSAGE_ID))["PK"], "dynamodb:UpdateItem"),
+    (f"{messenger_send.SEND_COUNTER_PARTITION_PREFIX}grandma-user", "dynamodb:UpdateItem"),
+)
 
 
 def find_construct_logical_id(template: dict, resource_type: str, construct_id: str) -> str:
@@ -95,9 +113,38 @@ def test_sms_topic_only_with_sms_enabled(tmp_path):
     environment = inbound_function["Properties"]["Environment"]["Variables"]
     assert (environment["SMS_TOPIC_ARN"], environment["SMS_ORIGINATION_NUMBER"]) == (
         {"Ref": find_construct_logical_id(template, "AWS::SNS::Topic", "SmsInboundTopic")}, SMS_ORIGINATION_NUMBER)
+    assert [statement["Resource"] for statement in send_message_role_statements(template)
+            if statement_grants(statement, "sms-voice:SendTextMessage")] == [SMS_ON_OVERRIDES["smsPhoneNumberArn"]]
 
     sms_incomplete_root = tmp_path / "sms_incomplete"
     sms_incomplete_root.mkdir()
     refused = run_synth_for_tests(sms_incomplete_root, {"smsEnabled": True})
     assert refused.returncode != 0
     assert SMS_SETTINGS_REFUSAL in refused.stderr
+
+
+def send_message_role_statements(template: dict) -> list[dict]:
+    _send_logical_id, send_function = find_function_by_handler(template, SEND_MESSAGE_HANDLER)
+    return collect_role_allow_statements(template, send_function["Properties"]["Role"]["Fn::GetAtt"][0])
+
+
+def test_send_function_writes_only_message_and_sendrate_rows(synthesized_template):
+    statements = send_message_role_statements(synthesized_template)
+    write_statements = [statement for statement in statements if any(statement_grants(statement, action) for action in TABLE_WRITE_ACTIONS)]
+    assert write_statements  # with no write at all, every pattern check below would pass
+    for statement in write_statements:
+        assert statement["Condition"]["Null"] == {"dynamodb:LeadingKeys": "false"}
+        assert set(as_list(statement["Condition"]["ForAllValues:StringLike"]["dynamodb:LeadingKeys"])) <= SEND_MESSAGE_LEADING_KEYS
+    for partition_key, action in SEND_MESSAGE_WRITES:
+        granting_patterns = [pattern for statement in write_statements if statement_grants(statement, action)
+                             for pattern in as_list(statement["Condition"]["ForAllValues:StringLike"]["dynamodb:LeadingKeys"])]
+        assert any(fnmatch.fnmatchcase(partition_key, pattern) for pattern in granting_patterns), (partition_key, action)
+    # It pushes with should_remove_gone_connections=False, so it never deletes a CONN# row; it never scans.
+    assert [statement for statement in statements
+            if any(statement_grants(statement, action) for action in ("dynamodb:DeleteItem", "dynamodb:Scan"))] == []
+    assert [action for statement in statements for action in as_list(statement["Action"])
+            if action.lower().startswith(("bedrock", "s3:"))] == []
+    assert not any(statement_grants(statement, "sms-voice:SendTextMessage") for statement in statements)  # SMS off, no RCS agent
+    send_email_statements = [statement for statement in statements if statement_grants(statement, "ses:SendEmail")]
+    assert [(statement["Resource"], statement["Condition"]) for statement in send_email_statements] == [
+        (SEND_EMAIL_IDENTITY_ARN, {"StringLike": {"ses:FromAddress": RESIDENT_FROM_ADDRESS_PATTERN}})]

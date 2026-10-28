@@ -1,14 +1,15 @@
 // SendPidge PWA entry: sign-in or access token, socket, role routing from sync_state, and push dispatch to the receiver,
 // contact or org admin view (an org admin's cards are a contact's). The role is never stored: every sync_state names it again.
-import { ACTION_REJECTED_REASON, CLIENT_ACTION, CONNECTION_STATUS, PUSH_MESSAGE_TYPE, USER_ROLE } from "./constants.js";
+import { ACTION_REJECTED_REASON, CLIENT_ACTION, CONNECTION_STATUS, MESSAGE_DIRECTION, PUSH_MESSAGE_TYPE, USER_ROLE } from "./constants.js";
 import { connectToPushChannel, sendClientAction } from "./websocket.js";
 import { completeSignInFromRedirect, hasSignInSession, readSignInConfig, resolveIdToken, startSignIn } from "./auth.js";
 import { refreshPushSubscriptionAfterSync, startPushNotifications } from "./push-notifications.js";
 import { ACTION_STATUS_MESSAGE, showActionStatusMessage } from "./action-status.js";
 import {
   applyReadingPaneLayout, applyReceiverSyncState, handleEmailStatePush, handleMessageStatePush, handleReceiverActionRejected,
-  handleReceiverRequestStatePush, hideReceiverView, setUnseenHoldListener, showReceiverView,
+  handleReceiverRequestStatePush, hideReceiverView, openComposeScreen, setUnseenHoldListener, showReceiverView,
 } from "./receiver-view.js";
+import { handleComposerActionRejected } from "./compose-view.js";
 import {
   applyContactSyncState, handleContactActionRejected, handleContactRequestStatePush, handleVerificationCardPush,
   hideContactView, showContactView,
@@ -47,6 +48,7 @@ const pageElements = {
   loadingState: document.getElementById("loading-state"),
   receiverTabs: document.getElementById("receiver-tabs"),
   inboxTabDot: document.getElementById("tab-inbox-dot"),
+  composeButton: document.getElementById("compose-button"),
   railMeInitial: document.getElementById("rail-me-initial"),
   railMeName: document.getElementById("rail-me-name"),
 };
@@ -192,6 +194,7 @@ function handleActionRejectedPush(pushMessage) {
     console.error("SendPidge: action_rejected has an unknown reason", pushMessage.reason);
   }
   if (activeUserRole === USER_ROLE.RECEIVER && handleOnboardingActionRejected(pushMessage.reason)) return; // the form shows why
+  if (activeUserRole === USER_ROLE.RECEIVER && handleComposerActionRejected(pushMessage.reason)) return; // the composer shows why
   const isAlreadyRecorded = pushMessage.reason === ACTION_REJECTED_REASON.NOT_APPLIED;
   showActionStatusMessage(isAlreadyRecorded ? ACTION_STATUS_MESSAGE.ALREADY_RECORDED : ACTION_STATUS_MESSAGE.GENERIC_FAILURE);
   if (activeUserRole === USER_ROLE.RECEIVER) {
@@ -251,7 +254,10 @@ function handlePushMessage(pushMessage) {
       handleEmailStatePush(pushMessage.email);
       break;
     case PUSH_MESSAGE_TYPE.MESSAGE_STATE:
-      if (activeReceiverTab !== RECEIVER_TAB.INBOX || isOnboardingOpen) showReceiverTab(RECEIVER_TAB.INBOX); // a new hold must be seen
+      // A new hold must be seen; her own sent row (direction out) leaves her where she is.
+      if (pushMessage.message?.direction !== MESSAGE_DIRECTION.OUT && (activeReceiverTab !== RECEIVER_TAB.INBOX || isOnboardingOpen)) {
+        showReceiverTab(RECEIVER_TAB.INBOX);
+      }
       handleMessageStatePush(pushMessage.message);
       break;
     case PUSH_MESSAGE_TYPE.VERIFICATION_CARD:
@@ -329,6 +335,7 @@ function buildConnectionTokenResolver(signInConfig) {
 
 async function startApp() {
   Object.entries(tabButtons).forEach(([tabName, button]) => button.addEventListener("click", () => showReceiverTab(tabName)));
+  pageElements.composeButton.addEventListener("click", () => openComposeScreen());
   setUnseenHoldListener((hasUnseenPendingHold) => { hasUnseenHold = hasUnseenPendingHold; renderInboxTabDot(); });
   startCircleView({
     onAddTapped: () => openOnboarding(ONBOARDING_START.ADD_CONTACT),

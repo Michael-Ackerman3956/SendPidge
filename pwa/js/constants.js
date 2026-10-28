@@ -35,6 +35,7 @@ export const CLIENT_ACTION = Object.freeze({
   ADD_ORG_CONTACT: "add_org_contact",
   REMOVE_ORG_CONTACT: "remove_org_contact",
   ORG_RESOLVE: "org_resolve",
+  SEND_MESSAGE: "send_message",
 });
 
 // What the resident's home may see (orgPreference.visibility). Mirrors OrgVisibility in lambda/shared/org_enums.py.
@@ -156,6 +157,13 @@ export const MESSAGE_DIRECTION = Object.freeze({
   OUT: "out",
 });
 
+// Where an out row's send stands (message.providerStatus). Mirrors ProviderStatus in lambda/shared/messenger_enums.py.
+export const PROVIDER_STATUS = Object.freeze({
+  SENDING: "sending",
+  SENT: "sent",
+  FAILED: "failed",
+});
+
 export const USER_ROLE = Object.freeze({
   RECEIVER: "receiver",
   CONTACT: "contact",
@@ -187,6 +195,11 @@ export const ACTION_REJECTED_REASON = Object.freeze({
   DUPLICATE_NAME: "duplicate_name",
   CIRCLE_FULL: "circle_full",
   LAST_CHECKED_NUMBER: "last_checked_number",
+  NOT_A_CONTACT: "not_a_contact",
+  OVER_CAP: "over_cap",
+  CHANNEL_CLOSED: "channel_closed",
+  THREAD_HELD: "thread_held",
+  SEND_FAILED: "send_failed",
 });
 
 export const POLICY_DECISION = Object.freeze({

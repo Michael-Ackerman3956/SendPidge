@@ -265,8 +265,8 @@ class PushMessageType(StrEnum):
 
 
 class ClientAction(StrEnum):
-    """What a PWA may send on the WebSocket: every action on the $default route (pidge-verdict) but ORG_RESOLVE, which has
-    its own route (pidge-org). Mirrored in pwa/js/constants.js."""
+    """What a PWA may send on the WebSocket: every action on the $default route (pidge-verdict) but ORG_RESOLVE and
+    SEND_MESSAGE, which have their own routes (pidge-org, pidge-send). Mirrored in pwa/js/constants.js."""
 
     SYNC = "sync"        # either user, right after connecting
     ANSWER = "answer"    # the contact: yes / no on a request
@@ -285,6 +285,7 @@ class ClientAction(StrEnum):
     ADD_ORG_CONTACT = "add_org_contact"                # the receiver: the home's office row joins the circle
     REMOVE_ORG_CONTACT = "remove_org_contact"          # the receiver: the home's office row leaves the circle
     ORG_RESOLVE = "org_resolve"                        # an org admin: a member's open episode was followed up (org_resolve route)
+    SEND_MESSAGE = "send_message"                      # the receiver: one message to someone in her circle (send_message route)
 
 
 class PushNotice(StrEnum):
@@ -380,7 +381,7 @@ class UserRole(StrEnum):
 
 
 class ActionOutcome(StrEnum):
-    """What happened to one answer or Confirm. Every value but RECORDED is sent back as action_rejected."""
+    """What happened to one client action. Every value but RECORDED is sent back as action_rejected."""
 
     RECORDED = "recorded"
     UNKNOWN_REQUEST = "unknown_request"
@@ -392,6 +393,11 @@ class ActionOutcome(StrEnum):
     DUPLICATE_NAME = "duplicate_name"  # add_contact / add_org_contact: the circle already has that name (asks are matched by name)
     CIRCLE_FULL = "circle_full"        # add_contact: the circle has CIRCLE_MAXIMUM_SIZE people
     LAST_CHECKED_NUMBER = "last_checked_number"  # edit_contact: the edit drops every checked WhatsApp number
+    NOT_A_CONTACT = "not_a_contact"    # send_message: the address is not one Pidge may ask of anyone in her circle
+    OVER_CAP = "over_cap"              # send_message: the hour's sends are used up, or the counter could not be written
+    CHANNEL_CLOSED = "channel_closed"  # send_message: no WhatsApp message from that number in the last 24 hours
+    THREAD_HELD = "thread_held"        # send_message: a message on that conversation is held, waiting for an answer
+    SEND_FAILED = "send_failed"        # send_message: the provider refused or failed; the row is kept as failed
 
 
 class CaseState(StrEnum):

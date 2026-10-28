@@ -13,7 +13,7 @@ import { StackSettings } from "./stack-settings.js";
 
 // lambda/shared/enums.py ClientAction.ORG_RESOLVE: the socket routes on $request.body.action, so this key reaches OrgActions only.
 const ORG_RESOLVE_ROUTE_KEY = "org_resolve";
-const TABLE_READ_ACTIONS = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:BatchGetItem"];
+export const TABLE_READ_ACTIONS = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:BatchGetItem"];
 // The projection is the only writer of ORGLOG#, ORGSTAT# and the MEMBER# coverage fact; it never writes another partition.
 const PROJECTION_WRITE_ACTIONS = [
   "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:BatchWriteItem", "dynamodb:ConditionCheckItem",
@@ -28,7 +28,7 @@ const INSERT_OR_MODIFY = FilterRule.or("INSERT", "MODIFY");
 
 // A table write limited to partitions whose key matches one of the patterns. ForAllValues is true for an absent key, so the
 // Null check makes a request without dynamodb:LeadingKeys fail instead of pass.
-function buildLeadingKeysWriteStatement(tableArn: string, actions: string[], leadingKeyPatterns: string[]): PolicyStatement {
+export function buildLeadingKeysWriteStatement(tableArn: string, actions: string[], leadingKeyPatterns: string[]): PolicyStatement {
   return new PolicyStatement({
     actions,
     resources: [tableArn],

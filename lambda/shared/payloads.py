@@ -3,9 +3,11 @@
 from dataclasses import dataclass
 
 from shared import graph, inbox_rows, reach_points
-from shared.enums import CaseEvent, Channel, Friction, PolicyDecision, PushMessageType, Relationship, RequestState, WarnReason
+from shared.enums import (
+    CaseEvent, Channel, Friction, PolicyDecision, PushMessageType, Relationship, RequestState, VerifiedVia, WarnReason,
+)
 from shared.list_enums import ScamListCoverageState
-from shared.messenger_enums import MessageDirection
+from shared.messenger_enums import MessageDirection, ProviderStatus
 
 EMAIL_FIELDS_FOR_PWA = ("senderName", "senderAddress", "subject", "receivedAt", "textBody")
 
@@ -36,12 +38,18 @@ def request_for_receiver(request_row: dict, contact_name: str, status: RequestSt
     }
 
 
+def email_thread_key(email_row: dict) -> str:
+    """Her conversation with the email's sender; an EMAIL# row stores no threadKey, so it comes from senderAddress."""
+    return inbox_rows.thread_key_for(Channel.EMAIL, email_row["senderAddress"])
+
+
 def reading_email_for_receiver(email_row: dict) -> dict:
     """The row while the Reader is still on it: state None, no body, no links; only the sender line and the subject show before
     the verdict. The email_state push after the policy run replaces it (same emailId)."""
     return {
         "emailId": email_row["s3Key"],
         **{field: email_row[field] for field in EMAIL_FIELDS_FOR_PWA},
+        "threadKey": email_thread_key(email_row),
         "textBody": "",
         "state": None,
         "warnReason": None,
@@ -62,6 +70,7 @@ def email_for_receiver(email_row: dict, request_row: dict | None, contact_name: 
     return {
         "emailId": email_row["s3Key"],
         **{field: email_row[field] for field in EMAIL_FIELDS_FOR_PWA},
+        "threadKey": email_thread_key(email_row),
         "state": email_row["state"],
         "warnReason": email_row.get("warnReason"),
         "reasons": list(email_row.get("reasons", [])),
@@ -109,9 +118,32 @@ def message_reading_message(message_row: dict) -> dict:
     return {"type": PushMessageType.MESSAGE_STATE, "message": reading_message_for_receiver(message_row)}
 
 
+def is_out_message_row(inbox_row: dict) -> bool:
+    """A MESSAGE# row the resident sent through pidge-send; an EMAIL# row has no direction and is never one."""
+    return "direction" in inbox_row and MessageDirection(inbox_row["direction"]) is MessageDirection.OUT
+
+
+def out_message_for_receiver(message_row: dict) -> dict:
+    """A text the resident sent. Its messageId is the row's own key (MESSAGE#<channel>#out-<uuid>), since the provider's id
+    exists only once the send went out."""
+    return {
+        "messageId": message_row["PK"].removeprefix(f"{inbox_rows.MESSAGE_ROW_KIND}#"),
+        "channel": str(Channel(message_row["channel"])),
+        "direction": str(MessageDirection(message_row["direction"])),
+        "threadKey": message_row["threadKey"],
+        "recipientName": message_row["recipientName"],
+        "recipientAddress": message_row["recipientAddress"],
+        "textBody": message_row["textBody"],
+        "sentAt": message_row["sentAt"],
+        "providerStatus": str(ProviderStatus(message_row["providerStatus"])),
+    }
+
+
 def message_for_receiver(message_row: dict, request_row: dict | None, contact_name: str | None, status: RequestState | None) -> dict:
     """An inbound text once the policy has run (state, warnReason and reasons are on the row); status is the request's
-    effective status."""
+    effective status. A text she sent is its out payload (no verdict, no request)."""
+    if is_out_message_row(message_row):
+        return out_message_for_receiver(message_row)
     return {
         **message_line_for_receiver(message_row),
         "state": str(PolicyDecision(message_row["state"])),
@@ -227,3 +259,20 @@ def circle_entry_for_receiver(contact_row: dict, reach_flags: ReachFlags) -> dic
         "reachPoints": [{"channel": str(point.channel), "address": point.address,
                          "verifiedVia": None if point.verified_via is None else str(point.verified_via)} for point in points],
     }
+
+
+def send_to_for_contact(contact_row: dict, send_channels: tuple[Channel, ...]) -> dict:
+    """The composer's chips for one member: each of the resident's send channels with the first address Pidge may ask on its
+    reach channel (an SMS goes to the RCS number), the same addresses pidge-send takes as a recipient. A channel with no such
+    address has no chip; a row still waiting for its code has none (graph.list_contacts leaves it out)."""
+    if graph.verified_via_of(contact_row) is VerifiedVia.PENDING:
+        return {}
+    points = reach_points.reach_points_of(contact_row)
+    addresses_by_channel = {channel: reach_points.askable_addresses(points, reach_points.reach_channel_of(channel))
+                            for channel in send_channels}
+    return {str(channel): addresses[0] for channel, addresses in addresses_by_channel.items() if addresses}
+
+
+def circle_entry_with_send_to(contact_row: dict, reach_flags: ReachFlags, send_channels: tuple[Channel, ...]) -> dict:
+    """circle_entry_for_receiver plus sendTo (send_to_for_contact over messenger_send.send_channels_for of the resident)."""
+    return {**circle_entry_for_receiver(contact_row, reach_flags), "sendTo": send_to_for_contact(contact_row, send_channels)}

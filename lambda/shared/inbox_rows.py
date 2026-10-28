@@ -1,6 +1,7 @@
 """DynamoDB access for inbound rows, keyed by (channel, item id): EMAIL#<id> for email, MESSAGE#<id> for a text channel. The
 pipeline claims and decides them; a request finds the row it holds through REQUEST#.inboundChannel and REQUEST#.emailId. Also
-a conversation's THREAD# row (RECEIVER#<address>/THREAD#<threadKey>)."""
+a conversation's THREAD# row (RECEIVER#<address>/THREAD#<threadKey>) and a resident's outgoing rows
+(MESSAGE#<channel>#out-<uuid4>/META, every channel email included)."""
 
 from datetime import datetime, timezone
 
@@ -8,6 +9,7 @@ from botocore.exceptions import ClientError
 
 from shared import graph
 from shared.enums import Channel, PolicyDecision, ReasonCode, WarnReason
+from shared.messenger_enums import ProviderStatus
 
 MESSAGE_ROW_KIND = "MESSAGE"
 MESSAGE_ROW_CHANNELS = frozenset({Channel.WHATSAPP, Channel.RCS, Channel.SMS})  # the channels whose inbound rows are MESSAGE#
@@ -119,12 +121,22 @@ def record_escalation(channel: Channel, item_id: str, escalation_fields: dict) -
     )
 
 
+def thread_row_key(receiver_address: str, thread_key: str) -> dict:
+    return {"PK": f"RECEIVER#{receiver_address}", "SK": f"{THREAD_SORT_KEY_PREFIX}{thread_key}"}
+
+
+def get_thread(receiver_address: str, thread_key: str) -> dict | None:
+    """Strongly consistent: a hold recorded a moment ago must already refuse a send on its thread."""
+    response = graph.get_table().get_item(Key=thread_row_key(receiver_address, thread_key), ConsistentRead=True)
+    return response["Item"] if "Item" in response else None
+
+
 def record_last_inbound(receiver_address: str, thread_key: str, inbound_at: str) -> None:
     """Stamps the thread's newest inbound send time (Meta's 24-h reply window runs from it). A time no newer than the stored
     one (a redelivery, or a record that arrives late) leaves the row as it is."""
     try:
         graph.get_table().update_item(
-            Key={"PK": f"RECEIVER#{receiver_address}", "SK": f"{THREAD_SORT_KEY_PREFIX}{thread_key}"},
+            Key=thread_row_key(receiver_address, thread_key),
             UpdateExpression="SET lastInboundAt = :inboundAt",
             ConditionExpression="attribute_not_exists(lastInboundAt) OR lastInboundAt < :inboundAt",
             ExpressionAttributeValues={":inboundAt": inbound_at},
@@ -132,6 +144,41 @@ def record_last_inbound(receiver_address: str, thread_key: str, inbound_at: str)
     except ClientError as error:
         if error.response["Error"]["Code"] != graph.CONDITIONAL_CHECK_FAILED:
             raise
+
+
+def record_thread_hold(receiver_address: str, thread_key: str, request_id: str) -> None:
+    """Adds the request to the thread's heldRequestIds (a string set); while any of them is pending, a send on the thread is
+    refused (messenger_send.is_thread_held)."""
+    graph.get_table().update_item(
+        Key=thread_row_key(receiver_address, thread_key),
+        UpdateExpression="ADD heldRequestIds :requestIds",
+        ExpressionAttributeValues={":requestIds": {request_id}},
+    )
+
+
+def out_message_key(item_id: str) -> dict:
+    """An outgoing row is MESSAGE#<item id> on every channel (inbound_partition_key keys an inbound email EMAIL#)."""
+    return {"PK": f"{MESSAGE_ROW_KIND}#{item_id}", "SK": graph.METADATA_SORT_KEY}
+
+
+def put_out_message(out_row: dict) -> None:
+    """Writes a resident's outgoing row (keys included) before its provider is called; an existing row raises."""
+    graph.get_table().put_item(Item=out_row, ConditionExpression="attribute_not_exists(PK)")
+
+
+def mark_out_message(item_id: str, provider_status: ProviderStatus, provider_message_id: str | None) -> dict:
+    """The provider's answer on an outgoing row: its status, and the provider's message id once sent (none on a failure).
+    Returns the stored row; a missing row raises."""
+    update_expression = "SET providerStatus = :providerStatus"
+    values = {":providerStatus": str(provider_status)}
+    if provider_message_id is not None:
+        update_expression += ", providerMessageId = :providerMessageId"
+        values[":providerMessageId"] = provider_message_id
+    response = graph.get_table().update_item(
+        Key=out_message_key(item_id), UpdateExpression=update_expression, ConditionExpression="attribute_exists(PK)",
+        ExpressionAttributeValues=values, ReturnValues="ALL_NEW",
+    )
+    return response["Attributes"]
 
 
 def mark_quarantined(channel: Channel, item_id: str) -> bool:

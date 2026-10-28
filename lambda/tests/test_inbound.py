@@ -3,6 +3,7 @@ pipeline on moto with a scripted Reader: MESSAGE# rows of the messenger resident
 Reader skipped for media, a waiting contact's code left to verification, and a broken or foreign record raising unwritten."""
 
 import importlib
+import io
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -20,7 +21,8 @@ from tests.test_inbound_texts import (
     SENT_AT, SENT_AT_EPOCH_SECONDS, SMS_RECORD, STATUSES_ONLY, TEMPLATE_TAP, change_value_with, profile_contact, typed_text,
 )
 from tests.test_rcs import sns_message as rcs_sns_message
-from tests.test_reader_pipeline import JIMIN_MONEY_ASK
+from tests.test_reader_pipeline import FAKE_JIMIN, JIMIN_MONEY_ASK, SAMPLES_DIRECTORY
+from tests.test_reader_reading_state import inbound_event
 from tests.test_reader_receiver import rows_with_partition_prefix
 from tests.test_verdict import aws  # noqa: F401
 from tests.test_whatsapp import sns_message as whatsapp_sns_message
@@ -142,7 +144,7 @@ def test_new_phone_sms_from_unknown_number_holds_and_asks_jimin(inbound_handler)
     [ask] = inbound_handler.pushes_of_type("jimin", "verification_card")
     assert (ask["request"]["requestId"], ask["request"]["senderAddress"]) == (row["requestId"], SCAMMER_SMS_NUMBER)
     assert inbound_handler.decided_gates == [GateFired.GATE_2] and inbound_handler.reader_model.raised_errors == []
-    assert thread_row(f"sms#{SCAMMER_SMS_NUMBER}") is None  # only WhatsApp stamps a reply window
+    assert "lastInboundAt" not in thread_row(f"sms#{SCAMMER_SMS_NUMBER}")  # the hold is recorded; only WhatsApp stamps a reply window
 
 
 def test_profile_name_from_unknown_whatsapp_number_is_gate_1(inbound_handler):
@@ -250,3 +252,29 @@ def test_whatsapp_text_opens_the_thread_window(inbound_handler):
     inbound_handler.handle(WHATSAPP_TOPIC_ARN, whatsapp_text_record("wamid.T2", HELLO_TEXT, JIMIN_DIGITS, "Jimin", "1793062800"))
     assert thread_row(f"whatsapp#{JIMIN_NUMBER}")["lastInboundAt"] == "2026-10-27T01:00:00Z"
     assert len(rows_with_partition_prefix("MESSAGE#")) == 3
+
+
+def read_sample_email_to_grandma(monkeypatch, sample_file_name: str) -> dict:
+    """One sample through the production pidge_reader handler, on the pipeline load_inbound_handler loaded; its EMAIL# row."""
+    monkeypatch.setenv("EMAIL_BUCKET", "bucket")
+    reader_handler = importlib.import_module("pidge_reader.handler")
+    raw_email = (SAMPLES_DIRECTORY / sample_file_name).read_bytes()
+    monkeypatch.setattr(reader_handler.s3_client, "get_object", lambda Bucket, Key: {"Body": io.BytesIO(raw_email)})
+    reader_handler.handle(inbound_event(sample_file_name, [GRANDMA_ADDRESS]), None)
+    return inbox_rows.get_row(Channel.EMAIL, f"inbox/{sample_file_name}")
+
+
+def test_hold_is_recorded_on_its_thread(inbound_handler, monkeypatch):
+    seed_grandma_and_jimin()
+    inbound_handler.use_reader_scripts({NEW_PHONE_SMS_TEXT: [verdict_step(JIMIN_MONEY_ASK)], HELLO_TEXT: [verdict_step(NO_ASK_FROM_JIMIN)],
+                                        FAKE_JIMIN.subject_fragment: [verdict_step(JIMIN_MONEY_ASK)]})
+    inbound_handler.handle(SMS_TOPIC_ARN, SMS_RECORD)
+    sms_hold = message_row(Channel.SMS, "sms-1")
+    assert sms_hold["state"] == "hold"
+    assert thread_row(f"sms#{SCAMMER_SMS_NUMBER}")["heldRequestIds"] == {sms_hold["requestId"]}
+    email_hold = read_sample_email_to_grandma(monkeypatch, FAKE_JIMIN.sample_file_name)  # From: Jimin <jimin.kim@jimin-help.example>
+    assert email_hold["state"] == "hold"
+    assert thread_row("email#jimin.kim@jimin-help.example")["heldRequestIds"] == {email_hold["requestId"]}
+    inbound_handler.handle(WHATSAPP_TOPIC_ARN, whatsapp_text_record("wamid.J1", HELLO_TEXT, JIMIN_DIGITS, "Jimin"))
+    assert message_row(Channel.WHATSAPP, "wamid.J1")["state"] == "pass"
+    assert "heldRequestIds" not in thread_row(f"whatsapp#{JIMIN_NUMBER}")  # a pass stamps the reply window only

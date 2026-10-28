@@ -69,6 +69,8 @@ SOCKET_PUSH_ROLES = tuple(role for role in TABLE_ROLES if role not in (
     "WebSocketConnectFunctionServiceRole", "QuestionInboundFunctionServiceRole", "ListDispatchFunctionServiceRole"))
 # The org functions (synth-for-tests.ts turns orgEnabled on) hold scoped table grants, never grantReadWriteData: not TABLE_ROLES.
 ORG_FUNCTION_ROLES = ("OrgProjectionFunctionServiceRole", "OrgActionsFunctionServiceRole")
+# pidge-send (slice 16) writes only MESSAGE# and SENDRATE# rows through a LeadingKeys-scoped grant: not TABLE_ROLES either.
+SEND_MESSAGE_FUNCTION_ROLE = "SendMessageFunctionServiceRole"
 SCHEDULE_WRITING_ROLES = (
     "RetryFunctionServiceRole", "ReaderFunctionServiceRole", "VerdictFunctionServiceRole", "InboundMessageFunctionServiceRole")
 MODEL_CALLING_ROLES = ("ReaderFunctionServiceRole", CASE_AGENT_RUNTIME_ROLE, "DispatchFunctionServiceRole", "InboundMessageFunctionServiceRole")
@@ -113,7 +115,7 @@ ALLOWED_WILDCARD_GRANTS: dict[str, dict[str, frozenset[str]]] = {
     "${CaseAgentRuntime.AgentRuntimeArn}/*": {"DispatchFunctionServiceRole": frozenset({
         "bedrock-agentcore:InvokeAgentRuntime", "bedrock-agentcore:InvokeAgentRuntimeForUser"})},
     f"arn:${{AWS::Partition}}:execute-api:us-east-1:{STACK_ACCOUNT}:${{WebSocketApi}}/live/*/@connections/*":
-        grant_to_each(SOCKET_PUSH_ROLES + ORG_FUNCTION_ROLES, frozenset({"execute-api:ManageConnections"})),
+        grant_to_each(SOCKET_PUSH_ROLES + ORG_FUNCTION_ROLES + (SEND_MESSAGE_FUNCTION_ROLE,), frozenset({"execute-api:ManageConnections"})),
     f"arn:${{AWS::Partition}}:scheduler:us-east-1:{STACK_ACCOUNT}:schedule/SendPidge-ScheduleGroup-4E8C1034/*":
         grant_to_each(SCHEDULE_WRITING_ROLES, SCHEDULE_WRITE_ACTIONS),  # one-time schedules inside the one group
     f"arn:${{AWS::Partition}}:logs:us-east-1:{STACK_ACCOUNT}:log-group:*": {CASE_AGENT_RUNTIME_ROLE: frozenset({"logs:DescribeLogGroups"})},

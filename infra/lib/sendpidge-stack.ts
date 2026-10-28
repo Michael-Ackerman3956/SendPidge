@@ -17,6 +17,7 @@ import { buildEmailStore, buildInboundRouting } from "./mail-ingress.js";
 import { buildOrgFunctions } from "./org-functions.js";
 import { buildPasskeySignIn, buildPwaSignInConfig } from "./passkey-sign-in.js";
 import { SharedResources, buildScheduler, buildWebSocketApi } from "./realtime.js";
+import { buildSendMessageFunction } from "./send-function.js";
 import { readStackSettings } from "./stack-settings.js";
 import { buildStaticSite } from "./static-site.js";
 import {
@@ -131,6 +132,7 @@ export class SendPidgeStack extends Stack {
     buildDispatchFunction(this, settings, shared, caseAgent, guardrail, vapidSecret);
     buildListDispatch(this, shared);
     buildOrgFunctions(this, settings, shared);
+    buildSendMessageFunction(this, settings, shared);
 
     new Alarm(this, "ReaderDeadLetterAlarm", {
       alarmDescription: "pidge-reader gave up on an email after retries",

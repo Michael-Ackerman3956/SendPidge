@@ -1,6 +1,7 @@
 """Answers, Confirm and sync on a hold that came in as a text (MESSAGE#): the cross-channel Yes rule over every inbound and
 answer channel pair, Confirm listing the number with no S3 tag, Reverse dropping only its own listed number, and sync
-carrying the MESSAGE# rows. Production record_answer, confirm_quarantine and pidge-verdict on moto."""
+carrying the MESSAGE# rows and each circle member's composer sendTo. Production record_answer, confirm_quarantine and
+pidge-verdict on moto."""
 
 import json
 
@@ -9,7 +10,7 @@ import pytest
 from shared import graph, inbox_rows, lists, verdict
 from shared.enums import ActionOutcome, Channel, Friction, ListSource, PolicyDecision, ReasonCode, RequestState, VerdictAnswer
 from shared.messenger_enums import MessageDirection
-from tests.helpers.profiles import seed_contact_roles
+from tests.helpers.profiles import seed_contact_roles, seed_resident
 from tests.test_verdict import RECEIVER_ADDRESS, RECEIVER_USER_ID, VERDICT_FIELDS, at, aws, status_of  # noqa: F401
 from tests.test_verify_contact import send_action, verdict_handler  # noqa: F401
 
@@ -20,6 +21,8 @@ JIMIN_EMAIL = "jimin@example.com"
 RECEIVED_AT = "2026-10-27T00:00:00Z"
 NEW_PHONE_TEXT = "Mom it's Jimin, new phone"
 JIMIN = graph.Contact("CONTACT#jimin", "Jimin", "jimin")
+BOB_ADDRESS = "bob@example.com"
+WAITING_NUMBER = "+821099998888"
 SENDER_ON = {
     Channel.INAPP: verdict.SenderIdentity(Channel.INAPP, "jimin"),
     Channel.WHATSAPP: verdict.SenderIdentity(Channel.WHATSAPP, JIMIN_NUMBER),
@@ -186,3 +189,45 @@ def test_sync_carries_message_rows_and_the_card_shows_the_number(verdict_handler
     send_action(handler, "jimin", {"action": "sync"})
     [card] = pushed_messages[-1]["requests"]
     assert (card["requestId"], card["senderAddress"], card["subject"]) == (request_id, SCAM_NUMBER, "")
+
+
+def seed_contact_row(receiver_address: str, contact_user_id: str, verified_via: str, reach_point_items: list[dict]) -> None:
+    graph.get_table().put_item(Item={
+        "PK": f"RECEIVER#{receiver_address}", "SK": f"CONTACT#{contact_user_id}", "contactName": contact_user_id.title(),
+        "contactPwaUserId": contact_user_id, "verifiedVia": verified_via, "contactReachPoints": reach_point_items,
+    })
+
+
+def synced_send_to(handler, pushed_messages: list[dict], user_id: str) -> dict:
+    send_action(handler, user_id, {"action": "sync"})
+    return {entry["contactUserId"]: entry["sendTo"] for entry in pushed_messages[-1]["circle"]}
+
+
+def test_send_to_lists_only_askable_addresses(verdict_handler, monkeypatch):  # noqa: F811
+    handler, pushed_messages = verdict_handler  # WhatsApp on
+    monkeypatch.setenv("MESSENGER_RESIDENT_ADDRESS", RECEIVER_ADDRESS)
+    monkeypatch.delenv("RCS_ENABLED", raising=False)
+    monkeypatch.delenv("SMS_ENABLED", raising=False)
+    seed_jimin()
+    seed_contact_row(RECEIVER_ADDRESS, "minsoo", "seed", [  # a number still waiting for its code, listed first, is never a chip
+        {"channel": "whatsapp", "address": WAITING_NUMBER, "verifiedVia": "pending"},
+        {"channel": "whatsapp", "address": "+821033334444", "verifiedVia": "whatsapp"},
+        {"channel": "email", "address": "minsoo@example.com"},
+    ])
+    seed_contact_row(RECEIVER_ADDRESS, "sora", "pending", [  # a row still waiting for its code has no chip, not even its email
+        {"channel": "whatsapp", "address": WAITING_NUMBER, "verifiedVia": "pending"}, {"channel": "email", "address": "sora@example.com"},
+    ])
+    seed_resident(BOB_ADDRESS, "bob", "Bob")
+    seed_contact_row(BOB_ADDRESS, "jimin", "seed", [
+        {"channel": "whatsapp", "address": JIMIN_NUMBER, "verifiedVia": "seed"}, {"channel": "email", "address": JIMIN_EMAIL},
+    ])
+
+    assert synced_send_to(handler, pushed_messages, RECEIVER_USER_ID) == {
+        "jimin": {"email": JIMIN_EMAIL, "whatsapp": JIMIN_NUMBER},
+        "minsoo": {"email": "minsoo@example.com", "whatsapp": "+821033334444"},
+        "sora": {},
+    }
+    assert synced_send_to(handler, pushed_messages, "bob") == {"jimin": {"email": JIMIN_EMAIL}}  # phones: the messenger resident only
+    monkeypatch.setenv("SMS_ENABLED", "true")
+    assert synced_send_to(handler, pushed_messages, RECEIVER_USER_ID)["jimin"] == {  # an SMS goes to the checked RCS number
+        "email": JIMIN_EMAIL, "whatsapp": JIMIN_NUMBER, "sms": JIMIN_NUMBER}

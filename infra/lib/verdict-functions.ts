@@ -202,6 +202,9 @@ export function buildVerdictFunction(stack: Stack, settings: StackSettings, shar
       WHATSAPP_TOPIC_ARN: dependencies.topics.whatsappInboundTopic.topicArn,
       RELEASE_SCHEDULER_ENABLED: flagEnvironmentValue(settings.releaseSchedulerEnabled),
       RCS_ENABLED: flagEnvironmentValue(settings.rcsEnabled),
+      // The circle sync's sendTo (messenger_send.send_channels_for): phone channels only for this resident, SMS only when on.
+      MESSENGER_RESIDENT_ADDRESS: settings.messengerResidentAddress,
+      SMS_ENABLED: flagEnvironmentValue(settings.smsEnabled),
       RELEASE_FUNCTION_ARN: dependencies.releaseFunction.functionArn,
       SCHEDULE_GROUP_NAME: shared.scheduleGroup.scheduleGroupName,
       SCHEDULER_ROLE_ARN: shared.schedulerRole.roleArn,

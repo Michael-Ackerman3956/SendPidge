@@ -1,7 +1,9 @@
 // Grandma's screens (RECEIVER): inbox, email or text detail, hold overlay and verdict states, driven by sync_state, email_state,
-// message_state and request_state. A text is held in the same row shape as an email (receiver-payloads.js), keyed by emailId.
-// Email and text fields and contactName are attacker-controlled: rendered only through textContent / createElement.
-import { CLIENT_ACTION, EMAIL_DISPLAY_STATE, REQUEST_STATUS, ROW_KIND } from "./constants.js";
+// message_state and request_state. A text, in or out, is held in the same row shape as an email (receiver-payloads.js), keyed by
+// emailId; the inbox lists her sent rows too. The detail mounts the row's conversation (thread-view.js) and the composer
+// (compose-view.js) takes the inbox's place. Email and text fields and contactName are attacker-controlled: rendered only
+// through textContent / createElement.
+import { CLIENT_ACTION, EMAIL_DISPLAY_STATE, MESSAGE_DIRECTION, REQUEST_STATUS, ROW_KIND } from "./constants.js";
 import { createElementWithText, parseTimestampMilliseconds } from "./dom-helpers.js";
 import { closeHoldOverlay, showHoldOverlay } from "./pidge-overlay.js";
 import {
@@ -17,6 +19,10 @@ import { ACTION_STATUS_MESSAGE, clearActionStatusMessage, showActionStatusMessag
 import { buildLinkReasonLineElements, buildLinkStripElement } from "./link-strip.js";
 import { buildScamListCoverageLineElement, buildSenderReasonLineElements } from "./reason-lines.js";
 import { isSplitReadingPane, renderPaneTools, renderReaderBar } from "./reading-pane.js";
+import {
+  closeComposer, findReplyTarget, handleComposerOutMessage, isComposerShown, openComposer, refreshComposerSendState,
+} from "./compose-view.js";
+import { buildProviderStatusChipElement, buildThreadElement } from "./thread-view.js";
 
 const ROW_KIND_LABELS = Object.freeze({
   [ROW_KIND.EMAIL]: "Email",
@@ -89,6 +95,7 @@ function buildInboxRowElement(email) {
   rowBottomLine.append(createElementWithText("span", `channel-tag is-${email.rowKind}`, ROW_KIND_LABELS[email.rowKind]));
   const statusChip = buildRowStatusChipElement(email, emailDisplayState);
   if (statusChip !== null) rowBottomLine.append(statusChip);
+  if (email.direction === MESSAGE_DIRECTION.OUT) rowBottomLine.append(buildProviderStatusChipElement(email.providerStatus));
   rowText.append(rowTopLine);
   if (email.subject !== "") rowText.append(createElementWithText("span", "row-subject", email.subject)); // a text has no subject
   rowText.append(createElementWithText("span", "row-preview", email.textBody), rowBottomLine);
@@ -116,6 +123,35 @@ function renderInbox() {
   pageElements.inboxList.replaceChildren(...rowElements);
   renderPaneTools(emailsById.size);
   onUnseenHoldChanged(hasUnseenPendingHold());
+  refreshComposerSendState(); // a hold landing or answered in the composer's thread
+}
+
+// The row's request is pending, or confirmed and still releasing: pidge-send refuses a send into its thread (thread_held).
+function isPendingHold(row) {
+  if (row.request === null) return false;
+  return row.request.status === REQUEST_STATUS.PENDING
+    || (row.request.status === REQUEST_STATUS.CONFIRMED_PENDING && !hasReleaseTimePassed(row.request));
+}
+
+function isThreadKeyHeld(threadKey) {
+  return [...emailsById.values()].some((row) => row.threadKey === threadKey && isPendingHold(row));
+}
+
+// The open row's conversation (thread-view.js), or null for a row outside any thread (a mock row, a row older than slice 16).
+function buildOpenRowThreadElement(email) {
+  if (email.threadKey === null) return null;
+  const threadRows = sortEmailsNewestFirst([...emailsById.values()].filter((row) => row.threadKey === email.threadKey)).reverse();
+  const displayStates = threadRows.map(getEmailDisplayState);
+  return buildThreadElement({
+    threadRows,
+    openRowId: email.emailId,
+    hasNotFromThemRow: displayStates.some((displayState) => displayState === EMAIL_DISPLAY_STATE.DENIED
+      || displayState === EMAIL_DISPLAY_STATE.QUARANTINED),
+    isHeld: threadRows.some(isPendingHold),
+    replyTarget: findReplyTarget(email.threadKey, email.channel),
+    formatTime: formatRelativeReceivedTime,
+    onReplyTapped: openComposeScreen,
+  });
 }
 
 function buildDetailHeaderElement(email) {
@@ -177,6 +213,8 @@ function renderEmailDetail(email, shouldCelebrate = false) {
   detailChildren.push(bodyElement);
   const linkStrip = buildLinkStripElement(email.links);
   if (linkStrip !== null) detailChildren.push(linkStrip);
+  const threadElement = buildOpenRowThreadElement(email);
+  if (threadElement !== null) detailChildren.push(threadElement);
   pageElements.detailContent.replaceChildren(...detailChildren);
   renderReaderBar({ emailIds: listSortedEmailIds(), openEmailId: email.emailId, onBack: showInboxScreen, onOpen: openEmailDetail });
   if (shouldCelebrate) showCelebration(email);
@@ -192,6 +230,7 @@ function renderEmailDetail(email, shouldCelebrate = false) {
 
 // In a split reading pane the list stays beside the email; otherwise the email takes the screen (phone, or Gmail's "No split").
 function openEmailDetail(emailId) {
+  closeComposer(); // a new hold or her sent message takes the screen
   openEmailId = emailId;
   const isSplit = isSplitReadingPane();
   pageElements.inboxScreen.hidden = !isSplit;
@@ -205,6 +244,7 @@ function openEmailDetail(emailId) {
 
 function showInboxScreen() {
   const previouslyOpenEmailId = openEmailId;
+  closeComposer();
   closeHoldOverlay();
   openEmailId = null;
   pageElements.detailScreen.hidden = true;
@@ -226,6 +266,19 @@ export function applyReadingPaneLayout() {
     return;
   }
   openEmailDetail(openEmailId);
+}
+
+// Compose (app.js) with nothing selected, or Reply with { contactUserId, channel }: the composer takes the inbox's place until
+// Back, her sent message or a new hold.
+export function openComposeScreen(preselection = null) {
+  closeHoldOverlay();
+  openEmailId = null;
+  pageElements.inboxScreen.hidden = true;
+  pageElements.detailScreen.hidden = true;
+  pageElements.backButton.hidden = false;
+  pageElements.topbarTitle.textContent = "Compose";
+  document.body.classList.add("is-reading-email"); // the phone's tab bar steps aside, as for an open email
+  openComposer(preselection, isThreadKeyHeld);
 }
 
 // app.js listens so the Inbox tab can show its dot while a hold waits on another screen.
@@ -301,13 +354,16 @@ export function handleMessageStatePush(message) {
   applyInboxRowPush(normalizeMessagePayloadOrReportError(message));
 }
 
-// One pushed row (email or text, null when invalid): a hold awaiting its verdict opens itself; the open row re-renders.
+// One pushed row (email or text, null when invalid): a hold awaiting its verdict opens itself; her own send, once delivered,
+// replaces the composer with its conversation; the open row re-renders.
 function applyInboxRowPush(normalizedEmail) {
   if (normalizedEmail === null || keepsDecidedRow(emailsById.get(normalizedEmail.emailId), normalizedEmail)) return;
   releasedByUserEmailIds.delete(normalizedEmail.emailId); // a newer server state replaces the local release
   emailsById.set(normalizedEmail.emailId, normalizedEmail);
   renderInbox();
   if (getEmailDisplayState(normalizedEmail) === EMAIL_DISPLAY_STATE.AWAITING_VERDICT) {
+    openEmailDetail(normalizedEmail.emailId);
+  } else if (normalizedEmail.direction === MESSAGE_DIRECTION.OUT && handleComposerOutMessage(normalizedEmail)) {
     openEmailDetail(normalizedEmail.emailId);
   } else if (openEmailId === normalizedEmail.emailId) {
     renderEmailDetail(normalizedEmail);
@@ -355,7 +411,7 @@ export function showReceiverView() {
     });
     pageElements.backButton.addEventListener("click", showInboxScreen);
   }
-  if (openEmailId === null) {
+  if (openEmailId === null && !isComposerShown()) {
     pageElements.inboxScreen.hidden = false;
     pageElements.topbarTitle.textContent = "Inbox";
   }
@@ -363,6 +419,7 @@ export function showReceiverView() {
 
 // Hides every receiver screen (used if a sync names the CONTACT role on this device).
 export function hideReceiverView() {
+  closeComposer();
   closeHoldOverlay();
   openEmailId = null;
   document.body.classList.remove("is-reading-email");

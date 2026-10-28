@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from shared import channels, circle, graph, org_preferences, payloads, profiles, whatsapp
+from shared import channels, circle, graph, messenger_send, org_preferences, payloads, profiles, whatsapp
 from shared.enums import ActionOutcome, PushMessageType, VerifiedVia
 from shared.metrics import emit_count_metric
 from shared.profiles import ReceiverProfile
@@ -53,8 +53,15 @@ def verification_flags(settings: CircleSettings) -> dict:
     return {"whatsapp": settings.is_whatsapp_verification_on, "mock": settings.is_mock_on}
 
 
+def circle_entry_for(settings: CircleSettings, resident: ReceiverProfile, contact_row: dict) -> dict:
+    """One member as the resident's own sockets see them, with the composer's sendTo over her send channels."""
+    return payloads.circle_entry_with_send_to(contact_row, settings.reach_flags, messenger_send.send_channels_for(resident))
+
+
 def circle_entries(settings: CircleSettings, resident: ReceiverProfile) -> list[dict]:
-    return [payloads.circle_entry_for_receiver(row, settings.reach_flags) for row in graph.list_contact_rows(resident.receiver_address)]
+    send_channels = messenger_send.send_channels_for(resident)
+    return [payloads.circle_entry_with_send_to(row, settings.reach_flags, send_channels)
+            for row in graph.list_contact_rows(resident.receiver_address)]
 
 
 def push_circle_state(settings: CircleSettings, resident: ReceiverProfile) -> None:
@@ -85,7 +92,7 @@ def handle_add_contact(connection_id: str, resident: ReceiverProfile, body: dict
     try:
         channels.push_to_connection(connection_id, {
             "type": PushMessageType.CONTACT_ADDED,
-            "contact": payloads.circle_entry_for_receiver(enrolment.contact_row, settings.reach_flags),
+            "contact": circle_entry_for(settings, resident, enrolment.contact_row),
             "noteText": note_text,
             "code": enrolment.code,
         })
@@ -120,7 +127,7 @@ def handle_edit_contact(connection_id: str, resident: ReceiverProfile, body: dic
     try:
         channels.push_to_connection(connection_id, {
             "type": PushMessageType.CONTACT_EDITED,
-            "contact": payloads.circle_entry_for_receiver(edit.contact_row, settings.reach_flags),
+            "contact": circle_entry_for(settings, resident, edit.contact_row),
             "noteText": note_text,
             "code": edit.code,
         })

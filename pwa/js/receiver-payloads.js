@@ -1,6 +1,9 @@
 // Grandma's incoming data: the three static email mock rows and validation of every email_state, message_state and request_state
-// payload. A text (a MESSAGE# row) becomes the same row shape as an email, with rowKind from its channel.
-import { CALL_PROMISE, CHANNEL, MESSAGE_DIRECTION, POLICY_DECISION, REQUEST_STATUS, ROW_KIND, SCAM_LIST_COVERAGE } from "./constants.js";
+// payload. A text (a MESSAGE# row, in or out) becomes the same row shape as an email, with rowKind from its channel; every row
+// also carries its channel, direction and threadKey (the conversation it belongs to).
+import {
+  CALL_PROMISE, CHANNEL, MESSAGE_DIRECTION, POLICY_DECISION, PROVIDER_STATUS, REQUEST_STATUS, ROW_KIND, SCAM_LIST_COVERAGE,
+} from "./constants.js";
 
 const MILLISECONDS_PER_HOUR = 3600000;
 const KNOWN_POLICY_DECISIONS = new Set(Object.values(POLICY_DECISION));
@@ -8,12 +11,15 @@ const KNOWN_REQUEST_STATUSES = new Set(Object.values(REQUEST_STATUS));
 const KNOWN_CALL_PROMISES = new Set(Object.values(CALL_PROMISE));
 const KNOWN_CHANNELS = new Set(Object.values(CHANNEL));
 const KNOWN_SCAM_LIST_COVERAGES = new Set(Object.values(SCAM_LIST_COVERAGE));
+const KNOWN_PROVIDER_STATUSES = new Set(Object.values(PROVIDER_STATUS));
 // The channels a text comes in on and the row kind each shows as; a message on any other channel is dropped, never shown as email.
 const MESSAGE_ROW_KINDS = Object.freeze({
   [CHANNEL.SMS]: ROW_KIND.SMS,
   [CHANNEL.WHATSAPP]: ROW_KIND.WHATSAPP,
   [CHANNEL.RCS]: ROW_KIND.RCS,
 });
+// The channels Grandma sends on (an out row) and the row kind each shows as: the text channels and email.
+const OUT_MESSAGE_ROW_KINDS = Object.freeze({ ...MESSAGE_ROW_KINDS, [CHANNEL.EMAIL]: ROW_KIND.EMAIL });
 
 export function buildMockFamilyEmails() {
   const now = Date.now();
@@ -21,6 +27,7 @@ export function buildMockFamilyEmails() {
   const mockRow = (emailId, senderName, senderAddress, subject, hoursAgo, textBody) => ({
     emailId, rowKind: ROW_KIND.EMAIL, senderName, senderAddress, subject, receivedAt: receivedHoursAgo(hoursAgo), textBody,
     state: POLICY_DECISION.PASS, warnReason: null, reasons: [], links: [], request: null, quarantined: false,
+    channel: CHANNEL.EMAIL, direction: MESSAGE_DIRECTION.IN, threadKey: null,
   });
   return [
     mockRow("mock-sunday-lunch", "Minsoo", "minsoo@example.com", "Sunday lunch", 2,
@@ -81,6 +88,26 @@ function isValidMessagePayload(message) {
   return true;
 }
 
+// Grandma's own sent text or email: who it went to, when, and where its send stands.
+function isValidOutMessagePayload(message) {
+  const isValid = message !== null && typeof message === "object" && typeof message.messageId === "string"
+    && Object.prototype.hasOwnProperty.call(OUT_MESSAGE_ROW_KINDS, message.channel) && message.direction === MESSAGE_DIRECTION.OUT
+    && typeof message.threadKey === "string" && typeof message.recipientName === "string"
+    && typeof message.recipientAddress === "string" && typeof message.textBody === "string" && typeof message.sentAt === "string"
+    && KNOWN_PROVIDER_STATUSES.has(message.providerStatus);
+  if (!isValid) console.error("SendPidge: sent message push has a missing field, unknown channel or unknown providerStatus", message);
+  return isValid;
+}
+
+// The conversation a row belongs to (lambda/shared/inbox_rows.py thread_key_for), or null when absent (a row written before
+// slice 16); a non-text value is logged and read as null, so the row offers no Reply.
+function normalizeThreadKey(row) {
+  if (row.threadKey === undefined || row.threadKey === null) return null;
+  if (typeof row.threadKey === "string") return row.threadKey;
+  console.error("SendPidge: row carries a non-text threadKey", row.threadKey);
+  return null;
+}
+
 function isValidEmailLink(link) {
   return link !== null && typeof link === "object" && typeof link.text === "string" && typeof link.domain === "string"
     && typeof link.href === "string" && typeof link.flagged === "boolean";
@@ -139,13 +166,16 @@ export function normalizeEmailPayloadOrReportError(email) {
     ...email, rowKind: ROW_KIND.EMAIL, request: normalizeEmailRequest(email.request), quarantined: email.quarantined === true,
     textBody: isReading ? "" : email.textBody, links: isReading ? [] : normalizeEmailLinks(email),
     scamListCoverage: isReading ? null : normalizeScamListCoverage(email.scamListCoverage),
+    channel: CHANNEL.EMAIL, direction: MESSAGE_DIRECTION.IN, threadKey: normalizeThreadKey(email),
   };
 }
 
 // Returns the text as an inbox row, or null (after logging) when the payload is invalid. The row is keyed by messageId as its
 // emailId (request_state names a held text by that id too) and has no subject, links or list coverage; senderName "" (not a
-// checked number of a contact) shows the sender's number. A reading row never carries a body on this side either.
+// checked number of a contact) shows the sender's number. A reading row never carries a body on this side either. An out row
+// (Grandma's own send) goes to normalizeOutMessagePayloadOrReportError.
 export function normalizeMessagePayloadOrReportError(message) {
+  if (message?.direction === MESSAGE_DIRECTION.OUT) return normalizeOutMessagePayloadOrReportError(message);
   if (!isValidMessagePayload(message)) return null;
   return {
     emailId: message.messageId, rowKind: MESSAGE_ROW_KINDS[message.channel],
@@ -153,6 +183,20 @@ export function normalizeMessagePayloadOrReportError(message) {
     subject: "", receivedAt: message.receivedAt, textBody: message.state === null ? "" : message.textBody, links: [], scamListCoverage: null,
     state: message.state, warnReason: message.warnReason, reasons: message.reasons,
     request: normalizeEmailRequest(message.request), quarantined: message.quarantined === true,
+    channel: message.channel, direction: MESSAGE_DIRECTION.IN, threadKey: normalizeThreadKey(message),
+  };
+}
+
+// An out row as an inbox row named by its recipient: a plain row (state pass, no request) whose time is sentAt, plus its
+// providerStatus. Null (after logging) when the payload is invalid.
+function normalizeOutMessagePayloadOrReportError(message) {
+  if (!isValidOutMessagePayload(message)) return null;
+  return {
+    emailId: message.messageId, rowKind: OUT_MESSAGE_ROW_KINDS[message.channel],
+    senderName: message.recipientName === "" ? message.recipientAddress : message.recipientName, senderAddress: message.recipientAddress,
+    subject: "", receivedAt: message.sentAt, textBody: message.textBody, links: [], scamListCoverage: null,
+    state: POLICY_DECISION.PASS, warnReason: null, reasons: [], request: null, quarantined: false,
+    channel: message.channel, direction: MESSAGE_DIRECTION.OUT, threadKey: message.threadKey, providerStatus: message.providerStatus,
   };
 }
 
